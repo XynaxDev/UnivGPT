@@ -102,6 +102,7 @@ export interface UserProfile {
     role: 'student' | 'faculty' | 'admin';
     department?: string;
     created_at?: string;
+    profileImage?: string | null;
 }
 
 export interface DocumentResponse {

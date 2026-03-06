@@ -54,7 +54,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     const isUser = message.role === 'user';
     const { user } = useAuthStore();
     const [copied, setCopied] = useState(false);
-    const profileImage = (user as any)?.profileImage || null;
+    const profileImage = user?.profileImage || null;
     const userInitial = user?.full_name?.charAt(0) || 'U';
 
     const handleCopy = () => {

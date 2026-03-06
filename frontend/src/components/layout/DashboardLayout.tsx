@@ -65,7 +65,7 @@ export default function DashboardLayout() {
     const unreadCount = notifications.filter(n => n.unread).length;
 
     // Get profile image from store (would be set by ProfilePage)
-    const profileImage = (user as any)?.profileImage || null;
+    const profileImage = user?.profileImage || null;
     const userInitial = user?.full_name?.charAt(0) || 'U';
 
     const ProfileAvatar = ({ size = 'sm' }: { size?: 'sm' | 'md' }) => {

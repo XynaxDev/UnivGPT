@@ -7,6 +7,64 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authApi, type UserProfile } from '@/lib/api';
 
+const PROFILE_IMAGE_CACHE_KEY = 'unigpt-profile-images';
+
+type ProfileImageCache = Record<string, string>;
+
+const normalizeEmail = (email?: string) => email?.trim().toLowerCase() || '';
+
+const readProfileImageCache = (): ProfileImageCache => {
+    if (typeof window === 'undefined') return {};
+    try {
+        const raw = window.localStorage.getItem(PROFILE_IMAGE_CACHE_KEY);
+        if (!raw) return {};
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === 'object') {
+            return parsed as ProfileImageCache;
+        }
+    } catch {
+        // Ignore corrupted cache and treat as empty.
+    }
+    return {};
+};
+
+const writeProfileImageCache = (cache: ProfileImageCache) => {
+    if (typeof window === 'undefined') return;
+    try {
+        window.localStorage.setItem(PROFILE_IMAGE_CACHE_KEY, JSON.stringify(cache));
+    } catch {
+        // Ignore storage write failures.
+    }
+};
+
+const persistProfileImageForEmail = (email?: string, profileImage?: string | null) => {
+    const key = normalizeEmail(email);
+    if (!key) return;
+    const cache = readProfileImageCache();
+    if (profileImage) {
+        cache[key] = profileImage;
+    } else {
+        delete cache[key];
+    }
+    writeProfileImageCache(cache);
+};
+
+const hydrateProfileImage = (user: UserProfile): UserProfile => {
+    const key = normalizeEmail(user.email);
+    if (!key) return user;
+
+    const cache = readProfileImageCache();
+    if (cache[key]) {
+        return { ...user, profileImage: cache[key] };
+    }
+
+    if (user.profileImage) {
+        persistProfileImageForEmail(user.email, user.profileImage);
+    }
+
+    return user;
+};
+
 interface AuthState {
     user: UserProfile | null;
     token: string | null;
@@ -41,7 +99,7 @@ export const useAuthStore = create<AuthState>()(
                 set({ isLoading: true, error: null });
                 try {
                     const res = await authApi.login({ email, password });
-                    set({ user: res.user, token: res.access_token, isLoading: false });
+                    set({ user: hydrateProfileImage(res.user), token: res.access_token, isLoading: false });
                 } catch (err: unknown) {
                     set({ error: (err as Error).message || 'Login failed', isLoading: false });
                     throw err;
@@ -63,7 +121,7 @@ export const useAuthStore = create<AuthState>()(
                 set({ isLoading: true, error: null });
                 try {
                     const res = await authApi.verifySignup({ email, otp });
-                    set({ user: res.user, token: res.access_token, isLoading: false });
+                    set({ user: hydrateProfileImage(res.user), token: res.access_token, isLoading: false });
                 } catch (err: unknown) {
                     set({ error: (err as Error).message || 'OTP verification failed', isLoading: false });
                     throw err;
@@ -118,14 +176,14 @@ export const useAuthStore = create<AuthState>()(
                 if (!token) return;
                 try {
                     const user = await authApi.getMe(token);
-                    set({ user });
+                    set({ user: hydrateProfileImage(user) });
                 } catch {
                     set({ user: null, token: null });
                 }
             },
 
             setSession: (token, user) => {
-                set({ token, user, isLoading: false, isInitializing: false, error: null });
+                set({ token, user: hydrateProfileImage(user), isLoading: false, isInitializing: false, error: null });
             },
 
             finishInitializing: () => {
@@ -135,7 +193,18 @@ export const useAuthStore = create<AuthState>()(
             updateUser: (updates) => {
                 const current = get().user;
                 if (current) {
-                    set({ user: { ...current, ...updates } });
+                    const nextUser = { ...current, ...updates };
+
+                    if ('profileImage' in updates) {
+                        persistProfileImageForEmail(nextUser.email, updates.profileImage ?? null);
+                    } else if ('email' in updates && current.profileImage) {
+                        persistProfileImageForEmail(nextUser.email, current.profileImage);
+                        if (normalizeEmail(nextUser.email) !== normalizeEmail(current.email)) {
+                            persistProfileImageForEmail(current.email, null);
+                        }
+                    }
+
+                    set({ user: nextUser });
                 }
             },
         }),

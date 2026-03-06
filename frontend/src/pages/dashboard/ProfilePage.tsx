@@ -11,7 +11,7 @@ const ProfilePage = () => {
     const { user, updateUser } = useAuthStore();
     const { showToast } = useToastStore();
     const [isEditing, setIsEditing] = useState(false);
-    const profileImage = (user as any)?.profileImage || null;
+    const profileImage = user?.profileImage || null;
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [formName, setFormName] = useState(user?.full_name || '');
@@ -30,7 +30,7 @@ const ProfilePage = () => {
             reader.onload = (ev) => {
                 const img = ev.target?.result as string;
                 // Store in auth store so it shows everywhere
-                updateUser({ profileImage: img } as any);
+                updateUser({ profileImage: img });
                 showToast("Profile image updated", "success");
             };
             reader.readAsDataURL(file);
@@ -123,7 +123,7 @@ const ProfilePage = () => {
                                     </button>
                                     <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
                                     {profileImage && (
-                                        <button onClick={() => { updateUser({ profileImage: null } as any); showToast("Photo removed", "success"); }} className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white opacity-100 transition-opacity z-20 shadow-xl border-2 border-black">
+                                        <button onClick={() => { updateUser({ profileImage: null }); showToast("Photo removed", "success"); }} className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white opacity-100 transition-opacity z-20 shadow-xl border-2 border-black">
                                             <X className="w-3.5 h-3.5" />
                                         </button>
                                     )}
