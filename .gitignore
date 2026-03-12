@@ -67,3 +67,7 @@ infrastructure/supabase/volumes/
 frontend/build.txt
 frontend/build.log
 uploads/
+
+# Private local documentation
+docs/private/
+docs/tunnel_setup_local_vs_hosted.md
