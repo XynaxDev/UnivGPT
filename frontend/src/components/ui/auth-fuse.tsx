@@ -250,6 +250,7 @@ interface AuthUIProps {
     isSignIn: boolean;
     onToggle: () => void;
     onGoogleClick?: () => void;
+    onMicrosoftClick?: () => void;
     children: React.ReactNode;
 }
 
@@ -282,7 +283,7 @@ const unifiedImageContent = {
     }
 };
 
-export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onToggle, onGoogleClick, children }: AuthUIProps) {
+export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onToggle, onGoogleClick, onMicrosoftClick, children }: AuthUIProps) {
     const finalSignInContent = {
         image: unifiedImageContent.image,
         quote: { ...defaultSignInContent.quote, ...signInContent.quote },
@@ -316,10 +317,24 @@ export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onTog
                             <div className="flex-1 border-t border-white/10"></div>
                         </div>
 
-                        <Button variant="outline" type="button" className="w-full h-11 text-sm rounded-xl group transition-all duration-300 bg-white/5 hover:bg-white/10 text-white border-white/10 shadow-sm" onClick={onGoogleClick}>
-                            <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google icon" className="mr-3 h-5 w-5" />
-                            Continue with Google
-                        </Button>
+                        {onGoogleClick && (
+                            <Button variant="outline" type="button" className="w-full h-11 text-sm rounded-xl group transition-all duration-300 bg-white/5 hover:bg-white/10 text-white border-white/10 shadow-sm" onClick={onGoogleClick}>
+                                <img src="https://www.svgrepo.com/show/475656/google-color.svg" alt="Google icon" className="mr-3 h-5 w-5" />
+                                Continue with Google
+                            </Button>
+                        )}
+
+                        {onMicrosoftClick && (
+                            <Button variant="outline" type="button" className="w-full h-11 text-sm rounded-xl group transition-all duration-300 bg-white/5 hover:bg-white/10 text-white border-white/10 shadow-sm" onClick={onMicrosoftClick}>
+                                <svg viewBox="0 0 21 21" aria-hidden="true" className="mr-3 h-4 w-4">
+                                    <rect x="1" y="1" width="8" height="8" fill="#f25022" />
+                                    <rect x="11" y="1" width="8" height="8" fill="#7fba00" />
+                                    <rect x="1" y="11" width="8" height="8" fill="#00a4ef" />
+                                    <rect x="11" y="11" width="8" height="8" fill="#ffb900" />
+                                </svg>
+                                Continue with Microsoft
+                            </Button>
+                        )}
                     </div>
 
                     <div className="text-center text-sm text-zinc-500">

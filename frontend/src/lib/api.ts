@@ -3,7 +3,7 @@
  * Typed API client for communicating with the Hybrid FastAPI backend.
  */
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 
 interface RequestOptions {
     method?: string;
@@ -15,6 +15,7 @@ interface RequestOptions {
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = 'GET', body, token, isFormData = false } = options;
     const headers: Record<string, string> = {};
+    const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (!isFormData) headers['Content-Type'] = 'application/json';
 
@@ -23,7 +24,7 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
         config.body = isFormData ? (body as FormData) : JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_BASE}${endpoint}`, config);
+    const response = await fetch(`${API_BASE}${path}`, config);
     if (!response.ok) {
         if (response.status === 401 && options.token) {
             // Auto-logout ONLY if an authenticated request gets rejected (corrupted/expired token).
@@ -52,6 +53,9 @@ export const authApi = {
 
     googleAuth: () =>
         request<{ url: string }>('/auth/google', { method: 'GET' }),
+
+    microsoftAuth: () =>
+        request<{ url: string }>('/auth/microsoft', { method: 'GET' }),
 
     login: (data: { email: string; password: string }) =>
         request<{ access_token: string; user: UserProfile }>('/auth/login', { method: 'POST', body: data }),
@@ -103,6 +107,8 @@ export interface UserProfile {
     department?: string;
     created_at?: string;
     profileImage?: string | null;
+    academic_verified?: boolean;
+    identity_provider?: string | null;
 }
 
 export interface DocumentResponse {

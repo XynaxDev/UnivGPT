@@ -15,7 +15,7 @@ export default function Login() {
     const [otp, setOtp] = useState('');
     const [view, setView] = useState<'login' | 'forgot' | 'otp' | 'reset'>('login');
     const { showToast } = useToastStore();
-    const { login, forgotPassword, resetPassword, googleAuth, isLoading, error, clearError, token } = useAuthStore();
+    const { login, forgotPassword, resetPassword, googleAuth, microsoftAuth, isLoading, error, clearError, token } = useAuthStore();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -78,10 +78,18 @@ export default function Login() {
         }
     };
 
+    const handleMicrosoftAuth = async () => {
+        try {
+            await microsoftAuth();
+        } catch (err: any) {
+            showToast(err.message || "Microsoft authentication failed.");
+        }
+    };
+
 
     if (view === 'forgot') {
         return (
-            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth}>
+            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
                 <form onSubmit={handleForgotSubmit} className="flex flex-col gap-6">
                     <div className="flex flex-col items-center gap-2 text-center">
                         <div className="w-10 h-10 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
@@ -121,7 +129,7 @@ export default function Login() {
 
     if (view === 'otp') {
         return (
-            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth}>
+            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
                 <form onSubmit={handleOtpSubmit} className="flex flex-col gap-8">
                     <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-10 h-10 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
@@ -155,7 +163,7 @@ export default function Login() {
 
     if (view === 'reset') {
         return (
-            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth}>
+            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
                 <form onSubmit={handleResetSubmit} className="flex flex-col gap-8">
                     <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-10 h-10 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
@@ -194,6 +202,7 @@ export default function Login() {
             isSignIn={true}
             onToggle={() => navigate('/auth/signup')}
             onGoogleClick={handleGoogleAuth}
+            onMicrosoftClick={handleMicrosoftAuth}
         >
             <form onSubmit={handleLoginSubmit} autoComplete="on" className="flex flex-col gap-6">
                 <div className="flex flex-col items-center gap-2 text-center">

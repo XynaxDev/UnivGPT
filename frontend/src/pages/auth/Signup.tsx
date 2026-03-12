@@ -15,7 +15,7 @@ export default function Signup() {
     const [otp, setOtp] = useState('');
     const [view, setView] = useState<'signup' | 'otp' | 'welcome'>('signup');
     const { showToast } = useToastStore();
-    const { signup, verifySignup, googleAuth, isLoading, error, token } = useAuthStore();
+    const { signup, verifySignup, googleAuth, microsoftAuth, isLoading, error, token } = useAuthStore();
     const navigate = useNavigate();
 
     React.useEffect(() => {
@@ -52,10 +52,18 @@ export default function Signup() {
         }
     };
 
+    const handleMicrosoftAuth = async () => {
+        try {
+            await microsoftAuth();
+        } catch (err: any) {
+            showToast(err.message || "Microsoft authentication failed.");
+        }
+    };
+
 
     if (view === 'welcome') {
         return (
-            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth}>
+            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
                 <div className="flex flex-col items-center gap-6 text-center py-6">
                     <motion.div
                         initial={{ scale: 0.5, opacity: 0 }}
@@ -90,7 +98,7 @@ export default function Signup() {
 
     if (view === 'otp') {
         return (
-            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth}>
+            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
                 <form onSubmit={handleOtpSubmit} className="flex flex-col gap-8">
                     <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
@@ -128,6 +136,7 @@ export default function Signup() {
             isSignIn={false}
             onToggle={() => navigate('/auth/login')}
             onGoogleClick={handleGoogleAuth}
+            onMicrosoftClick={handleMicrosoftAuth}
         >
             <form onSubmit={handleSignupSubmit} autoComplete="on" className="flex flex-col gap-4">
                 <div className="flex flex-col items-center gap-2 text-center">

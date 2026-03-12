@@ -78,6 +78,7 @@ interface AuthState {
     forgotPassword: (email: string) => Promise<string>;
     resetPassword: (email: string, otp: string, newPassword: string) => Promise<string>;
     googleAuth: () => Promise<void>;
+    microsoftAuth: () => Promise<void>;
     logout: () => void;
     clearError: () => void;
     fetchProfile: () => Promise<void>;
@@ -161,6 +162,19 @@ export const useAuthStore = create<AuthState>()(
                     }
                 } catch (err: unknown) {
                     set({ error: (err as Error).message || 'Google Auth failed', isLoading: false });
+                    throw err;
+                }
+            },
+
+            microsoftAuth: async () => {
+                set({ isLoading: true, error: null });
+                try {
+                    const res = await authApi.microsoftAuth();
+                    if (res.url) {
+                        window.location.href = res.url;
+                    }
+                } catch (err: unknown) {
+                    set({ error: (err as Error).message || 'Microsoft Auth failed', isLoading: false });
                     throw err;
                 }
             },

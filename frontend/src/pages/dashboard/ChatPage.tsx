@@ -7,7 +7,7 @@ import {
     ChevronDown, ChevronUp,
     FileText, Bot, Sparkles, Plus, ExternalLink,
     Brain, ArrowUp, GraduationCap, BookOpen, HelpCircle, MessageSquare, Search,
-    Wallet, Building2, Calendar, MapPin, Copy, Check
+    Wallet, Building2, Calendar, MapPin, Copy, Check, ShieldAlert
 } from 'lucide-react';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import type { SourceCitation } from '@/lib/api';
@@ -154,8 +154,9 @@ export default function ChatPage() {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const { messages, isQuerying, sendQuery, newConversation } = useChatStore();
+    const { messages, isQuerying, sendQuery, newConversation, error, clearError } = useChatStore();
     const { token, user } = useAuthStore();
+    const queryLocked = user?.academic_verified === false;
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -166,12 +167,14 @@ export default function ChatPage() {
         if (textareaRef.current) {
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px';
+            textareaRef.current.style.overflowY = textareaRef.current.scrollHeight > 160 ? 'auto' : 'hidden';
         }
     }, [input]);
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!input.trim() || !token || isQuerying) return;
+        clearError();
         const query = input;
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -278,8 +281,26 @@ export default function ChatPage() {
             </div>
 
             {/* ───── Input Bar — Premium ───── */}
-            <div className="px-2 sm:px-6 pb-2 sm:pb-6 pt-0 shrink-0 bg-transparent">
+            <div className="px-2 sm:px-6 pb-2 sm:pb-6 pt-0 shrink-0 bg-transparent" data-lenis-prevent="true">
                 <form onSubmit={handleSend} className="max-w-3xl mx-auto">
+                    {(queryLocked || error) && (
+                        <div className={`mb-3 rounded-2xl border px-4 py-3 text-sm ${queryLocked ? 'border-amber-500/20 bg-amber-500/10 text-amber-100' : 'border-red-500/20 bg-red-500/10 text-red-100'}`}>
+                            <div className="flex items-start gap-3">
+                                <ShieldAlert className={`mt-0.5 h-4 w-4 shrink-0 ${queryLocked ? 'text-amber-300' : 'text-red-300'}`} />
+                                <div>
+                                    <div className="font-semibold">
+                                        {queryLocked ? 'Query access is locked for this account' : 'Query request failed'}
+                                    </div>
+                                    <div className="mt-1 text-xs leading-5 text-current/80">
+                                        {queryLocked
+                                            ? 'Use your college email directly or sign in with Microsoft using your college account to unlock document queries.'
+                                            : error}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     <div className="relative flex items-end bg-white/[0.04] border border-white/[0.08] rounded-2xl focus-within:border-orange-500/30 focus-within:bg-white/[0.05] transition-all shadow-xl shadow-black/10">
                         <textarea
                             ref={textareaRef}
@@ -287,9 +308,10 @@ export default function ChatPage() {
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
                             placeholder="Ask about courses, policies, research..."
-                            className="flex-1 bg-transparent px-4 py-3 sm:px-5 sm:py-4 text-xs sm:text-sm placeholder:text-zinc-600 outline-none resize-none max-h-40 min-h-[44px] sm:min-h-[52px] text-white"
+                            className="flex-1 bg-transparent px-4 py-3 sm:px-5 sm:py-4 text-xs sm:text-sm placeholder:text-zinc-600 outline-none resize-none max-h-40 min-h-[44px] sm:min-h-[52px] text-white overflow-y-auto"
                             rows={1}
-                            disabled={isQuerying}
+                            disabled={isQuerying || queryLocked}
+                            data-lenis-prevent="true"
                         />
                         <div className="flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 shrink-0">
                             {messages.length > 0 && (
@@ -306,7 +328,7 @@ export default function ChatPage() {
                                 type="submit"
                                 size="icon"
                                 className="h-9 w-9 rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md shadow-orange-500/20 transition-all hover:shadow-lg hover:shadow-orange-500/30 active:scale-90 disabled:opacity-30 disabled:hover:scale-100 disabled:shadow-none"
-                                disabled={!input.trim() || isQuerying}
+                                disabled={!input.trim() || isQuerying || queryLocked}
                             >
                                 <ArrowUp className="w-4 h-4" />
                             </Button>
