@@ -7,6 +7,13 @@ import { Loader2 } from 'lucide-react';
 
 const academicDomain = (import.meta.env.VITE_ACADEMIC_EMAIL_DOMAIN || 'krmu.edu.in').toLowerCase();
 const isAcademicEmail = (email?: string) => (email || '').trim().toLowerCase().endsWith(`@${academicDomain}`);
+const ROLE_STORAGE_KEY = 'unigpt:pending-role';
+const VALID_ROLES = new Set(['student', 'faculty', 'admin']);
+
+const normalizeRole = (value?: string | null): 'student' | 'faculty' | 'admin' | null => {
+    const role = (value || '').trim().toLowerCase();
+    return VALID_ROLES.has(role) ? (role as 'student' | 'faculty' | 'admin') : null;
+};
 
 export default function AuthCallback() {
     const navigate = useNavigate();
@@ -22,8 +29,18 @@ export default function AuthCallback() {
                 navigate('/auth/login?error=oauth_failed');
                 return;
             }
+            const urlRole = normalizeRole(new URLSearchParams(window.location.search).get('role'));
+            const pendingRole = normalizeRole(window.localStorage.getItem(ROLE_STORAGE_KEY));
+            const selectedRole = urlRole || pendingRole;
 
             try {
+                if (selectedRole) {
+                    try {
+                        await authApi.setRole(session.access_token, selectedRole);
+                    } catch (roleErr) {
+                        console.warn('Role sync skipped:', roleErr);
+                    }
+                }
                 // Sync with backend
                 const user = await authApi.getMe(session.access_token);
                 setSession(session.access_token, user);
@@ -40,6 +57,7 @@ export default function AuthCallback() {
                 });
                 navigate('/dashboard');
             } finally {
+                window.localStorage.removeItem(ROLE_STORAGE_KEY);
                 finishInitializing();
             }
         };

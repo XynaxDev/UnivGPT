@@ -4,12 +4,12 @@ import * as React from "react";
 import { useState, useId, useEffect } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import * as LabelPrimitive from "@radix-ui/react-label";
+import * as SelectPrimitive from "@radix-ui/react-select";
 import { cva, type VariantProps } from "class-variance-authority";
-import { Eye, EyeOff, Loader2 } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { Link } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
 import { BrandLogo } from "@/components/ui/BrandLogo";
 
 function cn(...inputs: ClassValue[]) {
@@ -159,6 +159,79 @@ const Input = React.forwardRef<HTMLInputElement, React.ComponentProps<"input">>(
 );
 Input.displayName = "Input";
 
+export interface SelectOption {
+    value: string;
+    label: string;
+    disabled?: boolean;
+}
+
+interface SelectProps {
+    id?: string;
+    value?: string;
+    onValueChange?: (value: string) => void;
+    placeholder?: string;
+    options: SelectOption[];
+    disabled?: boolean;
+    className?: string;
+}
+
+const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
+    (
+        {
+            id,
+            value,
+            onValueChange,
+            placeholder = "Select an option",
+            options,
+            disabled = false,
+            className,
+        },
+        ref
+    ) => {
+        return (
+            <SelectPrimitive.Root value={value} onValueChange={onValueChange} disabled={disabled}>
+                <SelectPrimitive.Trigger
+                    ref={ref}
+                    id={id}
+                    className={cn(
+                        "flex h-12 w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white shadow-sm ring-offset-black transition-all data-[placeholder]:text-zinc-500 focus-visible:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/20 disabled:cursor-not-allowed disabled:opacity-50",
+                        className
+                    )}
+                >
+                    <SelectPrimitive.Value placeholder={placeholder} />
+                    <SelectPrimitive.Icon asChild>
+                        <ChevronDown className="h-4 w-4 text-zinc-500" />
+                    </SelectPrimitive.Icon>
+                </SelectPrimitive.Trigger>
+                <SelectPrimitive.Portal>
+                    <SelectPrimitive.Content
+                        position="popper"
+                        sideOffset={8}
+                        className="z-[120] w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 backdrop-blur-xl shadow-[0_18px_60px_rgba(0,0,0,0.65)]"
+                    >
+                        <SelectPrimitive.Viewport className="p-1">
+                            {options.map((option) => (
+                                <SelectPrimitive.Item
+                                    key={option.value}
+                                    value={option.value}
+                                    disabled={option.disabled}
+                                    className="relative flex h-10 cursor-pointer select-none items-center rounded-lg px-3 text-sm text-zinc-200 outline-none transition-colors data-[disabled]:pointer-events-none data-[disabled]:opacity-40 data-[highlighted]:bg-orange-500/15 data-[highlighted]:text-white"
+                                >
+                                    <SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
+                                    <SelectPrimitive.ItemIndicator className="absolute right-2 inline-flex items-center justify-center text-orange-400">
+                                        <Check className="h-3.5 w-3.5" />
+                                    </SelectPrimitive.ItemIndicator>
+                                </SelectPrimitive.Item>
+                            ))}
+                        </SelectPrimitive.Viewport>
+                    </SelectPrimitive.Content>
+                </SelectPrimitive.Portal>
+            </SelectPrimitive.Root>
+        );
+    }
+);
+Select.displayName = "Select";
+
 export interface PasswordInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label?: string;
 }
@@ -231,7 +304,7 @@ export function OTPInput({ value, onChange, length = 6 }: OTPInputProps) {
     );
 }
 
-export { Label, Button, Input, PasswordInput };
+export { Label, Button, Input, PasswordInput, Select };
 
 interface AuthContentProps {
     image?: {
@@ -250,7 +323,6 @@ interface AuthUIProps {
     isSignIn: boolean;
     onToggle: () => void;
     onGoogleClick?: () => void;
-    onMicrosoftClick?: () => void;
     children: React.ReactNode;
 }
 
@@ -283,7 +355,7 @@ const unifiedImageContent = {
     }
 };
 
-export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onToggle, onGoogleClick, onMicrosoftClick, children }: AuthUIProps) {
+export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onToggle, onGoogleClick, children }: AuthUIProps) {
     const finalSignInContent = {
         image: unifiedImageContent.image,
         quote: { ...defaultSignInContent.quote, ...signInContent.quote },
@@ -323,23 +395,6 @@ export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onTog
                                 Continue with Google
                             </Button>
                         )}
-
-                        <Button
-                            variant="outline"
-                            type="button"
-                            className="w-full h-11 text-sm rounded-xl group transition-all duration-300 bg-white/5 hover:bg-white/10 text-white border-white/10 shadow-sm"
-                            onClick={() => onMicrosoftClick?.()}
-                            disabled={!onMicrosoftClick}
-                            title={!onMicrosoftClick ? "Microsoft login is not configured on this page." : "Continue with Microsoft"}
-                        >
-                            <svg viewBox="0 0 21 21" aria-hidden="true" className="mr-3 h-4 w-4">
-                                <rect x="1" y="1" width="8" height="8" fill="#f25022" />
-                                <rect x="11" y="1" width="8" height="8" fill="#7fba00" />
-                                <rect x="1" y="11" width="8" height="8" fill="#00a4ef" />
-                                <rect x="11" y="11" width="8" height="8" fill="#ffb900" />
-                            </svg>
-                            Continue with Microsoft
-                        </Button>
                     </div>
 
                     <div className="text-center text-sm text-zinc-500">

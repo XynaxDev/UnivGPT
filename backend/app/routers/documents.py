@@ -169,12 +169,40 @@ async def upload_document(
         else:
             raise
 
+    if not pinecone_client.index:
+        # Ensure uploads do not silently skip vector indexing.
+        try:
+            supabase.table("documents").delete().eq("id", document_id).execute()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=503,
+            detail="Vector store is unavailable. Configure Pinecone and retry upload.",
+        )
+
     # 2. Process and index to Pinecone (HuggingFace local embeddings)
-    processing_result = await process_document(
-        file_bytes=file_bytes, filename=filename, document_id=document_id,
-        doc_type=validated_doc_type.value, department=department, course=course, tags=derived_tags,
-        metadata=parsed_metadata
-    )
+    try:
+        processing_result = await process_document(
+            file_bytes=file_bytes, filename=filename, document_id=document_id,
+            doc_type=validated_doc_type.value, department=department, course=course, tags=derived_tags,
+            metadata=parsed_metadata
+        )
+    except Exception as exc:
+        try:
+            supabase.table("documents").delete().eq("id", document_id).execute()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail=f"Document processing failed: {exc}")
+
+    if processing_result.get("chunk_count", 0) <= 0 or processing_result.get("embedding_count", 0) <= 0:
+        try:
+            supabase.table("documents").delete().eq("id", document_id).execute()
+        except Exception:
+            pass
+        raise HTTPException(
+            status_code=422,
+            detail="Document text extraction or embedding failed. Please upload a readable text PDF/DOCX/TXT.",
+        )
 
     # Persist useful processing metadata if the column exists (v2 schema).
     try:

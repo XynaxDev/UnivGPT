@@ -1,21 +1,23 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
-import { AuthUI, Label, Input, PasswordInput, Button, OTPInput } from '@/components/ui/auth-fuse';
+import { AuthUI, Label, Input, PasswordInput, Button, OTPInput, Select } from '@/components/ui/auth-fuse';
 import { Loader2, Shield, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { BrandLogo } from '@/components/ui/BrandLogo';
-import { AnimatePresence } from 'framer-motion';
 import { useToastStore } from '@/store/toastStore';
+
+type RoleOption = 'student' | 'faculty' | 'admin';
 
 export default function Signup() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [fullName, setFullName] = useState('');
+    const [selectedRole, setSelectedRole] = useState<RoleOption | ''>('');
     const [otp, setOtp] = useState('');
     const [view, setView] = useState<'signup' | 'otp' | 'welcome'>('signup');
     const { showToast } = useToastStore();
-    const { signup, verifySignup, googleAuth, microsoftAuth, isLoading, error, token } = useAuthStore();
+    const { signup, verifySignup, googleAuth, isLoading, error, token } = useAuthStore();
     const navigate = useNavigate();
 
     React.useEffect(() => {
@@ -25,8 +27,12 @@ export default function Signup() {
 
     const handleSignupSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!selectedRole) {
+            showToast('Please choose your role first.');
+            return;
+        }
         try {
-            await signup(email, password, fullName);
+            await signup(email, password, fullName, selectedRole);
             setView('otp');
             showToast("Verification code sent to your email.", "success");
         } catch (err: any) {
@@ -45,25 +51,22 @@ export default function Signup() {
     };
 
     const handleGoogleAuth = async () => {
+        if (!selectedRole) {
+            showToast('Please choose your role before continuing with Google.');
+            return;
+        }
         try {
-            await googleAuth();
+            window.localStorage.setItem('unigpt:pending-role', selectedRole);
+            await googleAuth(selectedRole);
         } catch (err: any) {
             showToast(err.message || "Google authentication failed.");
-        }
-    };
-
-    const handleMicrosoftAuth = async () => {
-        try {
-            await microsoftAuth();
-        } catch (err: any) {
-            showToast(err.message || "Microsoft authentication failed.");
         }
     };
 
 
     if (view === 'welcome') {
         return (
-            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
+            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth}>
                 <div className="flex flex-col items-center gap-6 text-center py-6">
                     <motion.div
                         initial={{ scale: 0.5, opacity: 0 }}
@@ -98,7 +101,7 @@ export default function Signup() {
 
     if (view === 'otp') {
         return (
-            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
+            <AuthUI isSignIn={false} onToggle={() => navigate('/auth/login')} onGoogleClick={handleGoogleAuth}>
                 <form onSubmit={handleOtpSubmit} className="flex flex-col gap-8">
                     <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(16,185,129,0.1)]">
@@ -136,7 +139,6 @@ export default function Signup() {
             isSignIn={false}
             onToggle={() => navigate('/auth/login')}
             onGoogleClick={handleGoogleAuth}
-            onMicrosoftClick={handleMicrosoftAuth}
         >
             <form onSubmit={handleSignupSubmit} autoComplete="on" className="flex flex-col gap-4">
                 <div className="flex flex-col items-center gap-2 text-center">
@@ -163,6 +165,21 @@ export default function Signup() {
                 )}
 
                 <div className="grid gap-3">
+                    <div className="grid gap-1">
+                        <Label htmlFor="role" className="text-zinc-400 font-medium ml-1">Choose Role</Label>
+                        <Select
+                            id="role"
+                            value={selectedRole || undefined}
+                            onValueChange={(value) => setSelectedRole(value as RoleOption)}
+                            placeholder="Select your role"
+                            options={[
+                                { value: "student", label: "Student" },
+                                { value: "faculty", label: "Faculty" },
+                                { value: "admin", label: "Admin" },
+                            ]}
+                        />
+                    </div>
+
                     <div className="grid gap-1">
                         <Label htmlFor="fullName" className="text-zinc-400 font-medium ml-1">Full Name</Label>
                         <Input
@@ -212,7 +229,7 @@ export default function Signup() {
                     <Button
                         type="submit"
                         className="mt-1 h-11 text-sm font-bold bg-white text-black hover:bg-zinc-200 transition-all rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.1)]"
-                        disabled={isLoading}
+                        disabled={isLoading || !selectedRole}
                     >
                         {isLoading ? (
                             <>

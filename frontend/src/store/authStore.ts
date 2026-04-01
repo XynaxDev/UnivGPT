@@ -72,13 +72,18 @@ interface AuthState {
     isInitializing: boolean;
     error: string | null;
 
-    login: (email: string, password: string) => Promise<void>;
-    signup: (email: string, password: string, fullName: string, department?: string) => Promise<void>;
+    login: (email: string, password: string, role?: UserProfile['role']) => Promise<void>;
+    signup: (
+        email: string,
+        password: string,
+        fullName: string,
+        role: UserProfile['role'],
+        department?: string
+    ) => Promise<void>;
     verifySignup: (email: string, otp: string, password: string) => Promise<void>;
     forgotPassword: (email: string) => Promise<string>;
     resetPassword: (email: string, otp: string, newPassword: string) => Promise<string>;
-    googleAuth: () => Promise<void>;
-    microsoftAuth: () => Promise<void>;
+    googleAuth: (role: UserProfile['role']) => Promise<void>;
     logout: () => void;
     clearError: () => void;
     fetchProfile: () => Promise<void>;
@@ -96,10 +101,10 @@ export const useAuthStore = create<AuthState>()(
             isInitializing: true,
             error: null,
 
-            login: async (email, password) => {
+            login: async (email, password, role) => {
                 set({ isLoading: true, error: null });
                 try {
-                    const res = await authApi.login({ email, password });
+                    const res = await authApi.login({ email, password, role });
                     set({ user: hydrateProfileImage(res.user), token: res.access_token, isLoading: false });
                 } catch (err: unknown) {
                     set({ error: (err as Error).message || 'Login failed', isLoading: false });
@@ -107,10 +112,10 @@ export const useAuthStore = create<AuthState>()(
                 }
             },
 
-            signup: async (email, password, fullName, department) => {
+            signup: async (email, password, fullName, role, department) => {
                 set({ isLoading: true, error: null });
                 try {
-                    await authApi.signup({ email, password, full_name: fullName, department });
+                    await authApi.signup({ email, password, full_name: fullName, role, department });
                     set({ isLoading: false });
                 } catch (err: unknown) {
                     set({ error: (err as Error).message || 'Signup failed', isLoading: false });
@@ -153,28 +158,15 @@ export const useAuthStore = create<AuthState>()(
                 }
             },
 
-            googleAuth: async () => {
+            googleAuth: async (role) => {
                 set({ isLoading: true, error: null });
                 try {
-                    const res = await authApi.googleAuth();
+                    const res = await authApi.googleAuth(role);
                     if (res.url) {
                         window.location.href = res.url;
                     }
                 } catch (err: unknown) {
                     set({ error: (err as Error).message || 'Google Auth failed', isLoading: false });
-                    throw err;
-                }
-            },
-
-            microsoftAuth: async () => {
-                set({ isLoading: true, error: null });
-                try {
-                    const res = await authApi.microsoftAuth();
-                    if (res.url) {
-                        window.location.href = res.url;
-                    }
-                } catch (err: unknown) {
-                    set({ error: (err as Error).message || 'Microsoft Auth failed', isLoading: false });
                     throw err;
                 }
             },

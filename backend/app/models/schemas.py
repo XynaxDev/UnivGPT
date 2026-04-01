@@ -54,6 +54,7 @@ class ResetPasswordRequest(BaseModel):
 class LoginRequest(BaseModel):
     email: str
     password: str
+    role: Optional[UserRole] = None
 
 
 class InviteRequest(BaseModel):
@@ -61,6 +62,10 @@ class InviteRequest(BaseModel):
     full_name: str
     role: UserRole
     department: Optional[str] = None
+
+
+class RoleSelectionRequest(BaseModel):
+    role: UserRole
 
 
 class UserProfile(BaseModel):

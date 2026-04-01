@@ -162,7 +162,7 @@ export default function ChatPage() {
     const isStudent = user?.role === 'student';
     const isQueryLocked = Boolean(user) && isStudent && !user.academic_verified;
     const academicDomain = (import.meta.env.VITE_ACADEMIC_EMAIL_DOMAIN || 'krmu.edu.in').replace(/^@/, '').toLowerCase();
-    const academicVerificationMessage = `Query access is locked for this account. Sign in using your academic email (ending with @${academicDomain}) or verify your Microsoft college account.`;
+    const academicVerificationMessage = `Query access is locked for this account. Sign in using your academic email (ending with @${academicDomain}) to continue.`;
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -274,7 +274,7 @@ export default function ChatPage() {
                 <form onSubmit={handleSend} className="max-w-3xl mx-auto">
                     {isQueryLocked && (
                         <div className="mb-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-100">
-                            You can browse the dashboard, but chat queries are disabled until academic verification is completed. Use an academic email ending with @{academicDomain}, or verify your Microsoft college account.
+                            You can browse the dashboard, but chat queries are disabled until academic verification is completed. Use an academic email ending with @{academicDomain}.
                         </div>
                     )}
                     {error && (

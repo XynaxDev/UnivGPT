@@ -11,7 +11,7 @@ from app.models.schemas import (
     ConversationResponse, ConversationListResponse, UserRole
 )
 from app.config import settings
-from app.middleware.auth import AuthenticatedUser, get_current_user, is_academic_email
+from app.middleware.auth import AuthenticatedUser, get_current_user
 from app.services.agent_pipeline import run_agent_pipeline
 from app.services.supabase_client import get_supabase_admin
 
@@ -39,11 +39,7 @@ async def agent_query(
     # Keep strict verification for student-facing query access.
     # Admin/faculty should not be blocked from operational assistant usage.
     should_enforce_verification = user.role == UserRole.STUDENT.value
-    microsoft_verified = (
-        user.identity_provider in {"azure", "microsoft"}
-        and is_academic_email(user.email)
-    )
-    access_verified = user.academic_verified or microsoft_verified
+    access_verified = user.academic_verified
 
     if (
         settings.require_verified_academic_email_for_queries
@@ -56,7 +52,7 @@ async def agent_query(
             status_code=403,
             detail=(
                 "Query access is locked for this account. Sign in using your academic email "
-                f"(ending with @{domain}) or verify your Microsoft college account."
+                f"(ending with @{domain}) to continue."
             ),
         )
 

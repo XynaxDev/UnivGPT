@@ -51,16 +51,15 @@ export const authApi = {
     resetPassword: (data: { email: string; otp: string; new_password: string }) =>
         request<{ status: string; message: string }>('/auth/reset-password', { method: 'POST', body: data }),
 
-    googleAuth: () =>
-        request<{ url: string }>('/auth/google', { method: 'GET' }),
+    googleAuth: (role: string) =>
+        request<{ url: string }>(`/auth/google?role=${encodeURIComponent(role)}`, { method: 'GET' }),
 
-    microsoftAuth: () =>
-        request<{ url: string }>('/auth/microsoft', { method: 'GET' }),
-
-    login: (data: { email: string; password: string }) =>
+    login: (data: { email: string; password: string; role?: string }) =>
         request<{ access_token: string; user: UserProfile }>('/auth/login', { method: 'POST', body: data }),
     getMe: (token: string) =>
         request<UserProfile>('/user/me', { token }),
+    setRole: (token: string, role: UserProfile['role']) =>
+        request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } }),
     listUsers: (token: string) =>
         request<UserProfile[]>('/auth/users', { token }),
     inviteUser: (token: string, data: { email: string; full_name: string; role: string }) =>

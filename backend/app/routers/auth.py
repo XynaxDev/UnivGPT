@@ -3,11 +3,12 @@ Authentication Router
 Simplified for Supabase Auth integration.
 """
 
-from fastapi import APIRouter, HTTPException, Depends, Request
+from fastapi import APIRouter, HTTPException, Depends, Request, Query
 import random
 import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
 from app.models.schemas import (
     LoginRequest,
     AuthResponse,
@@ -18,6 +19,7 @@ from app.models.schemas import (
     ForgotPasswordRequest,
     ResetPasswordRequest,
     SignupResponse,
+    RoleSelectionRequest,
 )
 from app.middleware.auth import AuthenticatedUser, get_current_user, is_academic_email
 from app.config import settings
@@ -68,6 +70,13 @@ def build_oauth_redirect_url() -> str:
     if not path.startswith("/"):
         path = f"/{path}"
     return f"{base}{path}"
+
+
+def with_query_param(url: str, key: str, value: str) -> str:
+    parsed = urlparse(url)
+    query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    query[key] = value
+    return urlunparse(parsed._replace(query=urlencode(query)))
 
 
 def extract_identity_provider(auth_user: Any = None) -> str:
@@ -288,6 +297,14 @@ async def login(request: Request, body: LoginRequest):
         and body.password == dummy_accounts[body.email]["pass"]
     ):
         acc = dummy_accounts[body.email]
+        if body.role and body.role.value != acc["role"]:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Selected role '{body.role.value}' does not match this account role "
+                    f"('{acc['role']}'). Please choose the correct role."
+                ),
+            )
         return AuthResponse(
             access_token="dev-dummy-token-" + acc["role"],
             user=UserProfile(
@@ -316,6 +333,14 @@ async def login(request: Request, body: LoginRequest):
         # Fetch/update profile from Supabase so profile email/role/name cannot drift.
         admin = get_supabase_admin()
         p = ensure_profile_consistency(admin, user_id, auth_res.user)
+        if body.role and p.get("role") != body.role.value:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Selected role '{body.role.value}' does not match your account role "
+                    f"('{p.get('role')}'). Please choose the correct role."
+                ),
+            )
 
         await log_audit_event(
             user_id=user_id,
@@ -509,14 +534,19 @@ async def reset_password(body: ResetPasswordRequest):
 
 
 @router.get("/auth/google")
-async def google_auth():
+async def google_auth(role: UserRole = Query(default=UserRole.STUDENT)):
     """Returns the authorization URL for Google OAuth."""
     try:
         supabase = get_supabase_client()
+        redirect_to = with_query_param(
+            build_oauth_redirect_url(),
+            "role",
+            role.value,
+        )
         res = supabase.auth.sign_in_with_oauth(
             {
                 "provider": "google",
-                "options": {"redirect_to": build_oauth_redirect_url()},
+                "options": {"redirect_to": redirect_to},
             }
         )
         return {"url": res.url}
@@ -524,39 +554,91 @@ async def google_auth():
         if is_network_error(e):
             raise_supabase_unreachable()
         raise HTTPException(status_code=400, detail=str(e))
-
-
-@router.get("/auth/microsoft")
-async def microsoft_auth():
-    """Returns the authorization URL for Microsoft OAuth via Supabase Azure provider."""
-    try:
-        supabase = get_supabase_client()
-        res = supabase.auth.sign_in_with_oauth(
-            {
-                "provider": "azure",
-                "options": {
-                    "redirect_to": build_oauth_redirect_url(),
-                    "scopes": "email profile openid",
-                },
-            }
-        )
-        return {"url": res.url}
-    except Exception as e:
-        if is_network_error(e):
-            raise_supabase_unreachable()
-        raise HTTPException(status_code=400, detail=str(e))
-
 
 @router.get("/user/me", response_model=UserProfile)
 async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
     """Return the current user profile from the authenticated JWT context."""
     provider = user.identity_provider or "email"
-    microsoft_verified = provider in {"azure", "microsoft"} and is_academic_email(user.email)
     return UserProfile(
         id=user.id,
         email=user.email,
         full_name=user.full_name,
         role=UserRole(user.role),
-        academic_verified=user.academic_verified or microsoft_verified or user.id.startswith("dummy-id-"),
+        academic_verified=user.academic_verified or user.id.startswith("dummy-id-"),
         identity_provider=provider,
     )
+
+
+@router.put("/user/role", response_model=UserProfile)
+async def set_role(
+    body: RoleSelectionRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Persist selected role for the authenticated user profile."""
+    try:
+        admin = get_supabase_admin()
+        existing_res = (
+            admin.table("profiles").select("*").eq("id", user.id).limit(1).execute()
+        )
+        existing = existing_res.data[0] if existing_res.data else None
+
+        if existing:
+            existing_role = normalize_profile_role(existing.get("role"))
+            if existing_role and existing_role != body.role.value:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Selected role '{body.role.value}' does not match this account role "
+                        f"('{existing_role}'). Please choose the correct role."
+                    ),
+                )
+            profile = existing
+        else:
+            profile_seed = {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name or "User",
+                "role": body.role.value,
+            }
+            created = admin.table("profiles").insert(profile_seed).execute()
+            profile = created.data[0] if created.data else profile_seed
+
+        # Keep auth metadata aligned for OAuth/session fallback paths.
+        try:
+            auth_user_res = admin.auth.admin.get_user_by_id(user.id)
+            auth_user = getattr(auth_user_res, "user", None)
+            if auth_user:
+                metadata = getattr(auth_user, "user_metadata", {}) or {}
+                if metadata.get("role") != body.role.value:
+                    admin.auth.admin.update_user_by_id(
+                        user.id,
+                        {"user_metadata": {**metadata, "role": body.role.value}},
+                    )
+        except Exception:
+            pass
+
+        await log_audit_event(
+            user_id=None if user.id.startswith("dummy-id-") else user.id,
+            action="user_role_updated",
+            ip_address=request.client.host if request.client else None,
+            payload={"role": body.role.value},
+        )
+
+        email = profile.get("email") or user.email
+        return UserProfile(
+            id=profile["id"],
+            email=email,
+            full_name=profile.get("full_name", user.full_name or "User"),
+            role=UserRole(profile.get("role", UserRole.STUDENT.value)),
+            department=profile.get("department"),
+            created_at=str(profile.get("created_at")) if profile.get("created_at") else None,
+            academic_verified=is_academic_email(email) or user.id.startswith("dummy-id-"),
+            identity_provider=user.identity_provider or "email",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))

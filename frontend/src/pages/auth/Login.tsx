@@ -1,21 +1,23 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+﻿import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
-import { AuthUI, Label, Input, PasswordInput, Button, OTPInput } from '@/components/ui/auth-fuse';
+import { AuthUI, Label, Input, PasswordInput, Button, OTPInput, Select } from '@/components/ui/auth-fuse';
 import { Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { BrandLogo } from '@/components/ui/BrandLogo';
-import { AnimatePresence } from 'framer-motion';
 import { useToastStore } from '@/store/toastStore';
+
+type RoleOption = 'student' | 'faculty' | 'admin';
 
 export default function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [selectedRole, setSelectedRole] = useState<RoleOption | ''>('');
     const [newPassword, setNewPassword] = useState('');
     const [otp, setOtp] = useState('');
     const [view, setView] = useState<'login' | 'forgot' | 'otp' | 'reset'>('login');
     const { showToast } = useToastStore();
-    const { login, forgotPassword, resetPassword, googleAuth, microsoftAuth, isLoading, error, clearError, token } = useAuthStore();
+    const { login, forgotPassword, resetPassword, googleAuth, isLoading, error, clearError, token } = useAuthStore();
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -29,8 +31,12 @@ export default function Login() {
 
     const handleLoginSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (!selectedRole) {
+            showToast('Please choose your role first.');
+            return;
+        }
         try {
-            await login(email, password);
+            await login(email, password, selectedRole);
             navigate('/dashboard');
         } catch (err: any) {
             showToast(err.message || "Invalid credentials.");
@@ -71,25 +77,22 @@ export default function Login() {
     };
 
     const handleGoogleAuth = async () => {
+        if (!selectedRole) {
+            showToast('Please choose your role before continuing with Google.');
+            return;
+        }
         try {
-            await googleAuth();
+            window.localStorage.setItem('unigpt:pending-role', selectedRole);
+            await googleAuth(selectedRole);
         } catch (err: any) {
             showToast(err.message || "Google authentication failed.");
-        }
-    };
-
-    const handleMicrosoftAuth = async () => {
-        try {
-            await microsoftAuth();
-        } catch (err: any) {
-            showToast(err.message || "Microsoft authentication failed.");
         }
     };
 
 
     if (view === 'forgot') {
         return (
-            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
+            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth}>
                 <form onSubmit={handleForgotSubmit} className="flex flex-col gap-6">
                     <div className="flex flex-col items-center gap-2 text-center">
                         <div className="w-10 h-10 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
@@ -129,7 +132,7 @@ export default function Login() {
 
     if (view === 'otp') {
         return (
-            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
+            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth}>
                 <form onSubmit={handleOtpSubmit} className="flex flex-col gap-8">
                     <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-10 h-10 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
@@ -163,7 +166,7 @@ export default function Login() {
 
     if (view === 'reset') {
         return (
-            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth} onMicrosoftClick={handleMicrosoftAuth}>
+            <AuthUI isSignIn={true} onToggle={() => navigate('/auth/signup')} onGoogleClick={handleGoogleAuth}>
                 <form onSubmit={handleResetSubmit} className="flex flex-col gap-8">
                     <div className="flex flex-col items-center gap-3 text-center">
                         <div className="w-10 h-10 bg-orange-500/10 border border-orange-500/20 rounded-2xl flex items-center justify-center mb-1 shadow-[0_0_20px_rgba(249,115,22,0.1)]">
@@ -178,7 +181,7 @@ export default function Login() {
                     <div className="grid gap-6">
                         <PasswordInput
                             label="New Password"
-                            placeholder="••••••••"
+                            placeholder="********"
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
                             required
@@ -202,7 +205,6 @@ export default function Login() {
             isSignIn={true}
             onToggle={() => navigate('/auth/signup')}
             onGoogleClick={handleGoogleAuth}
-            onMicrosoftClick={handleMicrosoftAuth}
         >
             <form onSubmit={handleLoginSubmit} autoComplete="on" className="flex flex-col gap-6">
                 <div className="flex flex-col items-center gap-2 text-center">
@@ -225,6 +227,21 @@ export default function Login() {
 
                 <div className="grid gap-4">
                     <div className="grid gap-1.5">
+                        <Label htmlFor="role" className="text-zinc-400 font-medium ml-1">Choose Role</Label>
+                        <Select
+                            id="role"
+                            value={selectedRole || undefined}
+                            onValueChange={(value) => setSelectedRole(value as RoleOption)}
+                            placeholder="Select your role"
+                            options={[
+                                { value: "student", label: "Student" },
+                                { value: "faculty", label: "Faculty" },
+                                { value: "admin", label: "Admin" },
+                            ]}
+                        />
+                    </div>
+
+                    <div className="grid gap-1.5">
                         <Label htmlFor="email" className="text-zinc-400 font-medium ml-1">Email</Label>
                         <Input
                             id="email"
@@ -239,7 +256,7 @@ export default function Login() {
                     <div className="space-y-1">
                         <PasswordInput
                             label="Password"
-                            placeholder="••••••••"
+                            placeholder="********"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                             required
@@ -258,7 +275,7 @@ export default function Login() {
                     <Button
                         type="submit"
                         className="mt-2 h-11 text-sm font-bold bg-white text-black hover:bg-zinc-200 transition-all rounded-xl shadow-[0_0_20px_rgba(255,255,255,0.1)]"
-                        disabled={isLoading}
+                        disabled={isLoading || !selectedRole}
                     >
                         {isLoading ? (
                             <>
@@ -274,3 +291,4 @@ export default function Login() {
         </AuthUI>
     );
 }
+
