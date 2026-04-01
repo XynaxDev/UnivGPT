@@ -14,12 +14,14 @@ import {
     Layers,
     FileText,
     Activity,
+    GraduationCap,
+    UserRound,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { authApi, documentsApi, type DocumentResponse, type UserExportData } from '@/lib/api';
+import { authApi, documentsApi, type DocumentResponse, type UserExportData, type FacultySummary } from '@/lib/api';
 
 type DashboardNotice = {
     id: string;
@@ -27,6 +29,13 @@ type DashboardNotice = {
     tag: string;
     dateLabel: string;
     priority: 'high' | 'medium' | 'low';
+};
+
+type FacultyCard = {
+    id: string;
+    full_name: string;
+    subtitle: string;
+    synthetic?: boolean;
 };
 
 const toShortDate = (value?: string) => {
@@ -77,6 +86,23 @@ const mapNotice = (doc: DocumentResponse): DashboardNotice => {
     };
 };
 
+const initialsFromName = (name: string) => {
+    const clean = name.trim();
+    if (!clean) return 'F';
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const buildFallbackFacultyCards = (program?: string | null): FacultyCard[] => {
+    const programHint = (program || 'Core').toUpperCase();
+    return [
+        { id: 'fallback-fac-1', full_name: 'Dr. Priya Sharma', subtitle: `${programHint} Mentor`, synthetic: true },
+        { id: 'fallback-fac-2', full_name: 'Prof. Rohan Verma', subtitle: 'Academic Coordinator', synthetic: true },
+        { id: 'fallback-fac-3', full_name: 'Dr. Meera Nair', subtitle: 'Student Advisor', synthetic: true },
+    ];
+};
+
 export default function StudentDashboard() {
     const { user, token } = useAuthStore();
     const navigate = useNavigate();
@@ -84,23 +110,31 @@ export default function StudentDashboard() {
 
     const [exportData, setExportData] = useState<UserExportData | null>(null);
     const [documents, setDocuments] = useState<DocumentResponse[]>([]);
+    const [facultyMembers, setFacultyMembers] = useState<FacultySummary[]>([]);
+    const [facultyLoading, setFacultyLoading] = useState(false);
 
     useEffect(() => {
         let alive = true;
         const loadData = async () => {
             if (!token) return;
+            setFacultyLoading(true);
             try {
-                const [exportPayload, docsPayload] = await Promise.all([
+                const [exportPayload, docsPayload, facultyPayload] = await Promise.all([
                     authApi.exportUserData(token),
                     documentsApi.list(token, { page: 1, per_page: 60 }),
+                    authApi.getFacultyDirectory(token, 12).catch(() => ({ faculty: [], total: 0 })),
                 ]);
                 if (!alive) return;
                 setExportData(exportPayload);
                 setDocuments(docsPayload.documents || []);
+                setFacultyMembers(facultyPayload.faculty || []);
             } catch {
                 if (!alive) return;
                 setExportData(null);
                 setDocuments([]);
+                setFacultyMembers([]);
+            } finally {
+                if (alive) setFacultyLoading(false);
             }
         };
 
@@ -122,6 +156,17 @@ export default function StudentDashboard() {
             .map(mapNotice);
     }, [documents]);
 
+    const facultyCards = useMemo<FacultyCard[]>(() => {
+        if (facultyMembers.length > 0) {
+            return facultyMembers.slice(0, 4).map((member) => ({
+                id: member.id,
+                full_name: member.full_name,
+                subtitle: member.program || member.department || 'Faculty',
+            }));
+        }
+        return buildFallbackFacultyCards(user?.program);
+    }, [facultyMembers, user?.program]);
+
     const openChatWithPrefill = (prefill: string) => {
         navigate('/dashboard/chat', { state: { prefill } });
     };
@@ -134,54 +179,67 @@ export default function StudentDashboard() {
         openChatWithPrefill(`Summarize this notice and tell me key deadlines: ${title}`);
     };
 
+    const openFaculty = (faculty: FacultyCard) => {
+        if (!faculty.synthetic) {
+            navigate(`/dashboard/faculty/${faculty.id}`);
+            return;
+        }
+        openChatWithPrefill(`Share contact and office-hour guidance for ${faculty.full_name}.`);
+    };
+
     const metrics = [
         {
             label: 'Attendance Target',
             value: '75%',
             hint: 'Minimum policy threshold',
             icon: CheckCircle2,
-            color: 'text-green-500',
+            color: 'text-emerald-400',
         },
         {
             label: 'Query Count',
             value: exportData ? String(exportData.queries) : '--',
             hint: 'From your account history',
             icon: Activity,
-            color: 'text-orange-500',
+            color: 'text-orange-400',
         },
         {
             label: 'Accessible Docs',
             value: exportData ? String(exportData.documents) : '--',
             hint: 'Role-based document access',
             icon: FileText,
-            color: 'text-blue-400',
+            color: 'text-sky-400',
         },
         {
             label: 'Profile Semester',
             value: user?.semester || 'Not set',
             hint: user?.program || 'Program not set',
             icon: Layers,
-            color: 'text-purple-400',
+            color: 'text-violet-400',
         },
     ];
 
     return (
         <div className="p-6 md:p-8 space-y-7 pb-20 overflow-y-auto h-full max-w-7xl mx-auto w-full">
-            <header className="rounded-3xl border border-white/[0.08] bg-gradient-to-r from-zinc-900/90 via-zinc-900/70 to-zinc-900/40 p-6">
-                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
-                    <div className="space-y-1.5">
+            <header className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-r from-zinc-900 via-zinc-900/95 to-slate-900/80 p-6">
+                <div className="absolute -top-20 right-6 w-64 h-64 bg-cyan-400/10 blur-[90px] rounded-full pointer-events-none" />
+                <div className="absolute -bottom-16 left-8 w-56 h-56 bg-orange-500/10 blur-[90px] rounded-full pointer-events-none" />
+                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                    <div className="space-y-2">
+                        <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.03] px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-300">
+                            <GraduationCap className="w-3.5 h-3.5 text-orange-400" /> Student Workspace
+                        </div>
                         <h1 className="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
-                            Student Portal: <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-400">{firstName}</span>
+                            Student Portal <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-300">{firstName}</span>
                         </h1>
-                        <p className="text-zinc-500 text-sm max-w-xl">
-                            Your live academic workspace with notices, course updates, and assistant actions.
+                        <p className="text-zinc-400 text-sm max-w-xl">
+                            Live academic dashboard for notices, faculty contacts, and assistant-driven study actions.
                         </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
                         <Link to="/dashboard/chat">
                             <Button className="bg-orange-600 hover:bg-orange-500 text-white font-semibold px-6 h-11 rounded-2xl shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex gap-2 text-sm">
-                                <Sparkles className="w-4 h-4" /> Ask University Assistant
+                                <Sparkles className="w-4 h-4" /> Ask UnivGPT Assistant
                             </Button>
                         </Link>
                         <Link to="/dashboard/courses">
@@ -200,7 +258,7 @@ export default function StudentDashboard() {
                         initial={{ opacity: 0, y: 14 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: i * 0.08 }}
-                        className="rounded-2xl border border-white/[0.08] bg-zinc-900/55 p-5 hover:border-white/[0.16] transition-all"
+                        className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/65 to-zinc-950/60 p-5 hover:border-white/[0.16] transition-all"
                     >
                         <div className="flex items-start justify-between mb-3">
                             <div className={cn('p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.05]', item.color)}>
@@ -215,9 +273,45 @@ export default function StudentDashboard() {
                 ))}
             </section>
 
+            <section className="rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5 sm:p-6">
+                <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <UserRound className="w-4 h-4 text-cyan-400" /> Faculty Section
+                    </h3>
+                    <span className="text-[10px] font-bold text-zinc-600">{facultyLoading ? 'Syncing...' : `${facultyCards.length} mentors`}</span>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+                    {facultyCards.map((member) => (
+                        <button
+                            key={member.id}
+                            onClick={() => openFaculty(member)}
+                            className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center gap-3 hover:border-cyan-400/35 hover:bg-cyan-400/5 transition-all text-left"
+                        >
+                            <div className="w-10 h-10 rounded-lg border border-cyan-400/25 bg-cyan-400/10 flex items-center justify-center text-[11px] font-bold text-cyan-200 shrink-0">
+                                {initialsFromName(member.full_name)}
+                            </div>
+                            <div className="min-w-0">
+                                <p className="text-xs font-semibold text-zinc-200 truncate">{member.full_name}</p>
+                                <p className="text-[10px] text-zinc-500 truncate">{member.subtitle}</p>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+                <div className="flex justify-end mt-4">
+                    <Button
+                        variant="outline"
+                        onClick={() => navigate('/dashboard/courses')}
+                        className="border-white/[0.12] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl h-10 font-semibold text-xs group"
+                    >
+                        Explore Course Faculty
+                        <ChevronRight className="w-4 h-4 ml-2 text-zinc-600 group-hover:text-orange-400 transition-colors" />
+                    </Button>
+                </div>
+            </section>
+
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                <div className="lg:col-span-8 flex flex-col gap-6">
-                    <div className="rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5 sm:p-6">
+                <div className="lg:col-span-8">
+                    <div className="rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5 sm:p-6 h-full">
                         <div className="flex items-center justify-between mb-5">
                             <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <Bell className="w-4 h-4 text-orange-400" /> Official Notices
@@ -278,31 +372,10 @@ export default function StudentDashboard() {
                             </div>
                         )}
                     </div>
-
-                    <div className="rounded-3xl border border-white/[0.08] bg-gradient-to-r from-zinc-900 to-black p-6 relative overflow-hidden">
-                        <div className="absolute -right-10 -top-10 w-40 h-40 bg-orange-500/5 blur-[80px] rounded-full" />
-                        <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
-                            <div>
-                                <div className="flex items-center gap-2 mb-2">
-                                    <MapPin className="w-4 h-4 text-orange-400" />
-                                    <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest">Campus Explorer</span>
-                                </div>
-                                <h3 className="text-2xl font-black text-white leading-tight">Need policy or campus help?</h3>
-                                <p className="text-zinc-400 text-sm mt-2 max-w-lg">
-                                    Ask about rules, facilities, deadlines, and route-specific notices instantly.
-                                </p>
-                            </div>
-                            <Link to="/dashboard/chat" state={{ prefill: 'Show me the latest student notices with deadlines and categories.' }}>
-                                <Button className="bg-white text-black hover:bg-zinc-200 h-12 px-7 rounded-xl font-semibold transition-all shadow-xl shadow-black/20 text-sm">
-                                    Ask Assistant
-                                </Button>
-                            </Link>
-                        </div>
-                    </div>
                 </div>
 
-                <div className="lg:col-span-4 flex flex-col gap-6">
-                    <div className="rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5">
+                <div className="lg:col-span-4">
+                    <div className="rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5 h-full">
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="text-sm font-bold text-white flex items-center gap-2">
                                 <Calendar className="w-4 h-4 text-orange-400" /> Upcoming Focus
@@ -334,12 +407,38 @@ export default function StudentDashboard() {
                             </Button>
                         </Link>
                     </div>
+                </div>
+            </div>
 
-                    <div className="rounded-3xl border border-orange-500/20 bg-orange-600/[0.06] p-5 text-center">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                <div className="lg:col-span-8">
+                    <div className="rounded-3xl border border-white/[0.08] bg-gradient-to-r from-zinc-900 to-black p-6 relative overflow-hidden h-full">
+                        <div className="absolute -right-10 -top-10 w-40 h-40 bg-orange-500/5 blur-[80px] rounded-full" />
+                        <div className="relative z-10 grid gap-4 md:grid-cols-[1fr_auto] md:items-center">
+                            <div>
+                                <div className="flex items-center gap-2 mb-2">
+                                    <MapPin className="w-4 h-4 text-orange-400" />
+                                    <span className="text-[10px] font-bold text-orange-500 uppercase tracking-widest">Campus Explorer</span>
+                                </div>
+                                <h3 className="text-2xl font-black text-white leading-tight">Need policy or campus help?</h3>
+                                <p className="text-zinc-400 text-sm mt-2 max-w-lg">
+                                    Ask about rules, facilities, deadlines, and route-specific notices instantly.
+                                </p>
+                            </div>
+                            <Link to="/dashboard/chat" state={{ prefill: 'Show me the latest student notices with deadlines and categories.' }}>
+                                <Button className="bg-white text-black hover:bg-zinc-200 h-12 px-7 rounded-xl font-semibold transition-all shadow-xl shadow-black/20 text-sm">
+                                    Ask Assistant
+                                </Button>
+                            </Link>
+                        </div>
+                    </div>
+                </div>
+                <div className="lg:col-span-4">
+                    <div className="rounded-3xl border border-orange-500/20 bg-orange-600/[0.06] p-5 text-center h-full flex flex-col justify-center">
                         <Wallet className="w-5 h-5 text-orange-500 mx-auto mb-2" />
                         <h4 className="text-[11px] font-bold text-orange-500 uppercase tracking-widest mb-1.5">Data Sync</h4>
                         <p className="text-[11px] text-zinc-500 leading-relaxed">
-                            Dashboard stats are generated from your live profile, notice documents, and query history.
+                            Dashboard stats are generated from your live profile, notice documents, faculty feed, and query history.
                         </p>
                     </div>
                 </div>
