@@ -283,6 +283,147 @@ def render_admin_snapshot(snapshot: dict) -> str:
     return "\n".join(lines)
 
 
+def fetch_user_profile_context(supabase, user_id: str) -> dict[str, Any]:
+    if not supabase or not user_id:
+        return {}
+    try:
+        try:
+            res = (
+                supabase.table("profiles")
+                .select("id,email,full_name,role,department,program,semester,section,roll_number")
+                .eq("id", user_id)
+                .limit(1)
+                .execute()
+            )
+        except Exception as exc:
+            # Backward compatibility for schemas without extended academic columns.
+            if any(marker in str(exc).lower() for marker in ("program", "semester", "section", "roll_number")):
+                res = (
+                    supabase.table("profiles")
+                    .select("id,email,full_name,role,department")
+                    .eq("id", user_id)
+                    .limit(1)
+                    .execute()
+                )
+            else:
+                raise
+        return (res.data or [{}])[0]
+    except Exception:
+        return {}
+
+
+def _doc_datetime(row: dict[str, Any]) -> Optional[datetime.datetime]:
+    raw = row.get("uploaded_at") or row.get("created_at")
+    if not raw:
+        return None
+    try:
+        return datetime.datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def _normalize(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _matches_filter(value: Any, expected: str) -> bool:
+    return expected in _normalize(value)
+
+
+def should_filter_recent_documents(query: str, intent: dict[str, Any]) -> bool:
+    if intent.get("date_reference") in {"today", "tomorrow", "yesterday"}:
+        return True
+    if intent.get("document_date"):
+        return True
+    text = _normalize(query)
+    markers = ("recent", "latest", "new", "present", "today", "this week", "this month")
+    return any(marker in text for marker in markers)
+
+
+def fetch_filtered_documents(
+    supabase,
+    allowed_types: list[str],
+    intent: dict[str, Any],
+    context: Optional[dict],
+    query: str,
+) -> list[dict[str, Any]]:
+    if not supabase:
+        return []
+    try:
+        try:
+            res = (
+                supabase.table("documents")
+                .select("id,filename,doc_type,department,course,tags,uploaded_at,created_at")
+                .in_("doc_type", allowed_types)
+                .order("uploaded_at", desc=True)
+                .limit(500)
+                .execute()
+            )
+        except Exception as exc:
+            if "uploaded_at" in str(exc).lower():
+                res = (
+                    supabase.table("documents")
+                    .select("id,filename,doc_type,department,course,tags,created_at")
+                    .in_("doc_type", allowed_types)
+                    .order("created_at", desc=True)
+                    .limit(500)
+                    .execute()
+                )
+            else:
+                raise
+    except Exception:
+        return []
+
+    rows = res.data or []
+    doc_type_filter = _normalize(intent.get("doc_type") or intent.get("role"))
+    department_filter = _normalize(intent.get("department") or (context or {}).get("dept"))
+    course_filter = _normalize(intent.get("course") or (context or {}).get("course"))
+    tags_filter = [str(tag).strip().lower() for tag in (intent.get("tags") or []) if str(tag).strip()]
+    target_entity = _normalize(intent.get("target_entity"))
+    notice_mode = any(marker in target_entity for marker in ("notice", "announcement", "circular")) or any(
+        marker in _normalize(query) for marker in ("notice", "announcement", "circular")
+    )
+    recent_mode = should_filter_recent_documents(query, intent)
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+
+    filtered: list[dict[str, Any]] = []
+    for row in rows:
+        doc_type = _normalize(row.get("doc_type"))
+        if doc_type_filter and doc_type != doc_type_filter:
+            continue
+        if department_filter and not _matches_filter(row.get("department"), department_filter):
+            continue
+        if course_filter and not _matches_filter(row.get("course"), course_filter):
+            continue
+
+        tags = [str(tag).strip().lower() for tag in (row.get("tags") or []) if str(tag).strip()]
+        if tags_filter and not all(tag in tags for tag in tags_filter):
+            continue
+
+        if notice_mode:
+            filename = _normalize(row.get("filename"))
+            is_notice = any(marker in filename for marker in ("notice", "announcement", "circular")) or any(
+                marker in tags for marker in ("notice", "announcement", "circular")
+            )
+            if not is_notice:
+                continue
+
+        if recent_mode:
+            dt = _doc_datetime(row)
+            if not dt:
+                continue
+            if (now_utc - dt.astimezone(datetime.timezone.utc)) > datetime.timedelta(days=30):
+                continue
+
+        filtered.append(row)
+
+    filtered.sort(
+        key=lambda item: _doc_datetime(item) or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+        reverse=True,
+    )
+    return filtered
+
+
 def utc_now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
@@ -335,7 +476,7 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
     - is_flagged: boolean
     - reason: string (if flagged)
     - intent_type: one of ["count_users","count_documents","list_documents","document_date_lookup","holiday_check","general"]
-    - target_entity: string (e.g., "students", "faculty", "admins", "users", "documents")
+    - target_entity: string (e.g., "students", "faculty", "admins", "users", "documents", "notices")
     - document_date: "YYYY-MM-DD" if asking for uploads on a date (use today/tomorrow/yesterday if referenced)
     - date_reference: one of ["today","tomorrow","yesterday"] if explicitly used
     - doc_type, role, department, course, tags (if relevant)
@@ -494,13 +635,32 @@ async def run_agent_pipeline(
 
     # 2. Search Pinecone for context
     allowed_types = get_allowed_doc_types(user_role)
+    user_profile = fetch_user_profile_context(supabase, user_id)
+    user_profile_lines = [
+        f"- Name: {user_profile.get('full_name') or 'Unknown'}",
+        f"- Email: {user_profile.get('email') or 'Unknown'}",
+        f"- Role: {user_profile.get('role') or user_role}",
+        f"- Department: {user_profile.get('department') or '-'}",
+        f"- Program: {user_profile.get('program') or '-'}",
+        f"- Semester: {user_profile.get('semester') or '-'}",
+        f"- Section: {user_profile.get('section') or '-'}",
+    ]
+    user_profile_text = "USER PROFILE CONTEXT:\n" + "\n".join(user_profile_lines)
 
     # Build filter dynamically
     base_filter = {"role": {"$in": allowed_types}}
+    context = context or {}
+    if context.get("dept"):
+        base_filter["department"] = str(context.get("dept"))
+    if context.get("course"):
+        base_filter["course"] = str(context.get("course"))
 
     # Apply all dynamically extracted intent filters, ensuring we don't accidentally override RBAC completely
+    allowed_filter_keys = {"doc_type", "role", "department", "course", "tags"}
     for key, value in intent.items():
         if value is None:
+            continue
+        if key not in allowed_filter_keys:
             continue
         # If the LLM guessed a generic doc_type or role, we MUST ensure the user has permission to see it
         if key in ["doc_type", "role"]:
@@ -511,6 +671,84 @@ async def run_agent_pipeline(
 
     chunks = []
     context_text = ""
+    structured_sources: list[dict[str, Any]] = []
+    forced_answer: Optional[str] = None
+
+    intent_type = _normalize(intent.get("intent_type"))
+    target_entity = _normalize(intent.get("target_entity"))
+    doc_lookup_requested = intent_type in {"count_documents", "list_documents", "document_date_lookup"} or any(
+        marker in target_entity for marker in ("document", "notice", "announcement", "circular", "holiday")
+    ) or any(marker in _normalize(query) for marker in ("notice", "announcement", "circular"))
+
+    if supabase and doc_lookup_requested:
+        filtered_docs = fetch_filtered_documents(
+            supabase=supabase,
+            allowed_types=allowed_types,
+            intent=intent,
+            context=context,
+            query=query,
+        )
+        doc_count = len(filtered_docs)
+        scope_tokens = []
+        if intent.get("department") or context.get("dept"):
+            scope_tokens.append(f"department `{intent.get('department') or context.get('dept')}`")
+        if intent.get("course") or context.get("course"):
+            scope_tokens.append(f"course `{intent.get('course') or context.get('course')}`")
+        if intent.get("doc_type") or intent.get("role"):
+            scope_tokens.append(f"type `{intent.get('doc_type') or intent.get('role')}`")
+        scope = ", ".join(scope_tokens) if scope_tokens else "your allowed scope"
+
+        if doc_count == 0 and intent_type in {"count_documents", "list_documents"}:
+            forced_answer = (
+                f"I checked the database for {scope} and found 0 documents right now."
+            )
+        elif doc_count > 0 and intent_type == "count_documents":
+            preview_lines = []
+            for row in filtered_docs[:5]:
+                preview_lines.append(
+                    f"- {_format_short_date(row.get('uploaded_at') or row.get('created_at'))} | "
+                    f"{row.get('doc_type') or 'unknown'} | {row.get('filename') or 'untitled'}"
+                )
+            preview_block = "\n".join(preview_lines)
+            forced_answer = (
+                f"I found **{doc_count} documents** for {scope}.\n\n"
+                f"Recent matches:\n{preview_block}"
+            )
+
+        if doc_count == 0:
+            context_text += "\n[Structured Lookup: 0 documents matched current filters.]\n"
+        else:
+            context_lines = [f"[Structured Lookup: {doc_count} documents matched current filters.]"]
+            for row in filtered_docs[:10]:
+                row_date = _format_short_date(row.get("uploaded_at") or row.get("created_at"))
+                row_tags = ", ".join(row.get("tags") or []) if isinstance(row.get("tags"), list) else ""
+                context_lines.append(
+                    f"- {row_date} | {row.get('doc_type') or 'unknown'} | {row.get('filename') or 'untitled'}"
+                    f" | dept: {row.get('department') or '-'} | course: {row.get('course') or '-'}"
+                    f"{f' | tags: {row_tags}' if row_tags else ''}"
+                )
+            context_text += "\n" + "\n".join(context_lines) + "\n"
+
+            for row in filtered_docs[:5]:
+                structured_sources.append(
+                    {
+                        "content": (
+                            f"doc_type: {row.get('doc_type') or 'unknown'}, "
+                            f"department: {row.get('department') or '-'}, "
+                            f"course: {row.get('course') or '-'}, "
+                            f"tags: {', '.join(row.get('tags') or []) if isinstance(row.get('tags'), list) else ''}"
+                        ),
+                        "filename": row.get("filename") or "Unknown",
+                        "document_id": row.get("id"),
+                        "metadata": {
+                            "doc_type": row.get("doc_type"),
+                            "department": row.get("department"),
+                            "course": row.get("course"),
+                            "tags": row.get("tags") or [],
+                            "uploaded_at": row.get("uploaded_at") or row.get("created_at"),
+                        },
+                    }
+                )
 
     if pinecone_client.index:
         try:
@@ -552,8 +790,8 @@ async def run_agent_pipeline(
     else:
         logger.warning("Pinecone index not initialized. Skipping vector search.")
 
-    if not chunks:
-        context_text += "\n[System Note: No specific university documents matched the query or the database is currently empty. If a question specifically asks for internal university data (policies, curriculum, deadlines), clarify that you don't have access to documents yet.]\n"
+    if not chunks and not structured_sources:
+        context_text += "\n[System Note: No documents matched the query in the current database (0 documents for current filters).]\n"
 
     # 3. Generate Answer (using OpenRouter)
     current_time_str = f"Current Date: {datetime.datetime.now().strftime('%A, %B %d, %Y')}. Current Time: {datetime.datetime.now().strftime('%I:%M %p')}"
