@@ -232,6 +232,14 @@ export default function CoursesPage() {
         navigate(`/dashboard/faculty/${id}`);
     };
 
+    const openFacultyCard = (member: DisplayFaculty) => {
+        if (member.isSynthetic) {
+            navigate('/dashboard/faculty', { state: { focusFaculty: member.full_name } });
+            return;
+        }
+        openFaculty(member.id);
+    };
+
     return (
         <div className="h-full overflow-y-auto">
             <div className="p-6 md:p-8 space-y-8 pb-20 max-w-7xl mx-auto">
@@ -354,21 +362,10 @@ export default function CoursesPage() {
                                                     </>
                                                 );
 
-                                                if (member.isSynthetic) {
-                                                    return (
-                                                        <div
-                                                            key={member.id}
-                                                            className="w-full rounded-xl border border-white/[0.08] bg-white/[0.02] px-3 py-2 flex items-center gap-3"
-                                                        >
-                                                            {cardBody}
-                                                        </div>
-                                                    );
-                                                }
-
                                                 return (
                                                     <button
                                                         key={member.id}
-                                                        onClick={() => openFaculty(member.id)}
+                                                        onClick={() => openFacultyCard(member)}
                                                         className="w-full rounded-xl border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] hover:border-orange-500/30 px-3 py-2 flex items-center gap-3 transition-all"
                                                     >
                                                         {cardBody}
@@ -453,20 +450,10 @@ export default function CoursesPage() {
                                                         </span>
                                                     </>
                                                 );
-                                                if (member.isSynthetic) {
-                                                    return (
-                                                        <div
-                                                            key={member.id}
-                                                            className="px-2 py-1 rounded-md border border-white/[0.08] bg-white/[0.02] inline-flex items-center gap-1.5"
-                                                        >
-                                                            {chip}
-                                                        </div>
-                                                    );
-                                                }
                                                 return (
                                                     <button
                                                         key={member.id}
-                                                        onClick={() => openFaculty(member.id)}
+                                                        onClick={() => openFacultyCard(member)}
                                                         className="px-2 py-1 rounded-md border border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.05] hover:border-orange-500/30 inline-flex items-center gap-1.5 transition-colors"
                                                     >
                                                         {chip}

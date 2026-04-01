@@ -184,7 +184,7 @@ export default function StudentDashboard() {
             navigate(`/dashboard/faculty/${faculty.id}`);
             return;
         }
-        openChatWithPrefill(`Share contact and office-hour guidance for ${faculty.full_name}.`);
+        navigate('/dashboard/faculty', { state: { focusFaculty: faculty.full_name } });
     };
 
     const metrics = [
@@ -300,10 +300,10 @@ export default function StudentDashboard() {
                 <div className="flex justify-end mt-4">
                     <Button
                         variant="outline"
-                        onClick={() => navigate('/dashboard/courses')}
+                        onClick={() => navigate('/dashboard/faculty')}
                         className="border-white/[0.12] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl h-10 font-semibold text-xs group"
                     >
-                        Explore Course Faculty
+                        Explore Faculty Directory
                         <ChevronRight className="w-4 h-4 ml-2 text-zinc-600 group-hover:text-orange-400 transition-colors" />
                     </Button>
                 </div>
