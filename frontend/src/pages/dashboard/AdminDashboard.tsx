@@ -257,7 +257,7 @@ function AdminChatBubble() {
                         initial={{ opacity: 0, y: 20, scale: 0.9 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: 20, scale: 0.9 }}
-                        className="absolute bottom-16 right-0 w-[calc(100vw-3rem)] sm:w-[400px] h-[540px] bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden"
+                        className="absolute bottom-16 right-0 w-[calc(100vw-2rem)] sm:w-[420px] md:w-[460px] h-[560px] bg-zinc-950 border border-white/10 rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden"
                     >
                         <div className="flex items-center justify-between px-4 py-3 border-b border-white/[0.06] bg-gradient-to-r from-orange-500/5 to-transparent shrink-0">
                             <div className="flex items-center gap-2.5">
@@ -316,7 +316,7 @@ function AdminChatBubble() {
                                         )}
                                     </div>
                                     <div
-                                        className={`rounded-xl px-3 py-2 text-xs max-w-[82%] leading-relaxed ${
+                                        className={`rounded-xl px-3 py-2 text-sm max-w-[82%] leading-relaxed ${
                                             msg.role === 'user'
                                                 ? 'bg-orange-500/10 border border-orange-500/20 text-white'
                                                 : 'bg-white/[0.04] border border-white/[0.06] text-zinc-300'
@@ -369,7 +369,7 @@ function AdminChatBubble() {
                                     value={input}
                                     onChange={(e) => setInput(e.target.value)}
                                     placeholder="Ask about users, docs, system..."
-                                    className="flex-1 bg-transparent py-2.5 text-xs outline-none placeholder:text-zinc-700"
+                                    className="flex-1 bg-transparent py-2.5 text-sm outline-none placeholder:text-zinc-700"
                                     disabled={isQuerying}
                                 />
                                 <Button

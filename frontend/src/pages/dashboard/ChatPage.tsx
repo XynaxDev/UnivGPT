@@ -219,7 +219,7 @@ export default function ChatPage() {
                                     Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, <span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-400 to-amber-400">{firstName}</span>
                                 </h2>
                                 <p className="text-zinc-500 text-sm leading-relaxed max-w-md mx-auto">
-                                    Ask me anything about your university — courses, policies, research, deadlines, and more.
+                                    Ask me anything about your university - courses, policies, research, deadlines, and more.
                                 </p>
                             </div>
 
@@ -280,7 +280,7 @@ export default function ChatPage() {
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={handleKeyDown}
-                            onWheel={(e) => e.stopPropagation()}
+                            onWheelCapture={(e) => e.stopPropagation()}
                             placeholder="Ask about courses, policies, research..."
                             data-lenis-prevent="true"
                             className="flex-1 bg-transparent px-4 py-3 sm:px-5 sm:py-4 text-xs sm:text-sm placeholder:text-zinc-600 outline-none resize-none max-h-40 min-h-[44px] sm:min-h-[52px] text-white overflow-y-auto overscroll-contain"
@@ -318,3 +318,4 @@ export default function ChatPage() {
         </div>
     );
 }
+
