@@ -28,8 +28,12 @@ export default function NotificationsPage() {
     const unread = useMemo(() => items.filter((item) => item.unread).length, [items]);
 
     const loadNotifications = useCallback(async (force = false) => {
-        if (!token) return;
-        if (!hasLoadedOnceRef.current) {
+        if (!token) {
+            setItems([]);
+            setIsLoading(false);
+            return;
+        }
+        if (!hasLoadedOnceRef.current || force) {
             setIsLoading(true);
         }
         try {

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, Outlet, Link } from 'react-router-dom';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import {
     LayoutDashboard, LogOut, Bell,
     MessageSquare, FileText, Users, Shield, Settings,
@@ -280,15 +280,17 @@ export default function DashboardLayout() {
                                                     </div>
                                                 ))}
                                             </div>
-                                            <Link
-                                                to="/dashboard/notifications"
+                                            <button
+                                                type="button"
                                                 onClick={() => {
                                                     setShowNotifications(false);
+                                                    setIsLoadingNotifications(false);
+                                                    navigate('/dashboard/notifications');
                                                 }}
                                                 className="w-full px-4 py-3 text-xs text-orange-300 hover:text-orange-200 border-t border-white/[0.06] flex items-center justify-center gap-1.5 bg-black/40 hover:bg-white/[0.03]"
                                             >
                                                 View all notifications <ChevronRight className="w-3.5 h-3.5" />
-                                            </Link>
+                                            </button>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
@@ -322,7 +324,7 @@ export default function DashboardLayout() {
                 </div>
                 {/* Backdrop for notifications */}
                 {showNotifications && (
-                    <div className="fixed inset-0 z-[90]" onClick={() => setShowNotifications(false)} />
+                    <div className="fixed inset-0 z-[20]" onClick={() => setShowNotifications(false)} />
                 )}
             </div>
         </div>

@@ -1,5 +1,5 @@
 /**
- * UniGPT API Client
+ * UnivGPT API Client
  * Typed API client for communicating with the Hybrid FastAPI backend.
  */
 
@@ -12,32 +12,45 @@ interface RequestOptions {
     body?: unknown;
     token?: string;
     isFormData?: boolean;
+    timeoutMs?: number;
 }
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = 'GET', body, token, isFormData = false } = options;
+    const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 10_000 : 45_000);
     const headers: Record<string, string> = {};
     const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (!isFormData) headers['Content-Type'] = 'application/json';
 
-    const config: RequestInit = { method, headers };
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const config: RequestInit = { method, headers, signal: controller.signal };
     if (body) {
         config.body = isFormData ? (body as FormData) : JSON.stringify(body);
     }
 
-    const response = await fetch(`${API_BASE}${path}`, config);
-    if (!response.ok) {
-        if (response.status === 401 && options.token) {
-            // Auto-logout ONLY if an authenticated request gets rejected (corrupted/expired token).
-            // Do NOT redirect for failed logins.
-            localStorage.removeItem('unigpt-auth');
-            window.location.href = '/auth/login';
+    try {
+        const response = await fetch(`${API_BASE}${path}`, config);
+        if (!response.ok) {
+            if (response.status === 401 && options.token) {
+                // Auto-logout ONLY if an authenticated request gets rejected (corrupted/expired token).
+                // Do NOT redirect for failed logins.
+                localStorage.removeItem('unigpt-auth');
+                window.location.href = '/auth/login';
+            }
+            const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+            throw new Error(error.detail || `HTTP ${response.status}`);
         }
-        const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-        throw new Error(error.detail || `HTTP ${response.status}`);
+        return response.json();
+    } catch (error: any) {
+        if (error?.name === 'AbortError') {
+            throw new Error('Request timed out. Please retry.');
+        }
+        throw error;
+    } finally {
+        clearTimeout(timeoutId);
     }
-    return response.json();
 }
 
 function tokenSuffix(token?: string) {
@@ -127,7 +140,7 @@ export const authApi = {
         return cachedGet(
             buildCacheKey('user-notifications', token, String(limit)),
             10_000,
-            () => request<UserNotificationListResponse>(endpoint, { token }),
+            () => request<UserNotificationListResponse>(endpoint, { token, timeoutMs: 7_000 }),
         );
     },
     markNotificationsRead: (token: string) =>
@@ -142,7 +155,7 @@ export const authApi = {
             () =>
                 request<FacultyListResponse>(
                     `/user/faculty?limit=${encodeURIComponent(String(limit))}`,
-                    { token },
+                    { token, timeoutMs: 9_000 },
                 ),
         ),
     getCourseDirectory: (token: string, limit = 50) =>
@@ -152,7 +165,7 @@ export const authApi = {
             () =>
                 request<CourseDirectoryResponse>(
                     `/user/courses?limit=${encodeURIComponent(String(limit))}`,
-                    { token },
+                    { token, timeoutMs: 9_000 },
                 ),
         ),
     setRole: (token: string, role: UserProfile['role']) =>
@@ -174,7 +187,7 @@ export const documentsApi = {
         return request<DocumentListResponse>(`/documents?${query.toString()}`, { token });
     },
     upload: (token: string, formData: FormData) =>
-        request<DocumentResponse>('/admin/documents', { method: 'POST', body: formData, token, isFormData: true }),
+        request<DocumentResponse>('/admin/documents', { method: 'POST', body: formData, token, isFormData: true, timeoutMs: 180_000 }),
     update: (
         token: string,
         id: string,
