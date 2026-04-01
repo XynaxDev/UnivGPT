@@ -9,10 +9,21 @@ import httpx
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
+import re
+import time
 from app.models.schemas import (
     LoginRequest,
     AuthResponse,
     UserProfile,
+    UserProfileUpdateRequest,
+    UserSettingsPayload,
+    UserSettingsResponse,
+    UserNotificationItem,
+    UserNotificationListResponse,
+    FacultySummary,
+    FacultyListResponse,
+    CourseDirectoryItem,
+    CourseDirectoryResponse,
     UserExportDataResponse,
     UserExportProfile,
     UserRole,
@@ -31,6 +42,18 @@ from app.services.audit import log_audit_event
 from app.services.email_service import EmailService
 
 router = APIRouter(tags=["Authentication"])
+
+# Runtime schema capability flags and short-lived response caches to reduce repeated DB probes.
+# Most current Supabase docs schemas in this project use uploaded_at and may not expose created_at.
+_DOCUMENTS_HAS_CREATED_AT: bool | None = False
+_DOCUMENTS_HAS_UPLOADER_ID: bool | None = None
+_DOCUMENTS_ORDER_COLUMN: str = "uploaded_at"
+_USER_NOTIFICATIONS_CACHE: dict[tuple[str, int], tuple[float, UserNotificationListResponse]] = {}
+_USER_FACULTY_CACHE: dict[tuple[str, int], tuple[float, FacultyListResponse]] = {}
+_USER_COURSES_CACHE: dict[tuple[str, int], tuple[float, CourseDirectoryResponse]] = {}
+_CACHE_TTL_NOTIFICATIONS_SECONDS = 12.0
+_CACHE_TTL_FACULTY_SECONDS = 20.0
+_CACHE_TTL_COURSES_SECONDS = 20.0
 
 
 def is_dummy_auth_enabled() -> bool:
@@ -184,6 +207,158 @@ def build_user_profile(profile: dict, auth_user: Any = None) -> UserProfile:
         academic_verified=is_academic_email(email),
         identity_provider=extract_identity_provider(auth_user),
     )
+
+
+def load_profile_row(admin: Any, user_id: str) -> dict[str, Any]:
+    """Fetch a profile row with graceful fallback for older schemas."""
+    preferred_select = (
+        "id,email,full_name,role,department,program,semester,section,"
+        "roll_number,created_at,preferences,identity_provider"
+    )
+    fallback_select = "id,email,full_name,role,department,created_at,preferences,identity_provider"
+    try:
+        res = admin.table("profiles").select(preferred_select).eq("id", user_id).limit(1).execute()
+    except Exception as exc:
+        msg = str(exc).lower()
+        if any(marker in msg for marker in ("program", "semester", "section", "roll_number", "preferences")):
+            res = admin.table("profiles").select(fallback_select).eq("id", user_id).limit(1).execute()
+        else:
+            raise
+    return res.data[0] if res.data else {}
+
+
+def normalize_user_settings(raw: Any) -> UserSettingsPayload:
+    payload = raw if isinstance(raw, dict) else {}
+    return UserSettingsPayload(
+        emailNotifications=bool(payload.get("emailNotifications", True)),
+        pushNotifications=bool(payload.get("pushNotifications", False)),
+        reducedMotion=bool(payload.get("reducedMotion", False)),
+    )
+
+
+def parse_timestamp(raw: Any) -> datetime | None:
+    if not raw:
+        return None
+    try:
+        return datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def to_iso(raw: Any) -> str | None:
+    dt = parse_timestamp(raw)
+    if not dt:
+        return str(raw) if raw else None
+    return dt.astimezone(timezone.utc).isoformat()
+
+
+def slugify_course(value: str) -> str:
+    text = re.sub(r"[^a-z0-9]+", "-", value.strip().lower())
+    return text.strip("-") or "general"
+
+
+def is_document_relevant_for_user(doc: dict[str, Any], user: AuthenticatedUser) -> bool:
+    doc_type = str(doc.get("doc_type") or "").strip().lower()
+    role = str(user.role or "").strip().lower()
+    if role == UserRole.ADMIN.value:
+        allowed = True
+    elif role == UserRole.FACULTY.value:
+        allowed = doc_type in {UserRole.FACULTY.value, UserRole.STUDENT.value, "public"}
+    else:
+        allowed = doc_type in {UserRole.STUDENT.value, "public"}
+    if not allowed:
+        return False
+
+    user_dept = (user.department or "").strip().lower()
+    user_program = (user.program or "").strip().lower()
+    doc_dept = str(doc.get("department") or "").strip().lower()
+    doc_course = str(doc.get("course") or "").strip().lower()
+
+    if role == UserRole.ADMIN.value:
+        return True
+
+    # If document is globally visible without tags, allow.
+    if not doc_dept and not doc_course:
+        return True
+
+    if user_dept and doc_dept and user_dept == doc_dept:
+        return True
+    if user_program and doc_course and user_program in doc_course:
+        return True
+    return False
+
+
+def notification_message_from_document(doc: dict[str, Any]) -> str:
+    filename = str(doc.get("filename") or "New document")
+    course = str(doc.get("course") or "").strip()
+    department = str(doc.get("department") or "").strip()
+    scope_parts = [part for part in (course, department) if part]
+    if scope_parts:
+        return f"{filename} was posted for {' / '.join(scope_parts)}."
+    return f"{filename} was posted for your accessible feed."
+
+
+def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
+    global _DOCUMENTS_HAS_CREATED_AT, _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_ORDER_COLUMN
+
+    def build_select_columns() -> str:
+        cols = ["id", "filename", "doc_type", "department", "course", "tags", "uploaded_at"]
+        if _DOCUMENTS_HAS_CREATED_AT is not False:
+            cols.append("created_at")
+        if _DOCUMENTS_HAS_UPLOADER_ID is not False:
+            cols.append("uploader_id")
+        return ",".join(cols)
+
+    def run_query():
+        return (
+            admin.table("documents")
+            .select(build_select_columns())
+            .order(_DOCUMENTS_ORDER_COLUMN, desc=True)
+            .limit(limit)
+            .execute()
+        )
+
+    for _ in range(3):
+        try:
+            return (run_query().data or [])
+        except Exception as exc:
+            msg = str(exc).lower()
+            updated = False
+
+            if "created_at" in msg and _DOCUMENTS_HAS_CREATED_AT is not False:
+                _DOCUMENTS_HAS_CREATED_AT = False
+                updated = True
+            elif "created_at" in msg and _DOCUMENTS_ORDER_COLUMN == "created_at":
+                _DOCUMENTS_ORDER_COLUMN = "uploaded_at"
+                updated = True
+
+            if "uploader_id" in msg and _DOCUMENTS_HAS_UPLOADER_ID is not False:
+                _DOCUMENTS_HAS_UPLOADER_ID = False
+                updated = True
+
+            if "uploaded_at" in msg and _DOCUMENTS_ORDER_COLUMN != "created_at":
+                _DOCUMENTS_ORDER_COLUMN = "created_at"
+                updated = True
+            elif "uploaded_at" in msg and _DOCUMENTS_ORDER_COLUMN == "uploaded_at":
+                _DOCUMENTS_ORDER_COLUMN = "created_at"
+                updated = True
+
+            if not updated:
+                raise
+
+    return []
+
+
+def fetch_documents_by_doc_types(
+    admin: Any,
+    allowed_types: list[str],
+    limit: int,
+) -> list[dict[str, Any]]:
+    docs = fetch_documents_feed(admin, limit)
+    if not allowed_types:
+        return []
+    allowed = {str(value).strip().lower() for value in allowed_types}
+    return [doc for doc in docs if str(doc.get("doc_type") or "").strip().lower() in allowed]
 
 
 @router.post("/auth/signup", response_model=SignupResponse)
@@ -588,6 +763,459 @@ async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
     )
 
 
+@router.patch("/user/profile", response_model=UserProfile)
+async def update_profile(
+    body: UserProfileUpdateRequest,
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Update editable profile fields for current user."""
+    if user.id.startswith("dummy-id-"):
+        # Keep test accounts usable without DB writes.
+        merged = {
+            "id": user.id,
+            "email": user.email,
+            "full_name": body.full_name or user.full_name or "User",
+            "role": user.role,
+            "department": body.department if body.department is not None else user.department,
+            "program": body.program if body.program is not None else user.program,
+            "semester": body.semester if body.semester is not None else user.semester,
+            "section": body.section if body.section is not None else user.section,
+            "roll_number": body.roll_number if body.roll_number is not None else user.roll_number,
+            "created_at": user.created_at,
+        }
+        return UserProfile(
+            id=merged["id"],
+            email=merged["email"],
+            full_name=merged["full_name"],
+            role=UserRole(str(merged["role"])),
+            department=merged["department"],
+            program=merged["program"],
+            semester=merged["semester"],
+            section=merged["section"],
+            roll_number=merged["roll_number"],
+            created_at=merged["created_at"],
+            academic_verified=True,
+            identity_provider=user.identity_provider or "email",
+        )
+
+    try:
+        admin = get_supabase_admin()
+        existing = load_profile_row(admin, user.id)
+        update_payload: dict[str, Any] = {}
+        for field in ("full_name", "department", "program", "semester", "section", "roll_number"):
+            value = getattr(body, field)
+            if value is not None:
+                update_payload[field] = str(value).strip()
+
+        if update_payload:
+            updated_res = (
+                admin.table("profiles").update(update_payload).eq("id", user.id).execute()
+            )
+            updated = updated_res.data[0] if updated_res.data else {**existing, **update_payload}
+        else:
+            updated = existing
+
+        await log_audit_event(
+            user_id=user.id,
+            action="profile_updated",
+            ip_address=request.client.host if request.client else None,
+            payload={"fields": sorted(list(update_payload.keys()))},
+        )
+
+        email = updated.get("email") or user.email
+        return UserProfile(
+            id=updated.get("id") or user.id,
+            email=email,
+            full_name=updated.get("full_name") or user.full_name or "User",
+            role=UserRole(str(updated.get("role") or user.role)),
+            department=updated.get("department"),
+            program=updated.get("program") or user.program,
+            semester=(
+                str(updated.get("semester"))
+                if updated.get("semester") is not None
+                else user.semester
+            ),
+            section=updated.get("section") or user.section,
+            roll_number=updated.get("roll_number") or user.roll_number,
+            created_at=str(updated.get("created_at")) if updated.get("created_at") else user.created_at,
+            academic_verified=is_academic_email(email),
+            identity_provider=updated.get("identity_provider") or user.identity_provider or "email",
+        )
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/user/settings", response_model=UserSettingsResponse)
+async def get_user_settings(user: AuthenticatedUser = Depends(get_current_user)):
+    """Return persisted user settings from profile preferences JSON."""
+    try:
+        if user.id.startswith("dummy-id-"):
+            return UserSettingsResponse(settings=normalize_user_settings({}))
+        admin = get_supabase_admin()
+        profile = load_profile_row(admin, user.id)
+        prefs = profile.get("preferences") if isinstance(profile.get("preferences"), dict) else {}
+        settings_payload = normalize_user_settings(prefs.get("settings"))
+        return UserSettingsResponse(settings=settings_payload)
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/user/settings", response_model=UserSettingsResponse)
+async def update_user_settings(
+    body: UserSettingsPayload,
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Persist user settings into profiles.preferences.settings."""
+    try:
+        if user.id.startswith("dummy-id-"):
+            return UserSettingsResponse(settings=body)
+
+        admin = get_supabase_admin()
+        profile = load_profile_row(admin, user.id)
+        preferences = profile.get("preferences") if isinstance(profile.get("preferences"), dict) else {}
+        preferences["settings"] = body.model_dump()
+        preferences["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+        admin.table("profiles").update({"preferences": preferences}).eq("id", user.id).execute()
+        await log_audit_event(
+            user_id=user.id,
+            action="user_settings_updated",
+            ip_address=request.client.host if request.client else None,
+            payload={"settings": body.model_dump()},
+        )
+        return UserSettingsResponse(settings=body)
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/user/notifications", response_model=UserNotificationListResponse)
+async def get_user_notifications(
+    limit: int = 20,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Generate dynamic notification feed from latest uploaded documents."""
+    try:
+        safe_limit = min(max(limit, 1), 100)
+        if user.id.startswith("dummy-id-"):
+            return UserNotificationListResponse(notifications=[], total=0, unread=0)
+
+        cache_key = (user.id, safe_limit)
+        cached = _USER_NOTIFICATIONS_CACHE.get(cache_key)
+        now_ts = time.monotonic()
+        if cached and (now_ts - cached[0]) <= _CACHE_TTL_NOTIFICATIONS_SECONDS:
+            return cached[1]
+
+        admin = get_supabase_admin()
+        profile = load_profile_row(admin, user.id)
+        prefs = profile.get("preferences") if isinstance(profile.get("preferences"), dict) else {}
+        last_seen_raw = (
+            (prefs.get("notifications") or {}).get("last_seen_at")
+            if isinstance(prefs.get("notifications"), dict)
+            else None
+        )
+        last_seen_at = parse_timestamp(last_seen_raw)
+
+        feed_scan_limit = min(240, max(120, safe_limit * 4))
+        docs = fetch_documents_feed(admin, feed_scan_limit)
+        relevant = [doc for doc in docs if is_document_relevant_for_user(doc, user)]
+
+        notifications: list[UserNotificationItem] = []
+        for doc in relevant[:safe_limit]:
+            uploaded_at = to_iso(doc.get("uploaded_at") or doc.get("created_at"))
+            uploaded_dt = parse_timestamp(uploaded_at)
+            unread = bool(uploaded_dt and (last_seen_at is None or uploaded_dt > last_seen_at))
+            notifications.append(
+                UserNotificationItem(
+                    id=str(doc.get("id")),
+                    title=str(doc.get("filename") or "New update"),
+                    message=notification_message_from_document(doc),
+                    course=str(doc.get("course") or "") or None,
+                    department=str(doc.get("department") or "") or None,
+                    uploaded_at=uploaded_at,
+                    unread=unread,
+                )
+            )
+
+        unread_count = sum(1 for item in notifications if item.unread)
+        response = UserNotificationListResponse(
+            notifications=notifications,
+            total=len(relevant),
+            unread=unread_count,
+        )
+        _USER_NOTIFICATIONS_CACHE[cache_key] = (now_ts, response)
+        return response
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/user/notifications/read", response_model=UserSettingsResponse)
+async def mark_notifications_read(
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Mark notifications as read by recording the latest seen timestamp."""
+    try:
+        default_settings = normalize_user_settings({})
+        if user.id.startswith("dummy-id-"):
+            return UserSettingsResponse(settings=default_settings)
+
+        admin = get_supabase_admin()
+        profile = load_profile_row(admin, user.id)
+        preferences = profile.get("preferences") if isinstance(profile.get("preferences"), dict) else {}
+        notifications = preferences.get("notifications") if isinstance(preferences.get("notifications"), dict) else {}
+        notifications["last_seen_at"] = datetime.now(timezone.utc).isoformat()
+        preferences["notifications"] = notifications
+        admin.table("profiles").update({"preferences": preferences}).eq("id", user.id).execute()
+        await log_audit_event(
+            user_id=user.id,
+            action="notifications_marked_read",
+            ip_address=request.client.host if request.client else None,
+            payload={},
+        )
+        for key in list(_USER_NOTIFICATIONS_CACHE.keys()):
+            if key[0] == user.id:
+                _USER_NOTIFICATIONS_CACHE.pop(key, None)
+        return UserSettingsResponse(settings=normalize_user_settings(preferences.get("settings")))
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/user/faculty", response_model=FacultyListResponse)
+async def get_faculty_directory(
+    limit: int = 20,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Return faculty teaching feed scoped to the current user context."""
+    try:
+        safe_limit = min(max(limit, 1), 100)
+        if user.id.startswith("dummy-id-"):
+            return FacultyListResponse(faculty=[], total=0)
+
+        cache_key = (user.id, safe_limit)
+        cached = _USER_FACULTY_CACHE.get(cache_key)
+        now_ts = time.monotonic()
+        if cached and (now_ts - cached[0]) <= _CACHE_TTL_FACULTY_SECONDS:
+            return cached[1]
+
+        admin = get_supabase_admin()
+        feed_scan_limit = min(220, max(80, safe_limit * 3))
+        relevant_docs = [
+            doc
+            for doc in fetch_documents_feed(admin, feed_scan_limit)
+            if is_document_relevant_for_user(doc, user)
+        ]
+
+        # For students, bias to faculty associated with their program/course docs.
+        user_program_hint = (user.program or "").strip().lower()
+        faculty_ids_from_docs: set[str] = set()
+        for doc in relevant_docs:
+            course = str(doc.get("course") or "").strip().lower()
+            if (
+                user.role == UserRole.STUDENT.value
+                and user_program_hint
+                and course
+                and user_program_hint not in course
+            ):
+                continue
+            uploader_id = str(doc.get("uploader_id") or "").strip()
+            if uploader_id:
+                faculty_ids_from_docs.add(uploader_id)
+
+        rows: list[dict[str, Any]] = []
+        if faculty_ids_from_docs:
+            try:
+                res = (
+                    admin.table("profiles")
+                    .select("id,full_name,email,department,program,role")
+                    .eq("role", UserRole.FACULTY.value)
+                    .in_("id", list(faculty_ids_from_docs))
+                    .order("full_name")
+                    .limit(safe_limit)
+                    .execute()
+                )
+                rows = res.data or []
+            except Exception:
+                rows = []
+
+        if not rows:
+            query = (
+                admin.table("profiles")
+                .select("id,full_name,email,department,program,role")
+                .eq("role", UserRole.FACULTY.value)
+            )
+            if user.role != UserRole.ADMIN.value and user.department:
+                query = query.eq("department", user.department)
+            res = query.order("full_name").limit(safe_limit).execute()
+            rows = res.data or []
+
+        faculty = [
+            FacultySummary(
+                id=str(row.get("id")),
+                full_name=str(row.get("full_name") or "Faculty"),
+                email=str(row.get("email") or ""),
+                department=row.get("department"),
+                program=row.get("program"),
+            )
+            for row in rows
+        ]
+        response = FacultyListResponse(faculty=faculty, total=len(faculty))
+        _USER_FACULTY_CACHE[cache_key] = (now_ts, response)
+        return response
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/user/courses", response_model=CourseDirectoryResponse)
+async def get_course_directory(
+    limit: int = 50,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Build dynamic course directory with faculty mapped to each course."""
+    try:
+        safe_limit = min(max(limit, 1), 200)
+        if user.id.startswith("dummy-id-"):
+            return CourseDirectoryResponse(courses=[], total=0)
+
+        cache_key = (user.id, safe_limit)
+        cached = _USER_COURSES_CACHE.get(cache_key)
+        now_ts = time.monotonic()
+        if cached and (now_ts - cached[0]) <= _CACHE_TTL_COURSES_SECONDS:
+            return cached[1]
+        admin = get_supabase_admin()
+
+        feed_scan_limit = min(260, max(100, safe_limit * 3))
+        docs = fetch_documents_feed(admin, feed_scan_limit)
+        relevant = [doc for doc in docs if is_document_relevant_for_user(doc, user)]
+
+        faculty_res = (
+            admin.table("profiles")
+            .select("id,full_name,department,program,role")
+            .eq("role", UserRole.FACULTY.value)
+            .limit(300)
+            .execute()
+        )
+        faculty_rows = faculty_res.data or []
+
+        faculty_by_department: dict[str, list[str]] = {}
+        for row in faculty_rows:
+            dept = str(row.get("department") or "").strip().lower()
+            if not dept:
+                continue
+            faculty_by_department.setdefault(dept, []).append(str(row.get("id")))
+
+        faculty_ids_set = {str(row.get("id")) for row in faculty_rows if row.get("id")}
+        faculty_program_map: dict[str, str] = {
+            str(row.get("id")): str(row.get("program") or "").strip().lower()
+            for row in faculty_rows
+            if row.get("id")
+        }
+
+        courses_map: dict[str, dict[str, Any]] = {}
+        for doc in relevant:
+            course_name = str(doc.get("course") or "").strip()
+            if not course_name:
+                continue
+            key = slugify_course(course_name)
+            uploaded_at = to_iso(doc.get("uploaded_at") or doc.get("created_at"))
+            uploader_id = str(doc.get("uploader_id") or "").strip()
+            existing = courses_map.get(key)
+            if not existing:
+                dept = str(doc.get("department") or "").strip() or None
+                faculty_ids: list[str] = []
+                if uploader_id and uploader_id in faculty_ids_set:
+                    faculty_ids.append(uploader_id)
+                courses_map[key] = {
+                    "id": key,
+                    "code": course_name.upper().replace(" ", "-"),
+                    "title": course_name,
+                    "department": dept,
+                    "next_update_at": uploaded_at,
+                    "notice_count": 1,
+                    "faculty_ids": faculty_ids[:5],
+                }
+                continue
+
+            existing["notice_count"] = int(existing.get("notice_count", 0)) + 1
+            if uploader_id and uploader_id in faculty_ids_set:
+                current_ids = existing.get("faculty_ids", [])
+                if uploader_id not in current_ids:
+                    current_ids.append(uploader_id)
+                    existing["faculty_ids"] = current_ids[:5]
+            current_dt = parse_timestamp(existing.get("next_update_at"))
+            incoming_dt = parse_timestamp(uploaded_at)
+            if incoming_dt and (not current_dt or incoming_dt > current_dt):
+                existing["next_update_at"] = uploaded_at
+
+        # Fallback: if a course has no direct uploader-faculty association, attach dept faculty.
+        for course_item in courses_map.values():
+            if course_item.get("faculty_ids"):
+                continue
+            course_title = str(course_item.get("title") or "").strip().lower()
+            program_matches = [
+                faculty_id
+                for faculty_id, program in faculty_program_map.items()
+                if program and (program in course_title or course_title in program)
+            ]
+            if program_matches:
+                course_item["faculty_ids"] = program_matches[:5]
+                continue
+            dept = str(course_item.get("department") or "").strip().lower()
+            if dept and dept in faculty_by_department:
+                course_item["faculty_ids"] = faculty_by_department[dept][:5]
+
+        if not courses_map and user.program:
+            key = slugify_course(user.program)
+            faculty_ids = faculty_by_department.get((user.department or "").strip().lower(), [])
+            courses_map[key] = {
+                "id": key,
+                "code": user.program.upper().replace(" ", "-"),
+                "title": user.program,
+                "department": user.department,
+                "next_update_at": None,
+                "notice_count": 0,
+                "faculty_ids": faculty_ids[:5],
+            }
+
+        items = [
+            CourseDirectoryItem(
+                id=item["id"],
+                code=item["code"],
+                title=item["title"],
+                department=item.get("department"),
+                next_update_at=item.get("next_update_at"),
+                notice_count=int(item.get("notice_count", 0)),
+                faculty_ids=item.get("faculty_ids", []),
+            )
+            for item in courses_map.values()
+        ]
+        items.sort(key=lambda i: i.next_update_at or "", reverse=True)
+        items = items[:safe_limit]
+
+        response = CourseDirectoryResponse(courses=items, total=len(items))
+        _USER_COURSES_CACHE[cache_key] = (now_ts, response)
+        return response
+    except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/user/export-data", response_model=UserExportDataResponse)
 async def export_user_data(
     user: AuthenticatedUser = Depends(get_current_user),
@@ -629,14 +1257,8 @@ async def export_user_data(
         queries = int(query_res.count or 0)
 
         allowed_types = get_allowed_doc_types(user.role)
-        doc_res = (
-            supabase.table("documents")
-            .select("id, filename, tags, doc_type, uploaded_at, created_at", count="exact")
-            .in_("doc_type", allowed_types)
-            .execute()
-        )
-        doc_rows = doc_res.data or []
-        documents = int(doc_res.count or len(doc_rows))
+        doc_rows = fetch_documents_by_doc_types(supabase, allowed_types, 1000)
+        documents = len(doc_rows)
 
         now_utc = datetime.now(timezone.utc)
         recent_notices = 0

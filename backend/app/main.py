@@ -1,5 +1,5 @@
 """
-UniGPT API — Main Application
+UniGPT API - Main Application
 Updated for Supabase + Pinecone Hybrid Stack.
 """
 
@@ -7,22 +7,39 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import logging
+import asyncio
 
 from app.config import settings
 from app.routers import auth, documents, agent, admin
 from app.models.schemas import HealthResponse
 from app.services.pinecone_client import pinecone_client
+from app.services.document_processor import get_embeddings_model
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("unigpt")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
+uvicorn_access_logger = logging.getLogger("uvicorn.access")
+uvicorn_access_logger.setLevel(logging.WARNING)
+uvicorn_access_logger.propagate = False
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("🚀 UniGPT Hybrid API starting...")
+    logger.info("UniGPT Hybrid API starting...")
     pinecone_client.initialize()
+    if settings.preload_embeddings_on_startup and not settings.mock_llm:
+        try:
+            logger.info("Preloading embedding model during startup...")
+            await asyncio.to_thread(get_embeddings_model)
+            logger.info("Embedding model preloaded.")
+        except Exception as exc:
+            logger.warning(
+                "Embedding preload failed; model will load lazily on first embedding call: %s",
+                exc,
+            )
     yield
-    logger.info("🛑 UniGPT Hybrid API shutting down...")
+    logger.info("UniGPT Hybrid API shutting down...")
 
 
 app = FastAPI(title="UniGPT", lifespan=lifespan)
