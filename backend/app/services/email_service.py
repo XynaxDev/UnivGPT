@@ -69,7 +69,7 @@ class EmailService:
         user_name: str = "User",
         purpose: str = "verification",
     ):
-        """Sends an OTP email with UniGPT branding for signup/reset flows."""
+        """Sends an OTP email with UnivGPT branding for signup/reset flows."""
         sender_email, smtp_password = EmailService._resolve_sender()
         if purpose == "password_reset":
             subject = f"Your UnivGPT Password Reset Code: {otp}"
@@ -78,7 +78,7 @@ class EmailService:
                 "Use the code below to continue."
             )
         else:
-            subject = f"Your UniGPT Verification Code: {otp}"
+            subject = f"Your UnivGPT Verification Code: {otp}"
             intro = (
                 "Welcome to UnivGPT! To complete your registration, please use "
                 "the verification code below."

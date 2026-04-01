@@ -1,5 +1,5 @@
 """
-UniGPT API - Main Application
+UnivGPT API - Main Application
 Updated for Supabase + Pinecone Hybrid Stack.
 """
 
@@ -26,7 +26,7 @@ uvicorn_access_logger.propagate = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    logger.info("UniGPT Hybrid API starting...")
+    logger.info("UnivGPT Hybrid API starting...")
     pinecone_client.initialize()
     if settings.preload_embeddings_on_startup and not settings.mock_llm:
         try:
@@ -39,10 +39,10 @@ async def lifespan(app: FastAPI):
                 exc,
             )
     yield
-    logger.info("UniGPT Hybrid API shutting down...")
+    logger.info("UnivGPT Hybrid API shutting down...")
 
 
-app = FastAPI(title="UniGPT", lifespan=lifespan)
+app = FastAPI(title="UnivGPT", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

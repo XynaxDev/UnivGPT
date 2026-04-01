@@ -56,7 +56,7 @@ const featureCards = [
     { icon: Brain, title: "Smart Course Advisor", desc: "Get instant conceptual breakdowns, study guides, and exam prep tailored to your exact curriculum.", color: "from-orange-500/20 to-orange-600/10", iconColor: "text-orange-400", borderColor: "border-orange-500/20 hover:border-orange-500/40" },
     { icon: Search, title: "Research Discovery", desc: "Search across thousands of indexed papers, theses, and faculty publications in natural language.", color: "from-amber-500/20 to-amber-600/10", iconColor: "text-amber-400", borderColor: "border-amber-500/20 hover:border-amber-500/40" },
     { icon: Shield, title: "FERPA Compliant", desc: "Enterprise-grade security with end-to-end encryption. Your academic data stays private, always.", color: "from-emerald-500/20 to-emerald-600/10", iconColor: "text-emerald-400", borderColor: "border-emerald-500/20 hover:border-emerald-500/40" },
-    { icon: FileText, title: "Document Intelligence", desc: "Upload syllabi, handbooks, and policies. UniGPT reads and understands them so you don't have to.", color: "from-orange-500/20 to-orange-600/10", iconColor: "text-orange-400", borderColor: "border-orange-500/20 hover:border-orange-500/40" },
+    { icon: FileText, title: "Document Intelligence", desc: "Upload syllabi, handbooks, and policies. UnivGPT reads and understands them so you don't have to.", color: "from-orange-500/20 to-orange-600/10", iconColor: "text-orange-400", borderColor: "border-orange-500/20 hover:border-orange-500/40" },
     { icon: BarChart3, title: "Progress Analytics", desc: "Track your learning trajectory with visual dashboards and personalized improvement insights.", color: "from-rose-500/20 to-rose-600/10", iconColor: "text-rose-400", borderColor: "border-rose-500/20 hover:border-rose-500/40" },
     { icon: Users, title: "Faculty Dashboard", desc: "Dedicated tools for professors to manage resources, track engagement, and support students.", color: "from-amber-500/20 to-amber-600/10", iconColor: "text-amber-400", borderColor: "border-amber-500/20 hover:border-amber-500/40" },
 ];
@@ -239,7 +239,7 @@ const Landing = () => {
                         <motion.div variants={fadeUp} initial="hidden" animate="visible" custom={0} className="mb-8">
                             <UpgradeBanner
                                 buttonText="Explore Premium"
-                                description="Introducing UniGPT Advanced Analytics"
+                                description="Introducing UnivGPT Advanced Analytics"
                             />
                         </motion.div>
 

@@ -384,7 +384,7 @@ async def signup(request: Request, body: InitiateSignupRequest):
             if user_metadata.get("is_verified", False):
                 raise HTTPException(
                     status_code=400,
-                    detail="An account with this email already exists inside UniGPT. Please try logging in.",
+                    detail="An account with this email already exists inside UnivGPT. Please try logging in.",
                 )
 
             # If NOT verified, update their record with new OTP and metadata

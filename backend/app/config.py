@@ -12,7 +12,7 @@ ENV_FILE = BASE_DIR / ".env"
 
 class Settings(BaseSettings):
     # App Config
-    project_name: str = "UniGPT"
+    project_name: str = "UnivGPT"
     environment: str = "development"
     cors_origins: str = (
         "http://localhost:5173,"
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     smtp_user: str = ""
     smtp_password: str = ""
     smtp_from_email: str = ""
-    smtp_from_name: str = "UniGPT Support"
+    smtp_from_name: str = "UnivGPT Support"
     smtp_use_ssl: bool = False
     smtp_timeout_seconds: int = 20
 

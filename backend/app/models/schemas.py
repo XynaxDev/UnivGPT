@@ -1,5 +1,5 @@
 """
-UniGPT Pydantic Models
+UnivGPT Pydantic Models
 Request/response schemas for all API endpoints.
 """
 

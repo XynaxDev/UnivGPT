@@ -631,7 +631,7 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
     Returns any potential metadata filters as a JSON object.
     """
     system_prompt = f"""
-    You are an intent extraction and safety moderation assistant for a University GPT system.
+    You are an intent extraction and safety moderation assistant for the UnivGPT system.
     Recent conversation history for context:
     {history_context}
 
@@ -827,7 +827,7 @@ async def run_agent_pipeline(
             answer=answer,
             sources=[],
             conversation_id=conversation_id,
-            role_badge="🛡️ UniGPT Safety",
+            role_badge="🛡️ UnivGPT Safety",
         )
 
     # 2. Search Pinecone for context
@@ -1070,7 +1070,7 @@ async def run_agent_pipeline(
                 forced_answer = f"There are **{int(total_users or 0)} total users** in the current database snapshot."
 
         system_message = f"""
-        You are UniGPT Admin Assistant, a professional operations copilot for university administrators.
+        You are UnivGPT Admin Assistant, a professional operations copilot for university administrators.
         You are interacting with a user whose role is: {user_role}. Focus on operational clarity, policy accuracy, and concise answers.
 
         SYSTEM CONTEXT:
@@ -1105,7 +1105,7 @@ async def run_agent_pipeline(
             forced_answer = "I can provide user counts only to admin accounts. For your role, I can still help with documents and course notices in your allowed scope."
 
         system_message = f"""
-        You are UniGPT, the official professional AI assistant for the University.
+        You are UnivGPT, the official professional AI assistant for the University.
         You are interacting with a user whose role is: {user_role}. Provide concise, accurate, and helpful answers.
 
         SYSTEM CONTEXT:
