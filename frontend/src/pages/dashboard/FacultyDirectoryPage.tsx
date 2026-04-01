@@ -197,10 +197,7 @@ export default function FacultyDirectoryPage() {
                             return (
                                 <button
                                     key={faculty.id}
-                                    onClick={() => {
-                                        if (faculty.id.startsWith('demo-fac-')) return;
-                                        navigate(`/dashboard/faculty/${faculty.id}`);
-                                    }}
+                                    onClick={() => navigate(`/dashboard/faculty/${faculty.id}`)}
                                     className={`rounded-2xl border p-4 text-left transition-all ${
                                         highlighted
                                             ? 'border-cyan-400/45 bg-cyan-400/5'

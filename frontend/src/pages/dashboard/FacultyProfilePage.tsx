@@ -1,10 +1,27 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Mail, UserCircle } from 'lucide-react';
+import { ArrowLeft, Building2, Mail, Sparkles, UserCircle, BookOpen, CalendarClock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { authApi, type CourseDirectoryItem, type FacultySummary } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+const initialsFromName = (name: string) => {
+    const cleaned = name.trim();
+    if (!cleaned) return 'FC';
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const formatDate = (raw?: string | null) => {
+    if (!raw) return 'No recent update';
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return 'No recent update';
+    return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+};
 
 export default function FacultyProfilePage() {
     const { id } = useParams<{ id: string }>();
@@ -14,6 +31,11 @@ export default function FacultyProfilePage() {
     const [faculty, setFaculty] = useState<FacultySummary | null>(null);
     const [courses, setCourses] = useState<CourseDirectoryItem[]>([]);
     const [loading, setLoading] = useState(true);
+
+    const totalNotices = useMemo(
+        () => courses.reduce((sum, item) => sum + Number(item.notice_count || 0), 0),
+        [courses]
+    );
 
     useEffect(() => {
         let active = true;
@@ -50,68 +72,141 @@ export default function FacultyProfilePage() {
 
     return (
         <div className="h-full overflow-y-auto">
-            <div className="max-w-5xl mx-auto p-6 md:p-8 pb-24 space-y-6">
-                <button
-                    onClick={() => navigate(-1)}
-                    className="h-10 px-4 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.06] text-sm text-white inline-flex items-center gap-2"
-                >
-                    <ArrowLeft className="w-4 h-4" /> Back
-                </button>
+            <div className="max-w-6xl mx-auto p-6 md:p-8 pb-24 space-y-6">
+                <div className="flex items-center justify-between gap-3">
+                    <button
+                        onClick={() => navigate(-1)}
+                        className="h-10 px-4 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.06] text-sm text-white inline-flex items-center gap-2"
+                    >
+                        <ArrowLeft className="w-4 h-4" /> Back
+                    </button>
+                    <Button
+                        variant="outline"
+                        onClick={() => navigate('/dashboard/faculty')}
+                        className="h-10 px-4 rounded-xl border-white/[0.12] bg-white/[0.03] text-zinc-300 hover:text-white"
+                    >
+                        <BookOpen className="w-4 h-4 mr-2" /> Faculty Directory
+                    </Button>
+                </div>
 
                 <motion.div
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/95 via-zinc-900/75 to-black p-6"
+                    className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-zinc-900 via-zinc-900/85 to-black overflow-hidden"
                 >
                     {loading ? (
-                        <p className="text-sm text-zinc-500">Loading faculty profile...</p>
+                        <div className="p-6">
+                            <p className="text-sm text-zinc-500">Loading faculty profile...</p>
+                        </div>
                     ) : !faculty ? (
-                        <p className="text-sm text-zinc-500">Faculty profile not found.</p>
+                        <div className="p-6">
+                            <p className="text-sm text-zinc-500">Faculty profile not found.</p>
+                        </div>
                     ) : (
-                        <div className="space-y-5">
-                            <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
-                                    <UserCircle className="w-7 h-7 text-orange-400" />
-                                </div>
-                                <div>
-                                    <h1 className="text-2xl font-black text-white tracking-tight">{faculty.full_name}</h1>
-                                    <p className="text-xs text-zinc-500 mt-1">Faculty Member</p>
+                        <div className="space-y-0">
+                            <div className="relative border-b border-white/[0.08] px-6 py-6 md:px-7 md:py-7 bg-gradient-to-r from-orange-500/[0.08] via-zinc-900/30 to-cyan-500/[0.08]">
+                                <div className="absolute -top-16 right-10 w-44 h-44 rounded-full bg-orange-500/15 blur-[80px] pointer-events-none" />
+                                <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-16 h-16 rounded-2xl border border-orange-400/30 bg-gradient-to-br from-orange-500/20 to-amber-400/15 flex items-center justify-center shrink-0">
+                                            <span className="text-lg font-black text-orange-200">{initialsFromName(faculty.full_name)}</span>
+                                        </div>
+                                        <div>
+                                            <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">{faculty.full_name}</h1>
+                                            <p className="text-sm text-zinc-400 mt-1">{faculty.program || 'Faculty Member'}</p>
+                                            <p className="text-xs text-zinc-500 mt-1 capitalize">{faculty.department || 'Department not set'}</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        onClick={() =>
+                                            navigate('/dashboard/chat', {
+                                                state: { prefill: `Summarize latest updates for faculty ${faculty.full_name} and mapped courses.` },
+                                            })
+                                        }
+                                        className="h-11 px-5 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-semibold"
+                                    >
+                                        <Sparkles className="w-4 h-4 mr-2" /> Ask About This Faculty
+                                    </Button>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-                                    <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Email</p>
-                                    <p className="text-sm text-white font-medium mt-1 flex items-center gap-2">
+
+                            <div className="p-6 md:p-7 grid grid-cols-1 xl:grid-cols-3 gap-4">
+                                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 xl:col-span-2">
+                                    <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Contact</p>
+                                    <p className="text-sm text-white font-medium mt-2 flex items-center gap-2">
                                         <Mail className="w-4 h-4 text-zinc-500" /> {faculty.email || 'Not provided'}
                                     </p>
                                 </div>
-                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
                                     <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Department</p>
-                                    <p className="text-sm text-white font-medium mt-1 flex items-center gap-2">
+                                    <p className="text-sm text-white font-medium mt-2 flex items-center gap-2">
                                         <Building2 className="w-4 h-4 text-zinc-500" /> {faculty.department || 'Not set'}
                                     </p>
                                 </div>
+
+                                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                                    <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Mapped Courses</p>
+                                    <p className="text-2xl font-black text-white mt-2">{courses.length}</p>
+                                </div>
+                                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                                    <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Notice Footprint</p>
+                                    <p className="text-2xl font-black text-orange-300 mt-2">{totalNotices}</p>
+                                </div>
+                                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                                    <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Role</p>
+                                    <p className="text-sm text-white font-semibold mt-2 flex items-center gap-2">
+                                        <UserCircle className="w-4 h-4 text-zinc-500" /> Faculty
+                                    </p>
+                                </div>
                             </div>
-                            <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
-                                <p className="text-[11px] text-zinc-500 uppercase tracking-wider mb-2">Courses Assigned</p>
-                                {courses.length === 0 ? (
-                                    <p className="text-sm text-zinc-500">No mapped courses found yet.</p>
-                                ) : (
-                                    <div className="flex flex-wrap gap-2">
-                                        {courses.map((course) => (
-                                            <span
-                                                key={course.id}
-                                                className="text-xs text-white bg-white/[0.04] border border-white/[0.08] rounded-md px-2.5 py-1"
-                                            >
-                                                {course.code}
-                                            </span>
-                                        ))}
+
+                            <div className="p-6 md:p-7 pt-0">
+                                <div className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4 md:p-5">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <p className="text-[11px] text-zinc-500 uppercase tracking-wider">Courses Assigned</p>
+                                        <span className="text-[10px] text-zinc-600">{courses.length} total</span>
                                     </div>
-                                )}
+                                    {courses.length === 0 ? (
+                                        <p className="text-sm text-zinc-500">No mapped courses found yet.</p>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            {courses.map((course) => (
+                                                <button
+                                                    key={course.id}
+                                                    onClick={() =>
+                                                        navigate('/dashboard/chat', {
+                                                            state: {
+                                                                prefill: `Show updates and key notices for ${course.code} ${course.title}.`,
+                                                            },
+                                                        })
+                                                    }
+                                                    className={cn(
+                                                        'rounded-xl border border-white/[0.08] bg-zinc-900/60 p-3 text-left hover:border-orange-500/30 hover:bg-orange-500/[0.04] transition-all'
+                                                    )}
+                                                >
+                                                    <p className="text-[10px] text-zinc-500 uppercase tracking-wider">{course.code}</p>
+                                                    <p className="text-sm font-semibold text-white mt-1 line-clamp-1">{course.title}</p>
+                                                    <div className="mt-2 flex items-center justify-between text-[11px] text-zinc-500">
+                                                        <span>{course.department || 'General'}</span>
+                                                        <span className="inline-flex items-center gap-1">
+                                                            <CalendarClock className="w-3.5 h-3.5" /> {formatDate(course.next_update_at)}
+                                                        </span>
+                                                    </div>
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
                 </motion.div>
+
+                {!loading && faculty && (
+                    <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/30 p-4 text-xs text-zinc-500">
+                        Tip: Click any mapped course card to open chat with prefilled faculty-course context.
+                    </div>
+                )}
             </div>
         </div>
     );
