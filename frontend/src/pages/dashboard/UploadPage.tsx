@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Upload, FileText, X, Check, AlertCircle, CloudUpload, Loader2, Pencil, Trash2, RefreshCw, Layers, FileUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Select } from '@/components/ui/auth-fuse';
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
 import { documentsApi, type DocumentResponse } from '@/lib/api';
@@ -303,18 +304,19 @@ const UploadPage = () => {
                                 </button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div className="grid grid-cols-1 gap-3">
                                 <label className="text-xs text-zinc-400">
                                     Audience
-                                    <select
+                                    <Select
+                                        id="upload-audience"
                                         value={docType}
-                                        onChange={(e) => setDocType(e.target.value)}
-                                        className="mt-1 w-full h-10 rounded-xl border border-white/10 bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/30"
-                                    >
-                                        {docTypeOptions.map((opt) => (
-                                            <option key={opt} value={opt}>{opt}</option>
-                                        ))}
-                                    </select>
+                                        onValueChange={setDocType}
+                                        className="mt-1.5 h-10 rounded-xl bg-black/40"
+                                        options={docTypeOptions.map((opt) => ({
+                                            value: opt,
+                                            label: opt.charAt(0).toUpperCase() + opt.slice(1),
+                                        }))}
+                                    />
                                 </label>
 
                                 <label className="text-xs text-zinc-400">
@@ -441,7 +443,7 @@ const UploadPage = () => {
                         <button
                             type="button"
                             onClick={loadDocuments}
-                            className="inline-flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.03] px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:text-white hover:border-white/20 transition-all"
+                            className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-white/90 hover:text-white hover:border-white/30 transition-all"
                             disabled={isLoadingDocs}
                         >
                             <RefreshCw className={`w-3.5 h-3.5 ${isLoadingDocs ? 'animate-spin' : ''}`} />
@@ -492,15 +494,17 @@ const UploadPage = () => {
 
                                         {isEditing && canAdminCrud && (
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                                                <select
-                                                    value={String(editDraft.doc_type || doc.doc_type)}
-                                                    onChange={(e) => setEditDraft((prev) => ({ ...prev, doc_type: e.target.value }))}
-                                                    className="h-9 rounded-lg border border-white/10 bg-black/40 px-2.5 text-xs text-white outline-none"
-                                                >
-                                                    {docTypeOptions.map((opt) => (
-                                                        <option key={opt} value={opt}>{opt}</option>
-                                                    ))}
-                                                </select>
+                                                <div>
+                                                    <Select
+                                                        value={String(editDraft.doc_type || doc.doc_type)}
+                                                        onValueChange={(value) => setEditDraft((prev) => ({ ...prev, doc_type: value }))}
+                                                        className="h-9 rounded-lg bg-black/40 text-xs"
+                                                        options={docTypeOptions.map((opt) => ({
+                                                            value: opt,
+                                                            label: opt.charAt(0).toUpperCase() + opt.slice(1),
+                                                        }))}
+                                                    />
+                                                </div>
                                                 <input
                                                     value={String(editDraft.department ?? doc.department ?? '')}
                                                     onChange={(e) => setEditDraft((prev) => ({ ...prev, department: e.target.value }))}

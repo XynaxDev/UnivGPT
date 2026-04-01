@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Settings, Bell, Shield,
+    Settings, Bell,
     Trash2, AlertTriangle, Download, Eye
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -40,7 +40,6 @@ const SettingsPage = () => {
         emailNotifications: true,
         pushNotifications: false,
         reducedMotion: false,
-        twoFactorAuth: false,
     });
 
     useEffect(() => {
@@ -114,12 +113,6 @@ const SettingsPage = () => {
             id: 'accessibility', title: 'Accessibility', icon: Eye,
             items: [
                 { id: 'reducedMotion', label: 'Reduced Motion', desc: 'Minimize UI animations for accessibility.' },
-            ]
-        },
-        {
-            id: 'privacy', title: 'Privacy & Security', icon: Shield,
-            items: [
-                { id: 'twoFactorAuth', label: 'Two-Factor Authentication', desc: 'Extra security with a verification code.' },
             ]
         },
     ];
@@ -242,6 +235,18 @@ const SettingsPage = () => {
                                 <div className="flex items-center justify-between">
                                     <span className="text-[11px] text-zinc-500">Verification</span>
                                     <span className="text-[11px] font-medium text-white">{user?.academic_verified ? 'Verified' : 'Pending'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Program</span>
+                                    <span className="text-[11px] font-medium text-white">{user?.program || 'Not set'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Semester</span>
+                                    <span className="text-[11px] font-medium text-white">{user?.semester || 'Not set'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Section</span>
+                                    <span className="text-[11px] font-medium text-white">{user?.section || 'Not set'}</span>
                                 </div>
                             </div>
                         </motion.div>

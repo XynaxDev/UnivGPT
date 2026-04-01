@@ -1,225 +1,359 @@
-import { useState, useRef } from 'react';
-import { cn } from '@/lib/utils';
+import { useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { UserCircle, Mail, Shield, Calendar, Building, Edit2, Camera, X, Check, Save } from 'lucide-react';
+import {
+    Mail,
+    Shield,
+    Calendar,
+    Building,
+    Edit2,
+    Camera,
+    X,
+    CheckCircle2,
+    Save,
+    GraduationCap,
+    BookOpen,
+    Hash,
+    Layers,
+    BarChart3,
+    FileText,
+    Bell,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
+import { authApi, type UserExportData } from '@/lib/api';
+
+const roleBadgeStyles: Record<string, string> = {
+    student: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+    faculty: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+    admin: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
+};
+
+const statItems = (data: UserExportData | null) => [
+    {
+        label: 'Total Queries',
+        value: data ? String(data.queries) : '--',
+        icon: BarChart3,
+    },
+    {
+        label: 'Accessible Docs',
+        value: data ? String(data.documents) : '--',
+        icon: FileText,
+    },
+    {
+        label: 'Recent Notices',
+        value: data ? String(data.notices) : '--',
+        icon: Bell,
+    },
+];
 
 const ProfilePage = () => {
-    const { user, updateUser } = useAuthStore();
+    const { user, token, updateUser } = useAuthStore();
     const { showToast } = useToastStore();
+
     const [isEditing, setIsEditing] = useState(false);
+    const [formName, setFormName] = useState(user?.full_name || '');
+    const [formDepartment, setFormDepartment] = useState(user?.department || '');
+    const [exportData, setExportData] = useState<UserExportData | null>(null);
+    const [isLoadingStats, setIsLoadingStats] = useState(false);
+
     const profileImage = (user as any)?.profileImage || null;
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const [formName, setFormName] = useState(user?.full_name || '');
-    const [formDept, setFormDept] = useState(user?.department || '');
-    const profileStats = [
-        { label: 'Role', value: (user?.role || 'student').toUpperCase() },
-        { label: 'Department', value: user?.department || 'Unassigned' },
-        { label: 'Verification', value: user?.academic_verified ? 'Verified' : 'Pending' },
-    ];
+    useEffect(() => {
+        setFormName(user?.full_name || '');
+        setFormDepartment(user?.department || '');
+    }, [user?.full_name, user?.department]);
 
-    const roleColors: Record<string, string> = {
-        student: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
-        faculty: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
-        admin: 'bg-orange-500/15 text-orange-400 border-orange-500/20',
-    };
+    useEffect(() => {
+        let alive = true;
+        const loadStats = async () => {
+            if (!token) return;
+            setIsLoadingStats(true);
+            try {
+                const payload = await authApi.exportUserData(token);
+                if (!alive) return;
+                setExportData(payload);
+            } catch {
+                if (!alive) return;
+                setExportData(null);
+            } finally {
+                if (alive) setIsLoadingStats(false);
+            }
+        };
+        loadStats();
+        return () => {
+            alive = false;
+        };
+    }, [token]);
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const img = ev.target?.result as string;
-                // Store in auth store so it shows everywhere
-                updateUser({ profileImage: img } as any);
-                showToast("Profile image updated", "success");
-            };
-            reader.readAsDataURL(file);
-        }
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const img = ev.target?.result as string;
+            updateUser({ profileImage: img } as any);
+            showToast('Profile image updated.', 'success');
+        };
+        reader.readAsDataURL(file);
     };
 
     const handleSave = () => {
-        // Update Zustand store so changes reflect everywhere
         updateUser({
-            full_name: formName,
-            department: formDept,
+            full_name: formName.trim() || user?.full_name || 'User',
+            department: formDepartment.trim(),
         });
-        showToast("Profile settings saved", "success");
         setIsEditing(false);
+        showToast('Profile details saved.', 'success');
     };
 
     const handleCancel = () => {
         setFormName(user?.full_name || '');
-        setFormDept(user?.department || '');
+        setFormDepartment(user?.department || '');
         setIsEditing(false);
     };
 
-    const fields = [
+    const profileRows = [
+        { icon: Mail, label: 'Email', value: user?.email || 'Not set' },
+        { icon: Shield, label: 'Role', value: (user?.role || 'student').toUpperCase() },
         {
-            icon: UserCircle, label: 'Full Name',
-            value: user?.full_name || 'N/A',
-            editable: true,
-            editValue: formName,
-            onChange: setFormName,
-        },
-        {
-            icon: Mail, label: 'Email',
-            value: user?.email || 'N/A',
-            editable: false,
-        },
-        {
-            icon: Shield, label: 'Role',
-            value: user?.role || 'student',
-            editable: false,
-            capitalize: true,
-        },
-        {
-            icon: Building, label: 'Department',
-            value: user?.department || 'Not specified',
-            editable: true,
-            editValue: formDept,
-            onChange: setFormDept,
-            placeholder: 'e.g. Computer Science',
-        },
-        {
-            icon: Calendar, label: 'Member Since',
+            icon: Calendar,
+            label: 'Member Since',
             value: user?.created_at
-                ? new Date(user.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-                : 'N/A',
-            editable: false,
+                ? new Date(user.created_at).toLocaleDateString('en-US', {
+                      year: 'numeric',
+                      month: 'short',
+                      day: 'numeric',
+                  })
+                : 'Not available',
         },
+        {
+            icon: CheckCircle2,
+            label: 'Academic Verification',
+            value: user?.academic_verified ? 'Verified' : 'Pending',
+        },
+    ];
+
+    const academicRows = [
+        { icon: GraduationCap, label: 'Program', value: user?.program || 'Not specified' },
+        { icon: Layers, label: 'Semester', value: user?.semester || 'Not specified' },
+        { icon: BookOpen, label: 'Section', value: user?.section || 'Not specified' },
+        { icon: Hash, label: 'Roll Number', value: user?.roll_number || 'Not specified' },
     ];
 
     return (
         <div className="h-full overflow-y-auto">
-            <div className="p-6 md:p-8 space-y-5 max-w-5xl mx-auto pb-24">
-            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                {/* Profile Header */}
-                <div className="relative rounded-2xl bg-zinc-900/40 border border-white/[0.06] overflow-hidden mb-5">
-                    {/* Banner */}
-                    <div className="h-24 bg-gradient-to-r from-orange-600/20 via-amber-600/10 to-transparent" />
+            <div className="max-w-6xl mx-auto p-6 md:p-8 space-y-6 pb-24">
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/90 to-zinc-900/40 overflow-hidden"
+                >
+                    <div className="h-24 bg-gradient-to-r from-orange-600/25 via-amber-500/10 to-transparent" />
 
-                    {/* Avatar + Info */}
-                    <div className="px-5 sm:px-6 pb-5 -mt-10 flex flex-col sm:flex-row items-center sm:items-end gap-3 sm:gap-4 text-center sm:text-left">
+                    <div className="px-5 sm:px-7 pb-6 -mt-10 flex flex-col md:flex-row md:items-end gap-4">
                         <div className="relative group">
-                            <div className={cn(
-                                "w-20 h-20 rounded-full bg-gradient-to-br from-orange-500 to-amber-500 p-1 shadow-xl transition-all duration-500",
-                                isEditing && "animate-pulse ring-4 ring-orange-500/10"
-                            )}>
-                                <div className="w-full h-full rounded-full bg-zinc-950 flex items-center justify-center overflow-hidden border border-white/[0.05]">
+                            <div className="w-24 h-24 rounded-2xl p-1 bg-gradient-to-br from-orange-500 to-amber-500 shadow-xl">
+                                <div className="w-full h-full rounded-[14px] bg-zinc-950 border border-white/[0.08] overflow-hidden flex items-center justify-center">
                                     {profileImage ? (
                                         <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
                                     ) : (
-                                        <span className="text-2xl font-bold text-orange-400">{user?.full_name?.charAt(0) || 'U'}</span>
+                                        <span className="text-3xl font-black text-orange-400">
+                                            {user?.full_name?.charAt(0) || 'U'}
+                                        </span>
                                     )}
                                 </div>
                             </div>
+
                             {isEditing && (
                                 <>
                                     <button
                                         onClick={() => fileInputRef.current?.click()}
-                                        className="absolute inset-0 rounded-full bg-black/40 backdrop-blur-[2px] flex flex-col items-center justify-center opacity-100 group-hover:bg-black/60 transition-all cursor-pointer z-10 border-2 border-dashed border-white/20 group-hover:border-orange-500/50"
+                                        className="absolute inset-0 rounded-2xl bg-black/50 border border-white/20 flex items-center justify-center text-white"
                                     >
-                                        <Camera className="w-5 h-5 text-white mb-1" />
-                                        <span className="text-[8px] font-bold text-white uppercase tracking-tighter">Change</span>
+                                        <Camera className="w-5 h-5" />
                                     </button>
-                                    <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleImageUpload} />
+                                    <input
+                                        ref={fileInputRef}
+                                        type="file"
+                                        accept="image/*"
+                                        className="hidden"
+                                        onChange={handleImageUpload}
+                                    />
                                     {profileImage && (
-                                        <button onClick={() => { updateUser({ profileImage: null } as any); showToast("Photo removed", "success"); }} className="absolute -top-1 -right-1 w-6 h-6 bg-red-500 rounded-full flex items-center justify-center text-white opacity-100 transition-opacity z-20 shadow-xl border-2 border-black">
-                                            <X className="w-3.5 h-3.5" />
+                                        <button
+                                            onClick={() => {
+                                                updateUser({ profileImage: null } as any);
+                                                showToast('Profile image removed.', 'success');
+                                            }}
+                                            className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center border-2 border-zinc-950"
+                                        >
+                                            <X className="w-4 h-4" />
                                         </button>
                                     )}
                                 </>
                             )}
                         </div>
-                        <div className="flex-1 min-w-0 pb-0.5 w-full">
-                            <h1 className="text-lg font-bold text-white truncate">{user?.full_name || 'User'}</h1>
-                            <p className="text-xs text-zinc-500 truncate">{user?.email}</p>
-                            <Badge className={`text-[9px] font-semibold px-2 py-0.5 border capitalize mt-1.5 ${roleColors[user?.role || 'student']}`}>
-                                {user?.role || 'student'}
-                            </Badge>
+
+                        <div className="flex-1 min-w-0">
+                            <h1 className="text-xl md:text-2xl font-extrabold text-white truncate">
+                                {user?.full_name || 'User'}
+                            </h1>
+                            <p className="text-xs text-zinc-500 truncate mt-1">{user?.email || 'No email'}</p>
+                            <div className="mt-3 flex flex-wrap items-center gap-2">
+                                <Badge className={`text-[10px] border px-2.5 py-1 capitalize ${roleBadgeStyles[user?.role || 'student']}`}>
+                                    {user?.role || 'student'}
+                                </Badge>
+                                {user?.academic_verified && (
+                                    <Badge className="text-[10px] border px-2.5 py-1 bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
+                                        Academic Verified
+                                    </Badge>
+                                )}
+                            </div>
                         </div>
-                        <div className="pb-0.5 w-full sm:w-auto mt-2 sm:mt-0">
+
+                        <div className="w-full md:w-auto">
                             {!isEditing ? (
                                 <Button
                                     onClick={() => setIsEditing(true)}
-                                    className="h-9 rounded-xl text-xs font-bold bg-white/5 hover:bg-white/10 text-white border border-white/10 px-5 transition-all active:scale-95"
+                                    className="h-10 px-5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-white"
                                 >
-                                    <Edit2 className="w-3.5 h-3.5 mr-2" />
-                                    Edit Profile
+                                    <Edit2 className="w-4 h-4 mr-2" /> Edit Profile
                                 </Button>
                             ) : (
-                                <div className="flex items-center gap-2">
+                                <div className="flex gap-2">
                                     <Button
                                         onClick={handleCancel}
-                                        variant="glass"
-                                        className="h-9 flex-1 sm:flex-none rounded-xl text-xs font-semibold text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.02] px-5 transition-all active:scale-95 border border-transparent hover:border-white/5"
+                                        variant="outline"
+                                        className="h-10 px-4 rounded-xl text-white border-white/20 hover:border-white/30"
                                     >
                                         Cancel
                                     </Button>
                                     <Button
                                         onClick={handleSave}
-                                        className="h-9 flex-1 sm:flex-none rounded-xl text-xs font-semibold bg-orange-600 hover:bg-orange-500 px-4 transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 text-white"
+                                        className="h-10 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white"
                                     >
-                                        Save
+                                        <Save className="w-4 h-4 mr-1.5" /> Save
                                     </Button>
                                 </div>
                             )}
                         </div>
                     </div>
-                </div>
+                </motion.div>
 
-                {/* Profile Details */}
-                <div className="rounded-2xl bg-zinc-900/40 border border-white/[0.06] overflow-hidden">
-                    <div className="px-5 py-3 border-b border-white/[0.05]">
-                        <span className="text-xs font-semibold text-white">Profile Details</span>
-                    </div>
-                    <div className="divide-y divide-white/[0.04]">
-                        {fields.map(field => (
-                            <div key={field.label} className="flex items-center justify-between px-5 py-3.5">
-                                <div className="flex items-center gap-3 flex-1 min-w-0">
-                                    <field.icon className="w-4 h-4 text-zinc-600 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-[10px] text-zinc-600 uppercase tracking-wider font-medium">{field.label}</div>
-                                        {isEditing && field.editable ? (
-                                            <input
-                                                value={field.editValue}
-                                                onChange={e => field.onChange?.(e.target.value)}
-                                                placeholder={field.placeholder}
-                                                className="mt-0.5 h-8 px-2.5 rounded-lg border border-white/[0.08] bg-white/[0.03] text-xs outline-none focus:border-orange-500/30 w-full max-w-xs"
-                                            />
-                                        ) : (
-                                            <div className={`text-xs font-medium text-white mt-0.5 ${field.capitalize ? 'capitalize' : ''}`}>
-                                                {field.value}
-                                            </div>
-                                        )}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.05 }}
+                        className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5"
+                    >
+                        <h2 className="text-sm font-semibold text-white mb-4">Personal Information</h2>
+                        <div className="space-y-3">
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <label className="text-[11px] text-zinc-500">Full Name</label>
+                                {isEditing ? (
+                                    <input
+                                        value={formName}
+                                        onChange={(e) => setFormName(e.target.value)}
+                                        className="h-10 rounded-xl border border-white/[0.1] bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/35"
+                                    />
+                                ) : (
+                                    <div className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center text-sm text-white">
+                                        {user?.full_name || 'User'}
                                     </div>
-                                </div>
-                                {isEditing && !field.editable && field.label === 'Email' && (
-                                    <span className="text-[9px] text-zinc-600 shrink-0">Cannot change</span>
                                 )}
                             </div>
-                        ))}
-                    </div>
+
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <label className="text-[11px] text-zinc-500">Department</label>
+                                {isEditing ? (
+                                    <input
+                                        value={formDepartment}
+                                        onChange={(e) => setFormDepartment(e.target.value)}
+                                        className="h-10 rounded-xl border border-white/[0.1] bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/35"
+                                        placeholder="Computer Science"
+                                    />
+                                ) : (
+                                    <div className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center text-sm text-white">
+                                        {user?.department || 'Not specified'}
+                                    </div>
+                                )}
+                            </div>
+
+                            {profileRows.map((row) => (
+                                <div
+                                    key={row.label}
+                                    className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center justify-between"
+                                >
+                                    <div className="flex items-center gap-2 text-zinc-500 text-xs">
+                                        <row.icon className="w-3.5 h-3.5" /> {row.label}
+                                    </div>
+                                    <span className="text-xs text-white font-medium">{row.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </motion.div>
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5"
+                    >
+                        <h2 className="text-sm font-semibold text-white mb-4">Academic Details</h2>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            {academicRows.map((row) => (
+                                <div
+                                    key={row.label}
+                                    className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
+                                >
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <row.icon className="w-3.5 h-3.5" /> {row.label}
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5 break-words">
+                                        {row.value}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                <Building className="w-3.5 h-3.5" /> Identity Provider
+                            </div>
+                            <span className="text-xs text-white font-medium capitalize">
+                                {user?.identity_provider || 'email'}
+                            </span>
+                        </div>
+                    </motion.div>
                 </div>
 
-                {/* Activity Summary */}
-                <div className="rounded-2xl bg-zinc-900/40 border border-white/[0.06] p-5 mt-5">
-                    <span className="text-xs font-semibold text-white block mb-4">Account Snapshot</span>
-                    <div className="grid grid-cols-2 xs:grid-cols-3 gap-3">
-                        {profileStats.map(item => (
-                            <div key={item.label} className="p-3 sm:p-4 rounded-xl bg-white/[0.02] border border-white/[0.04] text-center hover:bg-white/[0.04] hover:border-white/[0.08] transition-all">
-                                <div className="text-sm sm:text-base font-bold text-white">{item.value}</div>
-                                <div className="text-[9px] text-zinc-500 uppercase tracking-wider mt-1">{item.label}</div>
+                <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.15 }}
+                    className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5"
+                >
+                    <h2 className="text-sm font-semibold text-white mb-4">Account Activity Snapshot</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {statItems(exportData).map((stat) => (
+                            <div
+                                key={stat.label}
+                                className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
+                            >
+                                <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                    <stat.icon className="w-3.5 h-3.5" /> {stat.label}
+                                </div>
+                                <div className="text-xl font-extrabold text-white mt-2">
+                                    {isLoadingStats ? '...' : stat.value}
+                                </div>
                             </div>
                         ))}
                     </div>
-                </div>
-            </motion.div>
+                </motion.div>
             </div>
         </div>
     );
