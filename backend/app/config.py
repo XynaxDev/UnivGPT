@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     frontend_app_url: str = "http://localhost:5173"
     oauth_redirect_path: str = "/auth/callback"
     academic_email_domains: str = "krmu.edu.in"
-    require_verified_academic_email_for_queries: bool = True
+    require_verified_academic_email_for_queries: bool = False
 
     # Supabase (Auth & Core Data)
     supabase_url: str = ""
@@ -42,6 +42,7 @@ class Settings(BaseSettings):
     # LLM (Generation via OpenRouter)
     openrouter_api_key: str = ""
     openrouter_model: str = "meta-llama/llama-3.1-70b-instruct"
+    openrouter_intent_model: str = "z-ai/glm-4.5-air:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     # Embeddings (Local HuggingFace model)

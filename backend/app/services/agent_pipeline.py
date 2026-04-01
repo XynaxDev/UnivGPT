@@ -26,6 +26,9 @@ from app.services.audit import log_audit_event
 
 logger = logging.getLogger(__name__)
 
+# Capability flags to avoid repeated failing schema probes on every request.
+_DOCUMENTS_HAS_UPLOADED_AT: Optional[bool] = None
+
 def is_network_error(exc: Exception) -> bool:
     message = str(exc).lower()
     if isinstance(exc, httpx.RequestError):
@@ -287,26 +290,13 @@ def fetch_user_profile_context(supabase, user_id: str) -> dict[str, Any]:
     if not supabase or not user_id:
         return {}
     try:
-        try:
-            res = (
-                supabase.table("profiles")
-                .select("id,email,full_name,role,department,program,semester,section,roll_number")
-                .eq("id", user_id)
-                .limit(1)
-                .execute()
-            )
-        except Exception as exc:
-            # Backward compatibility for schemas without extended academic columns.
-            if any(marker in str(exc).lower() for marker in ("program", "semester", "section", "roll_number")):
-                res = (
-                    supabase.table("profiles")
-                    .select("id,email,full_name,role,department")
-                    .eq("id", user_id)
-                    .limit(1)
-                    .execute()
-                )
-            else:
-                raise
+        res = (
+            supabase.table("profiles")
+            .select("*")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
         return (res.data or [{}])[0]
     except Exception:
         return {}
@@ -340,6 +330,80 @@ def should_filter_recent_documents(query: str, intent: dict[str, Any]) -> bool:
     return any(marker in text for marker in markers)
 
 
+def infer_intent_from_query(query: str, intent: dict[str, Any]) -> dict[str, Any]:
+    text = _normalize(query)
+    hydrated = dict(intent or {})
+
+    count_requested = bool(
+        re.search(r"\b(how many|count|number of|total)\b", text)
+    )
+    notices_requested = any(
+        marker in text for marker in ("notice", "notices", "announcement", "announcements", "circular", "circulars")
+    )
+    documents_requested = notices_requested or any(
+        marker in text for marker in ("document", "documents", "doc", "docs", "uploaded", "uploads")
+    )
+
+    if not hydrated.get("date_reference"):
+        for marker in ("today", "tomorrow", "yesterday"):
+            if marker in text:
+                hydrated["date_reference"] = marker
+                break
+
+    if not hydrated.get("intent_type"):
+        if count_requested and any(marker in text for marker in ("student", "students")):
+            hydrated["intent_type"] = "count_users"
+            hydrated["target_entity"] = "students"
+        elif count_requested and any(marker in text for marker in ("faculty", "professor", "teachers")):
+            hydrated["intent_type"] = "count_users"
+            hydrated["target_entity"] = "faculty"
+        elif count_requested and any(marker in text for marker in ("admin", "admins", "administrator")):
+            hydrated["intent_type"] = "count_users"
+            hydrated["target_entity"] = "admins"
+        elif count_requested and any(marker in text for marker in ("user", "users")):
+            hydrated["intent_type"] = "count_users"
+            hydrated["target_entity"] = "users"
+        elif count_requested and documents_requested:
+            hydrated["intent_type"] = "count_documents"
+            hydrated["target_entity"] = "notices" if notices_requested else "documents"
+        elif notices_requested:
+            hydrated["intent_type"] = "list_documents"
+            hydrated["target_entity"] = "notices"
+
+    if not hydrated.get("target_entity"):
+        if notices_requested:
+            hydrated["target_entity"] = "notices"
+        elif documents_requested:
+            hydrated["target_entity"] = "documents"
+
+    if not hydrated.get("course"):
+        course_patterns = [
+            r"\b(btech(?:\s+[a-z]{2,10}){1,3})\b",
+            r"\b([a-z]{2,6}\s?\d{2,4})\b",
+        ]
+        for pattern in course_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                candidate = re.sub(r"\bcourse\b", "", match.group(1), flags=re.IGNORECASE).strip()
+                if len(candidate) >= 4:
+                    hydrated["course"] = candidate
+                    break
+
+    return hydrated
+
+
+def enrich_intent_with_profile(intent: dict[str, Any], user_profile: dict[str, Any]) -> dict[str, Any]:
+    hydrated = dict(intent or {})
+    if not hydrated.get("department") and user_profile.get("department"):
+        hydrated["department"] = str(user_profile.get("department"))
+    if not hydrated.get("course"):
+        # Fall back to program so student/faculty questions can still use scoped retrieval.
+        profile_program = user_profile.get("program")
+        if profile_program:
+            hydrated["course"] = str(profile_program)
+    return hydrated
+
+
 def fetch_filtered_documents(
     supabase,
     allowed_types: list[str],
@@ -347,30 +411,36 @@ def fetch_filtered_documents(
     context: Optional[dict],
     query: str,
 ) -> list[dict[str, Any]]:
+    global _DOCUMENTS_HAS_UPLOADED_AT
     if not supabase:
         return []
+    if not allowed_types:
+        return []
+
+    def query_documents(order_column: str):
+        select_columns = "id,filename,doc_type,department,course,tags,created_at"
+        if order_column == "uploaded_at":
+            select_columns = "id,filename,doc_type,department,course,tags,uploaded_at,created_at"
+        return (
+            supabase.table("documents")
+            .select(select_columns)
+            .in_("doc_type", allowed_types)
+            .order(order_column, desc=True)
+            .limit(500)
+            .execute()
+        )
+
     try:
-        try:
-            res = (
-                supabase.table("documents")
-                .select("id,filename,doc_type,department,course,tags,uploaded_at,created_at")
-                .in_("doc_type", allowed_types)
-                .order("uploaded_at", desc=True)
-                .limit(500)
-                .execute()
-            )
-        except Exception as exc:
-            if "uploaded_at" in str(exc).lower():
-                res = (
-                    supabase.table("documents")
-                    .select("id,filename,doc_type,department,course,tags,created_at")
-                    .in_("doc_type", allowed_types)
-                    .order("created_at", desc=True)
-                    .limit(500)
-                    .execute()
-                )
-            else:
-                raise
+        if _DOCUMENTS_HAS_UPLOADED_AT is False:
+            res = query_documents("created_at")
+        else:
+            try:
+                # Default to created_at to avoid schema-induced 400s on older tables.
+                res = query_documents("created_at")
+            except Exception as exc:
+                logger.info("Documents query fallback to uploaded_at due to created_at query failure: %s", exc)
+                res = query_documents("uploaded_at")
+                _DOCUMENTS_HAS_UPLOADED_AT = True
     except Exception:
         return []
 
@@ -384,6 +454,7 @@ def fetch_filtered_documents(
         marker in _normalize(query) for marker in ("notice", "announcement", "circular")
     )
     recent_mode = should_filter_recent_documents(query, intent)
+    exact_date = parse_date_string(str(intent.get("document_date") or intent.get("date_reference") or ""))
     now_utc = datetime.datetime.now(datetime.timezone.utc)
 
     filtered: list[dict[str, Any]] = []
@@ -415,6 +486,13 @@ def fetch_filtered_documents(
             if (now_utc - dt.astimezone(datetime.timezone.utc)) > datetime.timedelta(days=30):
                 continue
 
+        if exact_date:
+            dt = _doc_datetime(row)
+            if not dt:
+                continue
+            if dt.date() != exact_date:
+                continue
+
         filtered.append(row)
 
     filtered.sort(
@@ -428,17 +506,27 @@ def utc_now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
-async def call_llm(messages: list, response_format: Optional[str] = None) -> str:
+async def call_llm(
+    messages: list,
+    response_format: Optional[str] = None,
+    model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+) -> str:
     """Helper to call OpenRouter LLM."""
     if settings.mock_llm:
         return "This is a mock response from the agent."
 
     payload = {
-        "model": settings.openrouter_model,
+        "model": model or settings.openrouter_model,
         "messages": messages,
     }
     if response_format == "json":
         payload["response_format"] = {"type": "json_object"}
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+    if temperature is not None:
+        payload["temperature"] = float(temperature)
 
     async with httpx.AsyncClient() as client:
         try:
@@ -493,6 +581,9 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
                 {"role": "user", "content": f"Query: {query}"},
             ],
             response_format="json",
+            model=getattr(settings, "openrouter_intent_model", "") or settings.openrouter_model,
+            max_tokens=220,
+            temperature=0.0,
         )
 
         raw = json.loads(content)
@@ -542,8 +633,11 @@ async def run_agent_pipeline(
     # Format history for intent extractor
     history_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages[-4:]])
 
-    # 1. Intent Extraction & Moderation (Clarity)
-    intent = await extract_query_intent(query, history_context=history_text)
+    # 1. Intent extraction + deterministic intent hydration.
+    raw_intent = await extract_query_intent(query, history_context=history_text)
+    user_profile = fetch_user_profile_context(supabase, user_id)
+    intent = infer_intent_from_query(query, raw_intent)
+    intent = enrich_intent_with_profile(intent, user_profile)
     logger.info(f"Extracted dynamic intent: {intent}")
 
     # Moderation Intercept
@@ -635,7 +729,6 @@ async def run_agent_pipeline(
 
     # 2. Search Pinecone for context
     allowed_types = get_allowed_doc_types(user_role)
-    user_profile = fetch_user_profile_context(supabase, user_id)
     user_profile_lines = [
         f"- Name: {user_profile.get('full_name') or 'Unknown'}",
         f"- Email: {user_profile.get('email') or 'Unknown'}",
@@ -647,27 +740,25 @@ async def run_agent_pipeline(
     ]
     user_profile_text = "USER PROFILE CONTEXT:\n" + "\n".join(user_profile_lines)
 
-    # Build filter dynamically
-    base_filter = {"role": {"$in": allowed_types}}
+    # Build Pinecone metadata filter dynamically while preserving RBAC.
+    base_filter: dict[str, Any] = {"role": {"$in": allowed_types}}
     context = context or {}
     if context.get("dept"):
         base_filter["department"] = str(context.get("dept"))
     if context.get("course"):
         base_filter["course"] = str(context.get("course"))
 
-    # Apply all dynamically extracted intent filters, ensuring we don't accidentally override RBAC completely
-    allowed_filter_keys = {"doc_type", "role", "department", "course", "tags"}
-    for key, value in intent.items():
-        if value is None:
-            continue
-        if key not in allowed_filter_keys:
-            continue
-        # If the LLM guessed a generic doc_type or role, we MUST ensure the user has permission to see it
-        if key in ["doc_type", "role"]:
-            if value in allowed_types:
-                base_filter["role"] = value
-        else:
-            base_filter[key] = value
+    requested_type = _normalize(intent.get("doc_type") or intent.get("role"))
+    if requested_type and requested_type in allowed_types:
+        base_filter["role"] = {"$eq": requested_type}
+
+    requested_department = str(intent.get("department") or "").strip()
+    if requested_department:
+        base_filter["department"] = requested_department
+
+    requested_course = str(intent.get("course") or "").strip()
+    if requested_course:
+        base_filter["course"] = requested_course
 
     chunks = []
     context_text = ""
@@ -676,9 +767,19 @@ async def run_agent_pipeline(
 
     intent_type = _normalize(intent.get("intent_type"))
     target_entity = _normalize(intent.get("target_entity"))
-    doc_lookup_requested = intent_type in {"count_documents", "list_documents", "document_date_lookup"} or any(
-        marker in target_entity for marker in ("document", "notice", "announcement", "circular", "holiday")
-    ) or any(marker in _normalize(query) for marker in ("notice", "announcement", "circular"))
+    query_text = _normalize(query)
+    count_request = bool(re.search(r"\b(how many|count|number of|total)\b", query_text))
+    doc_keyword_request = any(
+        marker in query_text for marker in ("document", "documents", "doc", "docs", "notice", "announcement", "circular", "holiday")
+    )
+    notice_requested = any(marker in target_entity for marker in ("notice", "announcement", "circular")) or any(
+        marker in query_text for marker in ("notice", "announcement", "circular")
+    )
+    doc_lookup_requested = (
+        intent_type in {"count_documents", "list_documents", "document_date_lookup", "holiday_check"}
+        or doc_keyword_request
+        or (count_request and any(marker in target_entity for marker in ("document", "notice", "announcement", "circular", "holiday")))
+    )
 
     if supabase and doc_lookup_requested:
         filtered_docs = fetch_filtered_documents(
@@ -697,12 +798,13 @@ async def run_agent_pipeline(
         if intent.get("doc_type") or intent.get("role"):
             scope_tokens.append(f"type `{intent.get('doc_type') or intent.get('role')}`")
         scope = ", ".join(scope_tokens) if scope_tokens else "your allowed scope"
+        entity_label = "notices" if notice_requested else "documents"
 
-        if doc_count == 0 and intent_type in {"count_documents", "list_documents"}:
+        if doc_count == 0 and (intent_type in {"count_documents", "list_documents", "holiday_check"} or count_request):
             forced_answer = (
-                f"I checked the database for {scope} and found 0 documents right now."
+                f"I checked the database for {scope} and found **0 {entity_label}** right now."
             )
-        elif doc_count > 0 and intent_type == "count_documents":
+        elif doc_count > 0 and (intent_type == "count_documents" or count_request):
             preview_lines = []
             for row in filtered_docs[:5]:
                 preview_lines.append(
@@ -711,9 +813,27 @@ async def run_agent_pipeline(
                 )
             preview_block = "\n".join(preview_lines)
             forced_answer = (
-                f"I found **{doc_count} documents** for {scope}.\n\n"
+                f"I found **{doc_count} {entity_label}** for {scope}.\n\n"
                 f"Recent matches:\n{preview_block}"
             )
+        elif intent_type == "holiday_check":
+            holiday_docs = [
+                row
+                for row in filtered_docs
+                if any(marker in _normalize(row.get("filename")) for marker in ("holiday", "closed"))
+                or any(marker in [str(tag).lower() for tag in (row.get("tags") or [])] for marker in ("holiday", "closed"))
+            ]
+            if holiday_docs:
+                top = holiday_docs[0]
+                forced_answer = (
+                    "I found holiday-related documents in scope.\n\n"
+                    f"- Latest: {_format_short_date(top.get('uploaded_at') or top.get('created_at'))} | "
+                    f"{top.get('filename') or 'untitled'}"
+                )
+            else:
+                forced_answer = (
+                    "I checked the available documents and found **0 holiday notices** for the requested scope."
+                )
 
         if doc_count == 0:
             context_text += "\n[Structured Lookup: 0 documents matched current filters.]\n"
@@ -733,6 +853,7 @@ async def run_agent_pipeline(
                 structured_sources.append(
                     {
                         "content": (
+                            f"{row.get('filename') or 'untitled'} | "
                             f"doc_type: {row.get('doc_type') or 'unknown'}, "
                             f"department: {row.get('department') or '-'}, "
                             f"course: {row.get('course') or '-'}, "
@@ -750,7 +871,9 @@ async def run_agent_pipeline(
                     }
                 )
 
-    if pinecone_client.index:
+    should_run_vector_search = pinecone_client.index is not None and forced_answer is None
+
+    if should_run_vector_search:
         try:
             query_vector = get_single_embedding(query)
             search_res = pinecone_client.index.query(
@@ -784,11 +907,14 @@ async def run_agent_pipeline(
                 context_text += f"\n---\nSource: {meta.get('filename')}{meta_str}\n{chunk_content}\n"
         except Exception as e:
             logger.error(f"Pinecone query failed: {e}")
-            context_text = (
+            context_text += (
                 "\n[System Note: Vector database unavailable pending configuration]\n"
             )
     else:
-        logger.warning("Pinecone index not initialized. Skipping vector search.")
+        if forced_answer is not None:
+            logger.info("Skipping vector search because structured response is already resolved.")
+        else:
+            logger.warning("Pinecone index not initialized. Skipping vector search.")
 
     if not chunks and not structured_sources:
         context_text += "\n[System Note: No documents matched the query in the current database (0 documents for current filters).]\n"
@@ -797,7 +923,7 @@ async def run_agent_pipeline(
     current_time_str = f"Current Date: {datetime.datetime.now().strftime('%A, %B %d, %Y')}. Current Time: {datetime.datetime.now().strftime('%I:%M %p')}"
 
     admin_snapshot_text = ""
-    admin_snapshot = {}
+    admin_snapshot: dict[str, Any] = {}
     if user_role == "admin":
         date_hint = parse_date_string(
             intent.get("document_date") if isinstance(intent, dict) else None
@@ -828,12 +954,26 @@ async def run_agent_pipeline(
         if date_docs_text:
             admin_snapshot_text = f"{admin_snapshot_text}\n{date_docs_text}"
 
+        if intent_type == "count_users" and not forced_answer:
+            users_by_role = admin_snapshot.get("users_by_role", {}) if isinstance(admin_snapshot, dict) else {}
+            total_users = (admin_snapshot.get("counts", {}) or {}).get("total_users", 0)
+            if any(marker in target_entity for marker in ("student", "students")):
+                forced_answer = f"There are **{int(users_by_role.get('student', 0))} students** in the current database snapshot."
+            elif any(marker in target_entity for marker in ("faculty", "teacher", "teachers")):
+                forced_answer = f"There are **{int(users_by_role.get('faculty', 0))} faculty users** in the current database snapshot."
+            elif any(marker in target_entity for marker in ("admin", "admins", "administrator")):
+                forced_answer = f"There are **{int(users_by_role.get('admin', 0))} admin users** in the current database snapshot."
+            else:
+                forced_answer = f"There are **{int(total_users or 0)} total users** in the current database snapshot."
+
         system_message = f"""
         You are UniGPT Admin Assistant, a professional operations copilot for university administrators.
         You are interacting with a user whose role is: {user_role}. Focus on operational clarity, policy accuracy, and concise answers.
 
         SYSTEM CONTEXT:
         - {current_time_str}
+        
+        {user_profile_text}
 
         ADMIN GUARDRAILS:
         1. Professionalism: NEVER speak negatively or disrespectfully about any faculty, staff, student, or the university.
@@ -858,30 +998,32 @@ async def run_agent_pipeline(
         - If asked "how many students/faculty/admins/users", use Users by role / Total users from the snapshot.
         """
     else:
+        if intent_type == "count_users" and not forced_answer:
+            forced_answer = "I can provide user counts only to admin accounts. For your role, I can still help with documents and course notices in your allowed scope."
+
         system_message = f"""
-        You are UniGPT, the official, professional AI assistant for the University.
-        You are interacting with a user whose role is: {user_role}. Focus on providing accurate, helpful, and polite assistance.
+        You are UniGPT, the official professional AI assistant for the University.
+        You are interacting with a user whose role is: {user_role}. Provide concise, accurate, and helpful answers.
 
         SYSTEM CONTEXT:
         - {current_time_str}
+        
+        {user_profile_text}
 
-        CRITICAL GUARDRAILS & STRICT RULES:
-        1. Professionalism: NEVER speak negatively, disrespectfully, or spread rumors about any faculty member, staff, student, or the university itself. Maintain a strictly professional, supportive, and objective tone at all times.
-        2. Strict Relevance: You are ONLY for the University. If the user asks for general coding, external technical problems, or tasks completely unrelated to academics/campus, you MUST politely decline and steer them back to university queries. Do NOT perform general coding tasks or answer complex unrelated technical questions.
-        3. Accuracy (No Hallucinations): If the user asks about internal university policies, deadlines, specific events, or curriculum, you MUST rely ONLY on the provided context. If the answer is not in the context, explicitly state: "I'm sorry, but I don't have access to the specific documents containing that information right now." Do NOT guess or make up university data.
-        4. Conversational Context & Memory: You possess the history of this conversation. You MAY engage in polite conversation (greetings, referencing previous messages) as long as it stays grounded in your role as a University Assistant. Keep it strictly professional and helpful.
+        GUARDRAILS:
+        1. Never invent internal data. Use only provided context and structured lookup results.
+        2. If no matching documents exist, clearly state "0 documents found" for the requested scope.
+        3. Keep responses focused on university and campus topics.
+        4. Stay professional and polite.
 
         Extracted Intent Filters: {json.dumps(intent)}
 
         CONTEXT FROM DATABASE:
         {context_text}
-        
-        CRITICAL FORMATTING INSTRUCTIONS:
-        - Engage naturally. If the user asks a conversational question (e.g., "how are you?"), respond politely and naturally.
-        - You MUST use suitable emojis throughout your response to make the conversation friendly, engaging, and modern.
-        - Heavily utilize varied clean Markdown formatting (e.g., bullet points, bold text, italics) to organize information beautifully.
-        - If the user asks for tabular data, MUST use a Markdown table.
-        - If you extract actual information from the database context, explicitly cite the exact Source document name.
+
+        FORMATTING:
+        - Use simple Markdown bullets or tables when useful.
+        - Mention source filenames when citing specific document facts.
         """
 
     llm_messages = [{"role": "system", "content": system_message}]
@@ -890,11 +1032,14 @@ async def run_agent_pipeline(
 
     llm_messages.append({"role": "user", "content": query})
 
-    answer = await call_llm(llm_messages)
+    if forced_answer:
+        answer = forced_answer
+    else:
+        answer = await call_llm(llm_messages)
 
-    # If the LLM failed (e.g. 401 Unauthorized because of bad API keys)
-    if answer == "I'm sorry, I'm having trouble connecting to my brain right now.":
-        answer = "I'm currently unable to connect to my AI provider (Invalid API Key or out of credits). Please update the `OPENROUTER_API_KEY` in the `.env` file to restore my functionality."
+        # If the LLM failed (e.g. 401 Unauthorized because of bad API keys)
+        if answer == "I'm sorry, I'm having trouble connecting to my brain right now.":
+            answer = "I'm currently unable to connect to my AI provider (Invalid API Key or out of credits). Please update the `OPENROUTER_API_KEY` in the `.env` file to restore my functionality."
 
     # 4. Persistence in Supabase (Store Conversations)
     messages.append({"role": "user", "content": query})
@@ -930,6 +1075,15 @@ async def run_agent_pipeline(
         payload={"conv_id": conversation_id, "intent": intent},
     )
 
+    merged_sources: list[dict[str, Any]] = []
+    seen_source_keys: set[str] = set()
+    for source in chunks + structured_sources:
+        source_key = f"{source.get('document_id')}-{source.get('filename')}"
+        if source_key in seen_source_keys:
+            continue
+        seen_source_keys.add(source_key)
+        merged_sources.append(source)
+
     return AgentQueryResponse(
         answer=answer,
         sources=[
@@ -939,7 +1093,7 @@ async def run_agent_pipeline(
                 snippet=c["content"][:150],
                 metadata=c.get("metadata", {}),
             )
-            for c in chunks
+            for c in merged_sources
         ],
         conversation_id=conversation_id,
         role_badge="Admin Assistant" if user_role == "admin" else f"{user_role.title()} Agent",

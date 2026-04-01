@@ -23,39 +23,11 @@ def is_network_error(exc: Exception) -> bool:
         return True
     return "getaddrinfo failed" in message or "name or service not known" in message or "nodename nor servname provided" in message
 
-def get_primary_academic_domain() -> str:
-    domains = [
-        value.strip().lower().lstrip("@")
-        for value in (settings.academic_email_domains or "").split(",")
-        if value.strip()
-    ]
-    return domains[0] if domains else "yourcollege.edu"
-
 @router.post("/agent/query", response_model=AgentQueryResponse)
 async def agent_query(
     body: AgentQueryRequest,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    # Keep strict verification for student-facing query access.
-    # Admin/faculty should not be blocked from operational assistant usage.
-    should_enforce_verification = user.role == UserRole.STUDENT.value
-    access_verified = user.academic_verified
-
-    if (
-        settings.require_verified_academic_email_for_queries
-        and should_enforce_verification
-        and not user.id.startswith("dummy-id-")
-        and not access_verified
-    ):
-        domain = get_primary_academic_domain()
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "Query access is locked for this account. Sign in using your academic email "
-                f"(ending with @{domain}) to continue."
-            ),
-        )
-
     try:
         return await run_agent_pipeline(
             query=body.query,
