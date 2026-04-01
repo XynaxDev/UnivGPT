@@ -1,14 +1,14 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Settings, Bell, Shield, Smartphone, Globe, Cloud, Check,
+    Settings, Bell, Shield,
     Trash2, AlertTriangle, Download, Eye
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useAuthStore } from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToastStore } from '@/store/toastStore';
+import { authApi } from '@/lib/api';
 
 /* ─── Toggle Switch ─── */
 function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void }) {
@@ -28,20 +28,19 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 }
 
 const SettingsPage = () => {
-    const { logout } = useAuthStore();
+    const { logout, user, token } = useAuthStore();
     const { showToast } = useToastStore();
     const navigate = useNavigate();
     const SETTINGS_CACHE_KEY = 'unigpt-dashboard-settings';
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    const [isExporting, setIsExporting] = useState(false);
 
     const [settings, setSettings] = useState({
         emailNotifications: true,
         pushNotifications: false,
-        marketingEmails: false,
         reducedMotion: false,
         twoFactorAuth: false,
-        dataSharing: true,
     });
 
     useEffect(() => {
@@ -66,10 +65,6 @@ const SettingsPage = () => {
         }
     };
 
-    const handleSignOutOthers = () => {
-        showToast('No other active sessions found.', 'info');
-    };
-
     const handleSaveChanges = () => {
         try {
             window.localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings));
@@ -79,22 +74,32 @@ const SettingsPage = () => {
         showToast('Settings saved successfully.', 'success');
     };
 
-    const handleExportData = () => {
-        // Generate dummy data export
-        const data = {
-            exportDate: new Date().toISOString(),
-            profile: { name: 'User', email: 'user@unigpt.edu' },
-            queries: 124,
-            documents: 38,
-            settings: settings,
-        };
-        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'unigpt-data-export.json';
-        a.click();
-        URL.revokeObjectURL(url);
+    const handleExportData = async () => {
+        if (!token) {
+            showToast('Please login again to export data.', 'error');
+            return;
+        }
+        setIsExporting(true);
+        try {
+            const serverData = await authApi.exportUserData(token);
+            const data = {
+                ...serverData,
+                settings,
+            };
+
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'unigpt-data-export.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Exported latest account data.', 'success');
+        } catch (err: any) {
+            showToast(err.message || 'Failed to export user data.', 'error');
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     const sections = [
@@ -103,7 +108,6 @@ const SettingsPage = () => {
             items: [
                 { id: 'emailNotifications', label: 'Email Notifications', desc: 'Daily summary and important alerts via email.' },
                 { id: 'pushNotifications', label: 'Push Notifications', desc: 'Real-time browser/app notifications.' },
-                { id: 'marketingEmails', label: 'Marketing & Updates', desc: 'Events, newsletters, and campus updates.' },
             ]
         },
         {
@@ -116,16 +120,8 @@ const SettingsPage = () => {
             id: 'privacy', title: 'Privacy & Security', icon: Shield,
             items: [
                 { id: 'twoFactorAuth', label: 'Two-Factor Authentication', desc: 'Extra security with a verification code.' },
-                { id: 'dataSharing', label: 'Analytics Sharing', desc: 'Share anonymous usage data to improve the platform.' },
             ]
         },
-    ];
-
-    const systemItems = [
-        { label: 'Version', value: '1.2.4' },
-        { label: 'Cloud Status', value: 'Operational', ok: true },
-        { label: 'API Latency', value: '45ms', ok: true },
-        { label: 'Sync', value: 'Up to date', ok: true },
     ];
 
     return (
@@ -187,9 +183,10 @@ const SettingsPage = () => {
                                 </div>
                                 <Button
                                     onClick={handleExportData}
+                                    disabled={isExporting}
                                     className="h-9 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-xs font-semibold transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-95"
                                 >
-                                    <Download className="w-3.5 h-3.5 mr-1.5" /> Export
+                                    <Download className="w-3.5 h-3.5 mr-1.5" /> {isExporting ? 'Exporting...' : 'Export'}
                                 </Button>
                             </div>
                         </motion.div>
@@ -220,51 +217,32 @@ const SettingsPage = () => {
 
                     {/* Right Column */}
                     <div className="space-y-5">
-                        {/* Active Sessions */}
-                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="rounded-2xl bg-zinc-900/40 border border-white/[0.06] overflow-hidden">
+                        <motion.div
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3 }}
+                            className="rounded-2xl bg-zinc-900/40 border border-white/[0.06] overflow-hidden"
+                        >
                             <div className="px-5 py-3.5 border-b border-white/[0.05]">
-                                <span className="text-sm font-semibold text-white">Sessions</span>
-                            </div>
-                            <div className="p-4 space-y-3">
-                                <div className="flex items-center gap-3">
-                                    <Globe className="w-4 h-4 text-zinc-500 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-xs font-medium text-white flex items-center gap-1.5">Chrome <Badge className="text-[7px] bg-emerald-500/20 text-emerald-400 border-emerald-500/20 px-1 py-0">Active</Badge></div>
-                                        <div className="text-[10px] text-zinc-600">Active now</div>
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <Smartphone className="w-4 h-4 text-zinc-500 shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-xs font-medium text-white">Mobile Safari</div>
-                                        <div className="text-[10px] text-zinc-600">2h ago</div>
-                                    </div>
-                                </div>
-                                <Button
-                                    onClick={handleSignOutOthers}
-                                    className="w-full mt-2 h-9 rounded-xl text-xs font-semibold tracking-wide bg-white/[0.06] text-white border border-white/[0.12] hover:bg-white/[0.12] hover:text-white transition-all active:scale-95"
-                                >
-                                    Sign out others
-                                </Button>
-                            </div>
-                        </motion.div>
-
-                        {/* System Status */}
-                        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="rounded-2xl bg-zinc-900/40 border border-white/[0.06] overflow-hidden">
-                            <div className="px-5 py-3.5 border-b border-white/[0.05] flex items-center justify-between">
-                                <span className="text-sm font-semibold text-white flex items-center gap-2"><Cloud className="w-4 h-4 text-zinc-500" /> System</span>
-                                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                                <span className="text-sm font-semibold text-white">Account</span>
                             </div>
                             <div className="p-4 space-y-2.5">
-                                {systemItems.map((item, i) => (
-                                    <div key={i} className="flex items-center justify-between">
-                                        <span className="text-[11px] text-zinc-500">{item.label}</span>
-                                        <div className="flex items-center gap-1">
-                                            {item.ok && <Check className="w-3 h-3 text-emerald-500" />}
-                                            <span className="text-[11px] font-medium text-white">{item.value}</span>
-                                        </div>
-                                    </div>
-                                ))}
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Name</span>
+                                    <span className="text-[11px] font-medium text-white">{user?.full_name || 'User'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Role</span>
+                                    <span className="text-[11px] font-medium text-white capitalize">{user?.role || 'student'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Department</span>
+                                    <span className="text-[11px] font-medium text-white">{user?.department || 'Not set'}</span>
+                                </div>
+                                <div className="flex items-center justify-between">
+                                    <span className="text-[11px] text-zinc-500">Verification</span>
+                                    <span className="text-[11px] font-medium text-white">{user?.academic_verified ? 'Verified' : 'Pending'}</span>
+                                </div>
                             </div>
                         </motion.div>
 

@@ -60,6 +60,8 @@ export const authApi = {
         request<UserProfile>('/user/me', { token }),
     setRole: (token: string, role: UserProfile['role']) =>
         request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } }),
+    exportUserData: (token: string) =>
+        request<UserExportData>('/user/export-data', { token }),
     listUsers: (token: string) =>
         request<UserProfile[]>('/auth/users', { token }),
     inviteUser: (token: string, data: { email: string; full_name: string; role: string }) =>
@@ -111,10 +113,33 @@ export interface UserProfile {
     full_name: string;
     role: 'student' | 'faculty' | 'admin';
     department?: string;
+    program?: string | null;
+    semester?: string | null;
+    section?: string | null;
+    roll_number?: string | null;
     created_at?: string;
     profileImage?: string | null;
     academic_verified?: boolean;
     identity_provider?: string | null;
+}
+
+export interface UserExportData {
+    exportDate: string;
+    profile: {
+        name: string;
+        email: string;
+        role: 'student' | 'faculty' | 'admin';
+        department?: string | null;
+        program?: string | null;
+        semester?: string | null;
+        section?: string | null;
+        roll_number?: string | null;
+        academic_verified?: boolean;
+        member_since?: string | null;
+    };
+    queries: number;
+    documents: number;
+    notices: number;
 }
 
 export interface DocumentResponse {
