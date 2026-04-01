@@ -40,6 +40,10 @@ from app.config import settings
 from app.services.supabase_client import get_supabase_client, get_supabase_admin
 from app.services.audit import log_audit_event
 from app.services.email_service import EmailService
+from app.services.demo_directory_seed import (
+    build_demo_faculty_response,
+    build_demo_courses_response,
+)
 
 router = APIRouter(tags=["Authentication"])
 
@@ -1003,7 +1007,7 @@ async def get_faculty_directory(
     try:
         safe_limit = min(max(limit, 1), 100)
         if user.id.startswith("dummy-id-"):
-            return FacultyListResponse(faculty=[], total=0)
+            return build_demo_faculty_response(safe_limit)
 
         cache_key = (user.id, safe_limit)
         cached = _USER_FACULTY_CACHE.get(cache_key)
@@ -1072,6 +1076,10 @@ async def get_faculty_directory(
             )
             for row in rows
         ]
+        if not faculty and settings.seed_demo_directory_data:
+            response = build_demo_faculty_response(safe_limit)
+            _USER_FACULTY_CACHE[cache_key] = (now_ts, response)
+            return response
         response = FacultyListResponse(faculty=faculty, total=len(faculty))
         _USER_FACULTY_CACHE[cache_key] = (now_ts, response)
         return response
@@ -1090,7 +1098,7 @@ async def get_course_directory(
     try:
         safe_limit = min(max(limit, 1), 200)
         if user.id.startswith("dummy-id-"):
-            return CourseDirectoryResponse(courses=[], total=0)
+            return build_demo_courses_response(safe_limit)
 
         cache_key = (user.id, safe_limit)
         cached = _USER_COURSES_CACHE.get(cache_key)
@@ -1206,6 +1214,10 @@ async def get_course_directory(
         ]
         items.sort(key=lambda i: i.next_update_at or "", reverse=True)
         items = items[:safe_limit]
+        if not items and settings.seed_demo_directory_data:
+            response = build_demo_courses_response(safe_limit)
+            _USER_COURSES_CACHE[cache_key] = (now_ts, response)
+            return response
 
         response = CourseDirectoryResponse(courses=items, total=len(items))
         _USER_COURSES_CACHE[cache_key] = (now_ts, response)

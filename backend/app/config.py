@@ -34,6 +34,7 @@ class Settings(BaseSettings):
     supabase_jwt_secret: str = ""
     supabase_offline_mode: bool = False
     enable_dummy_auth: bool = False
+    seed_demo_directory_data: bool = True
 
     # Pinecone (Fast Vector Search)
     pinecone_api_key: str = ""
