@@ -31,10 +31,11 @@ const SettingsPage = () => {
     const { logout, user, token } = useAuthStore();
     const { showToast } = useToastStore();
     const navigate = useNavigate();
-    const SETTINGS_CACHE_KEY = 'unigpt-dashboard-settings';
     const [showDeleteDialog, setShowDeleteDialog] = useState(false);
     const [deleteConfirmText, setDeleteConfirmText] = useState('');
     const [isExporting, setIsExporting] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
+    const [isLoadingSettings, setIsLoadingSettings] = useState(true);
 
     const [settings, setSettings] = useState({
         emailNotifications: true,
@@ -43,15 +44,32 @@ const SettingsPage = () => {
     });
 
     useEffect(() => {
-        try {
-            const raw = window.localStorage.getItem(SETTINGS_CACHE_KEY);
-            if (!raw) return;
-            const parsed = JSON.parse(raw) as Partial<typeof settings>;
-            setSettings((prev) => ({ ...prev, ...parsed }));
-        } catch {
-            // Ignore invalid cache payloads.
-        }
-    }, []);
+        let active = true;
+        const loadSettings = async () => {
+            if (!token) {
+                setIsLoadingSettings(false);
+                return;
+            }
+            try {
+                const res = await authApi.getSettings(token);
+                if (!active) return;
+                setSettings(res.settings);
+            } catch {
+                if (!active) return;
+                setSettings({
+                    emailNotifications: true,
+                    pushNotifications: false,
+                    reducedMotion: false,
+                });
+            } finally {
+                if (active) setIsLoadingSettings(false);
+            }
+        };
+        loadSettings();
+        return () => {
+            active = false;
+        };
+    }, [token]);
 
     const toggle = (key: keyof typeof settings) => {
         setSettings(prev => ({ ...prev, [key]: !prev[key] }));
@@ -64,13 +82,21 @@ const SettingsPage = () => {
         }
     };
 
-    const handleSaveChanges = () => {
-        try {
-            window.localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings));
-        } catch {
-            // Ignore storage write failures.
+    const handleSaveChanges = async () => {
+        if (!token) {
+            showToast('Please login again to save settings.', 'error');
+            return;
         }
-        showToast('Settings saved successfully.', 'success');
+        setIsSaving(true);
+        try {
+            const res = await authApi.saveSettings(token, settings);
+            setSettings(res.settings);
+            showToast('Settings saved successfully.', 'success');
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to save settings.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleExportData = async () => {
@@ -119,7 +145,7 @@ const SettingsPage = () => {
 
     return (
         <div className="h-full overflow-y-auto">
-            <div className="p-6 md:p-8 space-y-6 max-w-5xl mx-auto pb-24">
+            <div className="p-6 md:p-8 space-y-6 max-w-7xl mx-auto pb-24">
             <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/90 to-zinc-900/40 p-5 md:p-6 mb-6">
                     <h1 className="text-xl font-bold tracking-tight text-white flex items-center gap-2 mb-1">
@@ -150,10 +176,14 @@ const SettingsPage = () => {
                                                 <div className="text-sm font-medium text-white">{item.label}</div>
                                                 <div className="text-[11px] text-zinc-500 mt-0.5">{item.desc}</div>
                                             </div>
-                                            <Toggle
-                                                checked={settings[item.id as keyof typeof settings]}
-                                                onChange={() => toggle(item.id as keyof typeof settings)}
-                                            />
+                                            {isLoadingSettings ? (
+                                                <span className="text-[11px] text-zinc-600">Loading...</span>
+                                            ) : (
+                                                <Toggle
+                                                    checked={settings[item.id as keyof typeof settings]}
+                                                    onChange={() => toggle(item.id as keyof typeof settings)}
+                                                />
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -253,9 +283,10 @@ const SettingsPage = () => {
 
                         <Button
                             onClick={handleSaveChanges}
-                            className="w-full h-10 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-semibold transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-[0.98]"
+                            disabled={isSaving || isLoadingSettings}
+                            className="w-full h-10 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white font-semibold transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-[0.98]"
                         >
-                            Save Changes
+                            {isSaving ? 'Saving...' : 'Save Changes'}
                         </Button>
                     </div>
                 </div>

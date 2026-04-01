@@ -48,13 +48,36 @@ const statItems = (data: UserExportData | null) => [
     },
 ];
 
+function ProviderBadge({ provider }: { provider?: string | null }) {
+    const normalized = (provider || 'email').toLowerCase();
+    if (normalized === 'google') {
+        return (
+            <span className="inline-flex items-center gap-2 text-xs text-white font-medium capitalize">
+                <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+                    <path fill="#EA4335" d="M12 10.2v3.9h5.4c-.2 1.2-.9 2.3-1.9 3l3 2.3c1.8-1.7 2.8-4.1 2.8-6.9 0-.7-.1-1.4-.2-2.1H12z" />
+                    <path fill="#34A853" d="M12 22c2.7 0 5-0.9 6.7-2.6l-3-2.3c-.8.6-2 1-3.6 1-2.7 0-4.9-1.8-5.7-4.2l-3.1 2.4C4.9 19.8 8.2 22 12 22z" />
+                    <path fill="#4A90E2" d="M6.3 13.9c-.2-.6-.3-1.2-.3-1.9s.1-1.3.3-1.9l-3.1-2.4C2.4 9 2 10.5 2 12s.4 3 1.2 4.3l3.1-2.4z" />
+                    <path fill="#FBBC05" d="M12 5.8c1.5 0 2.9.5 3.9 1.5l2.9-2.9C17 2.8 14.7 2 12 2 8.2 2 4.9 4.2 3.2 7.7l3.1 2.4C7.1 7.6 9.3 5.8 12 5.8z" />
+                </svg>
+                Google
+            </span>
+        );
+    }
+    return <span className="text-xs text-white font-medium capitalize">{normalized}</span>;
+}
+
 const ProfilePage = () => {
     const { user, token, updateUser } = useAuthStore();
     const { showToast } = useToastStore();
 
     const [isEditing, setIsEditing] = useState(false);
+    const [isSaving, setIsSaving] = useState(false);
     const [formName, setFormName] = useState(user?.full_name || '');
     const [formDepartment, setFormDepartment] = useState(user?.department || '');
+    const [formProgram, setFormProgram] = useState(user?.program || '');
+    const [formSemester, setFormSemester] = useState(user?.semester || '');
+    const [formSection, setFormSection] = useState(user?.section || '');
+    const [formRollNumber, setFormRollNumber] = useState(user?.roll_number || '');
     const [exportData, setExportData] = useState<UserExportData | null>(null);
     const [isLoadingStats, setIsLoadingStats] = useState(false);
 
@@ -64,7 +87,11 @@ const ProfilePage = () => {
     useEffect(() => {
         setFormName(user?.full_name || '');
         setFormDepartment(user?.department || '');
-    }, [user?.full_name, user?.department]);
+        setFormProgram(user?.program || '');
+        setFormSemester(user?.semester || '');
+        setFormSection(user?.section || '');
+        setFormRollNumber(user?.roll_number || '');
+    }, [user?.full_name, user?.department, user?.program, user?.semester, user?.section, user?.roll_number]);
 
     useEffect(() => {
         let alive = true;
@@ -100,18 +127,45 @@ const ProfilePage = () => {
         reader.readAsDataURL(file);
     };
 
-    const handleSave = () => {
-        updateUser({
-            full_name: formName.trim() || user?.full_name || 'User',
-            department: formDepartment.trim(),
-        });
-        setIsEditing(false);
-        showToast('Profile details saved.', 'success');
+    const handleSave = async () => {
+        if (!token) {
+            showToast('Please login again to save profile.', 'error');
+            return;
+        }
+        setIsSaving(true);
+        try {
+            const payload = await authApi.updateProfile(token, {
+                full_name: formName.trim() || user?.full_name || 'User',
+                department: formDepartment.trim(),
+                program: formProgram.trim(),
+                semester: formSemester.trim(),
+                section: formSection.trim(),
+                roll_number: formRollNumber.trim(),
+            });
+            updateUser({
+                full_name: payload.full_name,
+                department: payload.department || '',
+                program: payload.program || '',
+                semester: payload.semester || '',
+                section: payload.section || '',
+                roll_number: payload.roll_number || '',
+            });
+            setIsEditing(false);
+            showToast('Profile details saved.', 'success');
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to save profile details.', 'error');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const handleCancel = () => {
         setFormName(user?.full_name || '');
         setFormDepartment(user?.department || '');
+        setFormProgram(user?.program || '');
+        setFormSemester(user?.semester || '');
+        setFormSection(user?.section || '');
+        setFormRollNumber(user?.roll_number || '');
         setIsEditing(false);
     };
 
@@ -149,9 +203,9 @@ const ProfilePage = () => {
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/90 to-zinc-900/40 overflow-hidden"
+                    className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-zinc-950 via-zinc-950 to-black overflow-hidden shadow-[0_24px_60px_-30px_rgba(249,115,22,0.45)]"
                 >
-                    <div className="h-24 bg-gradient-to-r from-orange-600/25 via-amber-500/10 to-transparent" />
+                    <div className="h-28 bg-[radial-gradient(120%_160%_at_0%_0%,rgba(249,115,22,0.38)_0%,rgba(251,191,36,0.1)_40%,rgba(0,0,0,0)_85%)]" />
 
                     <div className="px-5 sm:px-7 pb-6 -mt-10 flex flex-col md:flex-row md:items-end gap-4">
                         <div className="relative group">
@@ -233,9 +287,10 @@ const ProfilePage = () => {
                                     </Button>
                                     <Button
                                         onClick={handleSave}
-                                        className="h-10 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 text-white"
+                                        disabled={isSaving}
+                                        className="h-10 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white"
                                     >
-                                        <Save className="w-4 h-4 mr-1.5" /> Save
+                                        <Save className="w-4 h-4 mr-1.5" /> {isSaving ? 'Saving...' : 'Save'}
                                     </Button>
                                 </div>
                             )}
@@ -283,6 +338,71 @@ const ProfilePage = () => {
                                 )}
                             </div>
 
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <label className="text-[11px] text-zinc-500">Program</label>
+                                {isEditing ? (
+                                    <input
+                                        value={formProgram}
+                                        onChange={(e) => setFormProgram(e.target.value)}
+                                        className="h-10 rounded-xl border border-white/[0.1] bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/35"
+                                        placeholder="BTech CSE"
+                                    />
+                                ) : (
+                                    <div className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center text-sm text-white">
+                                        {user?.program || 'Not specified'}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="grid grid-cols-1 gap-1.5">
+                                    <label className="text-[11px] text-zinc-500">Semester</label>
+                                    {isEditing ? (
+                                        <input
+                                            value={formSemester}
+                                            onChange={(e) => setFormSemester(e.target.value)}
+                                            className="h-10 rounded-xl border border-white/[0.1] bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/35"
+                                            placeholder="4"
+                                        />
+                                    ) : (
+                                        <div className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center text-sm text-white">
+                                            {user?.semester || 'Not specified'}
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-1 gap-1.5">
+                                    <label className="text-[11px] text-zinc-500">Section</label>
+                                    {isEditing ? (
+                                        <input
+                                            value={formSection}
+                                            onChange={(e) => setFormSection(e.target.value)}
+                                            className="h-10 rounded-xl border border-white/[0.1] bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/35"
+                                            placeholder="A"
+                                        />
+                                    ) : (
+                                        <div className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center text-sm text-white">
+                                            {user?.section || 'Not specified'}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-1.5">
+                                <label className="text-[11px] text-zinc-500">Roll Number</label>
+                                {isEditing ? (
+                                    <input
+                                        value={formRollNumber}
+                                        onChange={(e) => setFormRollNumber(e.target.value)}
+                                        className="h-10 rounded-xl border border-white/[0.1] bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/35"
+                                        placeholder="230101029"
+                                    />
+                                ) : (
+                                    <div className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center text-sm text-white">
+                                        {user?.roll_number || 'Not specified'}
+                                    </div>
+                                )}
+                            </div>
+
                             {profileRows.map((row) => (
                                 <div
                                     key={row.label}
@@ -324,9 +444,7 @@ const ProfilePage = () => {
                             <div className="flex items-center gap-2 text-[11px] text-zinc-500">
                                 <Building className="w-3.5 h-3.5" /> Identity Provider
                             </div>
-                            <span className="text-xs text-white font-medium capitalize">
-                                {user?.identity_provider || 'email'}
-                            </span>
+                            <ProviderBadge provider={user?.identity_provider || 'email'} />
                         </div>
                     </motion.div>
                 </div>
