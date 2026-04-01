@@ -19,6 +19,7 @@ import ProfilePage from '@/pages/dashboard/ProfilePage';
 import UploadPage from '@/pages/dashboard/UploadPage';
 import NotificationsPage from '@/pages/dashboard/NotificationsPage';
 import FacultyProfilePage from '@/pages/dashboard/FacultyProfilePage';
+import FacultyDirectoryPage from '@/pages/dashboard/FacultyDirectoryPage';
 import AuthLayout from '@/components/layout/AuthLayout';
 import SmoothScroll from '@/components/layout/SmoothScroll';
 import { ToastProvider } from '@/components/ui/ToastProvider';
@@ -151,6 +152,7 @@ export default function App() {
               <Route path="settings" element={<SettingsPage />} />
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="faculty" element={<FacultyDirectoryPage />} />
               <Route path="faculty/:id" element={<FacultyProfilePage />} />
             </Route>
 
