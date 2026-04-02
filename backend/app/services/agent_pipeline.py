@@ -426,6 +426,23 @@ def is_fast_smalltalk_query(query: str) -> bool:
     return starts_with_greeting or asks_help
 
 
+_LOCAL_PROFANITY_PATTERN = re.compile(
+    r"\b(shit|shitty|fuck|fucking|bitch|bastard|asshole|motherfucker|mf)\b",
+    re.IGNORECASE,
+)
+
+
+def detect_local_moderation(query: str) -> dict[str, Any]:
+    if _LOCAL_PROFANITY_PATTERN.search(query or ""):
+        return {
+            "is_flagged": True,
+            "reason": "Abusive or profane language detected.",
+            "intent_type": "general",
+            "target_entity": "general",
+        }
+    return {"is_flagged": False}
+
+
 async def build_fast_smalltalk_answer(query: str, user_role: str, user_profile: Optional[dict[str, Any]] = None) -> str:
     profile = user_profile or {}
     raw_name = str(profile.get("full_name") or "").strip()
@@ -659,6 +676,8 @@ async def call_llm(
     model: Optional[str] = None,
     max_tokens: Optional[int] = None,
     temperature: Optional[float] = None,
+    allow_fallback_models: bool = True,
+    max_retries_override: Optional[int] = None,
 ) -> str:
     """Helper to call OpenRouter LLM."""
     if settings.mock_llm:
@@ -669,13 +688,13 @@ async def call_llm(
     primary_model = (model or settings.openrouter_model or "").strip()
     if primary_model:
         candidate_models.append(primary_model)
-    for fallback in settings.openrouter_fallback_models_list:
-        if fallback not in candidate_models:
-            candidate_models.append(fallback)
-    if settings.openrouter_intent_model and settings.openrouter_intent_model not in candidate_models:
-        candidate_models.append(settings.openrouter_intent_model)
+    if allow_fallback_models:
+        for fallback in settings.openrouter_fallback_models_list:
+            if fallback not in candidate_models:
+                candidate_models.append(fallback)
 
-    max_retries = max(0, int(settings.openrouter_max_retries or 0))
+    configured_retries = settings.openrouter_max_retries if max_retries_override is None else max_retries_override
+    max_retries = max(0, int(configured_retries or 0))
     backoff = max(0.1, float(settings.openrouter_retry_backoff_seconds or 0.8))
 
     last_exception: Optional[Exception] = None
@@ -775,19 +794,29 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
     Example 3: {{"is_flagged": true, "reason": "Severe hate speech"}}
     """
 
+    local_moderation = detect_local_moderation(query)
+    if local_moderation.get("is_flagged"):
+        return local_moderation
+
     if is_fast_smalltalk_query(query):
         return {"is_flagged": False, "intent_type": "general", "target_entity": "general"}
 
     try:
-        content = await call_llm(
-            [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": f"Query: {query}"},
-            ],
-            response_format="json",
-            model=getattr(settings, "openrouter_intent_model", "") or settings.openrouter_model,
-            max_tokens=220,
-            temperature=0.0,
+        intent_timeout = max(4, min(12, int(settings.openrouter_timeout_seconds or 20)))
+        content = await asyncio.wait_for(
+            call_llm(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": f"Query: {query}"},
+                ],
+                response_format="json",
+                model=getattr(settings, "openrouter_intent_model", "") or settings.openrouter_model,
+                max_tokens=220,
+                temperature=0.0,
+                allow_fallback_models=False,
+                max_retries_override=0,
+            ),
+            timeout=float(intent_timeout),
         )
 
         if isinstance(content, (dict, list)):
@@ -803,6 +832,9 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
             return validated.model_dump(exclude_none=True)
         except Exception:
             return raw
+    except asyncio.TimeoutError:
+        logger.warning("Intent extraction timed out; falling back to deterministic routing.")
+        return {}
     except Exception as e:
         logger.warning(f"Intent extraction/moderation failed: {e}")
         return {}
@@ -839,9 +871,12 @@ async def run_agent_pipeline(
 
     supabase = None if settings.supabase_offline_mode else get_supabase_admin()
 
-    # Get previous messages for history window early for moderation
+    # Fast deterministic profanity moderation before remote intent extraction.
+    early_moderation = detect_local_moderation(query)
+
+    # Get previous messages for history window (only when not already flagged locally).
     messages = []
-    if supabase:
+    if supabase and not early_moderation.get("is_flagged"):
         try:
             existing = (
                 supabase.table("conversations")
@@ -861,7 +896,10 @@ async def run_agent_pipeline(
     history_text = "\n".join([f"{m['role']}: {m['content']}" for m in messages[-4:]])
 
     # 1. Intent extraction + deterministic intent hydration.
-    raw_intent = await extract_query_intent(query, history_context=history_text)
+    if early_moderation.get("is_flagged"):
+        raw_intent = early_moderation
+    else:
+        raw_intent = await extract_query_intent(query, history_context=history_text)
     effective_user_profile = user_profile or fetch_user_profile_context(supabase, user_id)
     intent = infer_intent_from_query(query, raw_intent)
     intent = enrich_intent_with_profile(intent, effective_user_profile)

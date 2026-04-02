@@ -202,7 +202,7 @@ export const documentsApi = {
 
 export const agentApi = {
     query: (token: string, data: { query: string; context?: { dept?: string }; conversation_id?: string }) =>
-        request<AgentQueryResponse>('/agent/query', { method: 'POST', body: data, token }),
+        request<AgentQueryResponse>('/agent/query', { method: 'POST', body: data, token, timeoutMs: 90_000 }),
     getHistory: (token: string) =>
         request<ConversationListResponse>('/agent/history', { token }),
     getConversation: (token: string, id: string) =>
