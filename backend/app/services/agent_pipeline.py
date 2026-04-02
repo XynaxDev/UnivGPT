@@ -447,48 +447,6 @@ _LOCAL_PROFANITY_PATTERNS = [
     re.compile(r"\bmf+\b", re.IGNORECASE),
 ]
 
-_IDENTITY_TERMS = (
-    "gay",
-    "lesbian",
-    "homo",
-    "homosexual",
-    "trans",
-    "transgender",
-    "bisexual",
-)
-
-_PERSON_REFERENCE_TERMS = (
-    "sir",
-    "maam",
-    "madam",
-    "teacher",
-    "professor",
-    "faculty",
-    "he",
-    "she",
-    "him",
-    "her",
-    "dr",
-    "mr",
-    "mrs",
-    "ms",
-)
-
-_TARGETED_IDENTITY_PATTERNS = [
-    re.compile(
-        r"\b(?:why|how)\s+[a-z]{2,24}(?:\s+[a-z]{2,24}){0,2}\s+(?:sir|maam|madam|dr|mr|mrs|ms)?\s*(?:is|are|was|were)\s+(?:a\s+)?(?:gay|lesbian|homo|homosexual|trans|transgender|bisexual)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:sir|maam|madam|teacher|professor|faculty|dr|mr|mrs|ms|he|she|him|her)\b.{0,50}\b(?:gay|lesbian|homo|homosexual|trans|transgender|bisexual)\b",
-        re.IGNORECASE,
-    ),
-    re.compile(
-        r"\b(?:gay|lesbian|homo|homosexual|trans|transgender|bisexual)\b.{0,50}\b(?:sir|maam|madam|teacher|professor|faculty|dr|mr|mrs|ms|he|she|him|her)\b",
-        re.IGNORECASE,
-    ),
-]
-
 
 def _normalize_for_moderation(raw: str) -> str:
     text = (raw or "").lower()
@@ -515,30 +473,10 @@ def _contains_profanity(text: str) -> bool:
     return any(pattern.search(text) for pattern in _LOCAL_PROFANITY_PATTERNS)
 
 
-def _contains_targeted_identity_harassment(text: str) -> bool:
-    if not text:
-        return False
-    if any(pattern.search(text) for pattern in _TARGETED_IDENTITY_PATTERNS):
-        return True
-
-    has_identity_term = any(re.search(rf"\b{re.escape(term)}\b", text) for term in _IDENTITY_TERMS)
-    if not has_identity_term:
-        return False
-
-    has_person_reference = any(re.search(rf"\b{re.escape(term)}\b", text) for term in _PERSON_REFERENCE_TERMS)
-    has_targeting_verb = bool(re.search(r"\b(why|how|is|are|was|were)\b", text))
-    return has_person_reference and has_targeting_verb
-
-
 def detect_local_moderation(query: str) -> dict[str, Any]:
     normalized = _normalize_for_moderation(query or "")
-    if _contains_targeted_identity_harassment(normalized):
-        return {
-            "is_flagged": True,
-            "reason": "Targeted personal/identity harassment detected.",
-            "intent_type": "general",
-            "target_entity": "general",
-        }
+    # Keep local moderation minimal and deterministic.
+    # Rich harassment/disrespect detection is model-driven in extract_query_intent().
     if _contains_profanity(normalized):
         return {
             "is_flagged": True,
@@ -1564,7 +1502,13 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
     Recent conversation history for context:
     {history_context}
 
-    Task 1 (Moderation): Analyze the user's latest query for explicit hate speech, severe harassment, direct threats, or extreme toxicity directed at the university or its staff. Do NOT flag questions, apologies, mild frustration, general complaints, or references to the moderation/flagging system itself. If an explicit and severe violation is detected, set `"is_flagged": true`. Otherwise, set it to `false`.
+    Task 1 (Moderation): Analyze the user's latest query for abusive/disrespectful content.
+    Set `"is_flagged": true` when the user message contains:
+    - hate speech or slurs
+    - harassment, insults, demeaning personal attacks, or identity-based targeting
+    - direct threats
+    - abusive allegations about a specific teacher/faculty/staff/student/person
+    Keep `"is_flagged": false` for normal academic questions, neutral policy questions, mild frustration, general complaints, apologies, or references to moderation itself.
     Task 2 (Conversation Mode): classify whether the query is primarily casual chit-chat/emotional venting or an actionable university data/task query.
     Task 3 (Intent Routing): Extract structured intent metadata so downstream tools can filter data before the main LLM response.
 
@@ -1603,8 +1547,8 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
                 model=getattr(settings, "openrouter_intent_model", "") or settings.openrouter_model,
                 max_tokens=220,
                 temperature=0.0,
-                allow_fallback_models=False,
-                max_retries_override=0,
+                allow_fallback_models=True,
+                max_retries_override=1,
             ),
             timeout=float(intent_timeout),
         )
