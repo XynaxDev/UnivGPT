@@ -115,6 +115,71 @@ def _auth_user_metadata(user: Any) -> dict[str, Any]:
     return metadata if isinstance(metadata, dict) else {}
 
 
+def _auth_user_app_metadata(user: Any) -> dict[str, Any]:
+    if isinstance(user, dict):
+        metadata = user.get("app_metadata")
+    else:
+        metadata = getattr(user, "app_metadata", None)
+    return metadata if isinstance(metadata, dict) else {}
+
+
+def _auth_user_identities(user: Any) -> list[Any]:
+    if isinstance(user, dict):
+        identities = user.get("identities")
+    else:
+        identities = getattr(user, "identities", None)
+    return identities if isinstance(identities, list) else []
+
+
+def _normalize_provider_name(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def auth_user_providers(user: Any) -> list[str]:
+    providers: list[str] = []
+    app_metadata = _auth_user_app_metadata(user)
+    metadata_provider = _normalize_provider_name(app_metadata.get("provider"))
+    if metadata_provider:
+        providers.append(metadata_provider)
+
+    metadata_providers = app_metadata.get("providers")
+    if isinstance(metadata_providers, list):
+        providers.extend(_normalize_provider_name(item) for item in metadata_providers)
+
+    for identity in _auth_user_identities(user):
+        provider = ""
+        if isinstance(identity, dict):
+            provider = _normalize_provider_name(identity.get("provider"))
+        else:
+            provider = _normalize_provider_name(getattr(identity, "provider", None))
+        if provider:
+            providers.append(provider)
+
+    deduped: list[str] = []
+    for provider in providers:
+        if provider and provider not in deduped:
+            deduped.append(provider)
+    return deduped
+
+
+def is_google_only_auth_user(user: Any) -> bool:
+    providers = auth_user_providers(user)
+    if not providers:
+        return False
+    return "google" in providers and "email" not in providers
+
+
+def find_auth_user_by_email(admin: Any, email: str) -> Any | None:
+    target_email = (email or "").strip().lower()
+    if not target_email:
+        return None
+    users_res = extract_auth_users(admin.auth.admin.list_users())
+    return next(
+        (u for u in users_res if _auth_user_email(u).strip().lower() == target_email),
+        None,
+    )
+
+
 def build_oauth_redirect_url() -> str:
     base = settings.frontend_app_url.rstrip("/")
     path = settings.oauth_redirect_path
@@ -536,6 +601,14 @@ async def login(request: Request, body: LoginRequest):
 
     # 2. Attempt real Supabase auth
     try:
+        admin = get_supabase_admin()
+        auth_user = find_auth_user_by_email(admin, body.email)
+        if auth_user and is_google_only_auth_user(auth_user):
+            raise HTTPException(
+                status_code=400,
+                detail="This email is linked to Google sign-in. Please use Continue with Google.",
+            )
+
         supabase = get_supabase_client()
         auth_res = supabase.auth.sign_in_with_password(
             {"email": body.email, "password": body.password}
@@ -553,7 +626,6 @@ async def login(request: Request, body: LoginRequest):
             )
 
         # Fetch/update profile from Supabase so profile email/role/name cannot drift.
-        admin = get_supabase_admin()
         p = ensure_profile_consistency(admin, user_id, auth_res.user)
         if body.role and p.get("role") != body.role.value:
             raise HTTPException(
@@ -729,20 +801,25 @@ async def forgot_password(body: ForgotPasswordRequest):
     """Send custom SMTP OTP for password recovery."""
     try:
         admin = get_supabase_admin()
-        users_res = extract_auth_users(admin.auth.admin.list_users())
-        target_email = (body.email or "").strip().lower()
-        target_user = next((u for u in users_res if _auth_user_email(u).strip().lower() == target_email), None)
-
-        # Keep response generic for unknown emails.
+        target_user = find_auth_user_by_email(admin, body.email)
         if not target_user:
-            return {"status": "success", "message": "Recovery OTP sent if email exists"}
+            raise HTTPException(
+                status_code=404,
+                detail="No account found for this email. Please sign up first.",
+            )
+
+        if is_google_only_auth_user(target_user):
+            raise HTTPException(
+                status_code=400,
+                detail="This account uses Google sign-in. Please use Continue with Google.",
+            )
 
         reset_otp = "".join([str(random.randint(0, 9)) for _ in range(6)])
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
         current_metadata = _auth_user_metadata(target_user)
 
         admin.auth.admin.update_user_by_id(
-            target_user.id,
+            _auth_user_id(target_user),
             {
                 "user_metadata": {
                     **current_metadata,
