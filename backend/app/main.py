@@ -14,7 +14,6 @@ from app.routers import auth, documents, agent, admin
 from app.models.schemas import HealthResponse
 from app.services.pinecone_client import pinecone_client
 from app.services.document_processor import get_embeddings_model
-from app.services.demo_directory_seed import ensure_demo_directory_seed
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("unigpt")
@@ -29,12 +28,6 @@ uvicorn_access_logger.propagate = False
 async def lifespan(app: FastAPI):
     logger.info("UnivGPT Hybrid API starting...")
     pinecone_client.initialize()
-    if settings.seed_demo_directory_data:
-        try:
-            logger.info("Ensuring demo faculty/course seed data...")
-            await asyncio.to_thread(ensure_demo_directory_seed)
-        except Exception as exc:
-            logger.warning("Demo seed step failed and was skipped: %s", exc)
     if settings.preload_embeddings_on_startup and not settings.mock_llm:
         try:
             logger.info("Preloading embedding model during startup...")
