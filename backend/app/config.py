@@ -25,8 +25,9 @@ class Settings(BaseSettings):
     )
     frontend_app_url: str = "http://localhost:5173"
     oauth_redirect_path: str = "/auth/callback"
-    academic_email_domains: str = "krmu.edu.in"
+    academic_email_domains: str = ""
     require_verified_academic_email_for_queries: bool = False
+    dean_emails: str = ""
 
     # Supabase (Auth & Core Data)
     supabase_url: str = ""
@@ -124,6 +125,13 @@ class Settings(BaseSettings):
         if not raw:
             return []
         return [item.strip() for item in raw.split(",") if item.strip()]
+
+    @property
+    def dean_emails_list(self) -> List[str]:
+        raw = (self.dean_emails or "").strip()
+        if not raw:
+            return []
+        return [item.strip().lower() for item in raw.split(",") if item.strip()]
 
     model_config = SettingsConfigDict(
         env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore"
