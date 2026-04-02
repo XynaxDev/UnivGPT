@@ -492,18 +492,48 @@ async def build_fast_smalltalk_answer(
     }
     role_focus = role_capabilities.get(user_role, role_capabilities["student"])
 
+    mode_instruction = (
+        "The user is in casual conversation or light venting mode. Respond in 1-2 short, supportive sentences."
+        if conversation_mode == "casual"
+        else "The user asked what you can do. Respond in 1-2 short sentences with practical capability summary."
+    )
+
+    system_prompt = (
+        "You are UnivGPT, a professional university assistant. "
+        f"The user role is `{user_role}`. "
+        f"Capability scope: {role_focus}. "
+        f"{mode_instruction} "
+        "Do not use bullet points. Avoid sounding templated. Keep it warm and concise."
+    )
+
+    user_prompt = query
+    if first_name:
+        user_prompt = f"User name: {first_name}\nQuery: {query}"
+
+    try:
+        llm_text = await asyncio.wait_for(
+            call_llm(
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                max_tokens=90,
+                temperature=0.45,
+                allow_fallback_models=False,
+                max_retries_override=0,
+            ),
+            timeout=6.0,
+        )
+        cleaned = str(llm_text or "").strip()
+        if cleaned and cleaned != "I'm sorry, I'm having trouble connecting to my brain right now.":
+            return cleaned
+    except Exception:
+        pass
+
     greeting = f"Hi {first_name}," if first_name else "Hi,"
     if conversation_mode == "casual":
-        return (
-            f"{greeting} I hear you. If you want, I can help with practical next steps right now "
-            "like checking notices, deadlines, course updates, or faculty contacts so things feel more manageable."
-        )
-
-    if user_role == "admin":
-        return f"{greeting} I can help with admin dashboards, user/document counts, audit activity, and notice lookups."
-    if user_role == "faculty":
-        return f"{greeting} I can help with faculty workflows like circular summaries, course notices, and policy questions."
-    return f"{greeting} I can help with course updates, deadlines, notices, and policy Q&A from your allowed documents."
+        return f"{greeting} I hear you. I can help with practical next steps like notices, deadlines, and course updates."
+    return f"{greeting} I can help with role-scoped university tasks like notices, course updates, and policy guidance."
 
 
 def should_filter_recent_documents(query: str, intent: dict[str, Any]) -> bool:
@@ -1539,21 +1569,6 @@ async def run_agent_pipeline(
     conversation_id = conversation_id or str(uuid.uuid4())
     audit_user_id = None if str(user_id).startswith("dummy-id-") else user_id
     now_iso = utc_now_iso()
-
-    # Fast path for basic greeting/help prompts to avoid unnecessary LLM + embedding latency.
-    if is_fast_smalltalk_query(query):
-        answer = await build_fast_smalltalk_answer(query, user_role, user_profile)
-        await log_audit_event(
-            user_id=audit_user_id,
-            action="agent_query",
-            payload={"conv_id": conversation_id, "intent": {"intent_type": "general", "fast_path": "smalltalk"}},
-        )
-        return AgentQueryResponse(
-            answer=answer,
-            sources=[],
-            conversation_id=conversation_id,
-            role_badge="Admin Assistant" if user_role == "admin" else f"{user_role.title()} Agent",
-        )
 
     supabase = None if settings.supabase_offline_mode else get_supabase_admin()
 
