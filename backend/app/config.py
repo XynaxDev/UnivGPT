@@ -44,8 +44,8 @@ class Settings(BaseSettings):
 
     # LLM (Generation via OpenRouter)
     openrouter_api_key: str = ""
-    openrouter_model: str = "arcee-ai/trinity-large-preview:free"
-    openrouter_intent_model: str = "z-ai/glm-4.5-air:free"
+    openrouter_model: str = "qwen/qwen3.6-plus-preview:free"
+    openrouter_intent_model: str = "stepfun/step-3.5-flash:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_fallback_models: str = ""
     openrouter_timeout_seconds: int = 20
