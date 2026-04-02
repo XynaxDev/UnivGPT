@@ -214,8 +214,25 @@ export const agentApi = {
 };
 
 export const adminApi = {
-    getAuditLogs: (token: string) =>
-        request<AuditLogListResponse>('/admin/audit', { token }),
+    getUsers: (token: string, page = 1, perPage = 200) =>
+        request<{ users: UserProfile[]; total: number; page: number; per_page: number }>(
+            `/admin/users?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`,
+            { token, timeoutMs: 20_000 },
+        ),
+    updateUser: (
+        token: string,
+        userId: string,
+        data: Partial<Pick<UserProfile, 'full_name' | 'role' | 'department'>>,
+    ) =>
+        request<{ user: UserProfile }>(
+            `/admin/users/${encodeURIComponent(userId)}`,
+            { method: 'PATCH', token, body: data },
+        ),
+    getAuditLogs: (token: string, page = 1, perPage = 50) =>
+        request<AuditLogListResponse>(
+            `/admin/audit?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`,
+            { token, timeoutMs: 25_000 },
+        ),
     getDeanAppeals: (token: string, status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending', limit = 100) =>
         request<{ appeals: DeanAppealItem[]; total: number; status: string }>(
             `/admin/dean/appeals?status=${encodeURIComponent(status)}&limit=${encodeURIComponent(String(limit))}`,
@@ -240,7 +257,7 @@ export const adminApi = {
 
 export const systemApi = {
     metrics: (token: string) =>
-        request<MetricsResponse>('/admin/metrics', { token })
+        request<MetricsResponse>('/admin/metrics', { token, timeoutMs: 25_000 })
 };
 
 export interface UserProfile {

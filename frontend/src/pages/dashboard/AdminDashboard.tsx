@@ -451,20 +451,36 @@ const AdminDashboard = () => {
             if (!token) return;
             setIsLoading(true);
             setLoadError(null);
-            try {
-                const [metricsRes, auditRes] = await Promise.all([
-                    systemApi.metrics(token),
-                    adminApi.getAuditLogs(token),
-                ]);
-                if (!alive) return;
-                setMetrics(metricsRes);
-                setAuditRows(auditRes.logs || []);
-            } catch (err) {
-                if (!alive) return;
-                setLoadError((err as Error).message || 'Unable to load admin data');
-            } finally {
-                if (alive) setIsLoading(false);
+            const [metricsResult, auditResult] = await Promise.allSettled([
+                systemApi.metrics(token),
+                adminApi.getAuditLogs(token, 1, 30),
+            ]);
+            if (!alive) return;
+
+            if (metricsResult.status === 'fulfilled') {
+                setMetrics(metricsResult.value);
+            } else {
+                setMetrics(null);
             }
+
+            if (auditResult.status === 'fulfilled') {
+                setAuditRows(auditResult.value.logs || []);
+            } else {
+                setAuditRows([]);
+            }
+
+            if (metricsResult.status === 'rejected' && auditResult.status === 'rejected') {
+                const metricsErr = metricsResult.reason as Error;
+                const auditErr = auditResult.reason as Error;
+                setLoadError(
+                    metricsErr?.message ||
+                        auditErr?.message ||
+                        'Unable to load admin data right now.',
+                );
+            } else {
+                setLoadError(null);
+            }
+            if (alive) setIsLoading(false);
         };
         load();
         return () => {
@@ -692,7 +708,6 @@ const AdminDashboard = () => {
                 </motion.div>
             </div>
 
-            <AdminChatBubble />
         </>
     );
 };
