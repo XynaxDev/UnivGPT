@@ -8,13 +8,14 @@ from __future__ import annotations
 import datetime
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.middleware.auth import AuthenticatedUser
 from app.middleware.auth import is_academic_email
 from app.middleware.rbac import require_roles
 from app.models.schemas import UserRole, DeanAppealDecisionRequest
+from app.config import settings
 from app.services.pinecone_client import pinecone_client
 from app.services.supabase_client import get_supabase_admin
 from app.services.audit import log_audit_event
@@ -57,6 +58,7 @@ def _require_dean_access(user: AuthenticatedUser) -> None:
 
 @router.get("/admin/metrics")
 async def get_admin_metrics(
+    include_vector_stats: bool = Query(default=False),
     user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
 ) -> dict[str, Any]:
     supabase = get_supabase_admin()
@@ -70,7 +72,9 @@ async def get_admin_metrics(
     total_users = users_res.count or 0
 
     total_embeddings = 0
-    if pinecone_client.index:
+    # Pinecone describe call may add noticeable latency on dashboards.
+    # Keep dashboard fast by default and allow explicit opt-in when needed.
+    if include_vector_stats and pinecone_client.index:
         try:
             stats = pinecone_client.index.describe_index_stats()
             # Pinecone returns a dict with `total_vector_count` on most versions.
