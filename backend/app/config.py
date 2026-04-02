@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 
     # LLM (Generation via OpenRouter)
     openrouter_api_key: str = ""
-    openrouter_model: str = "meta-llama/llama-3.1-70b-instruct"
+    openrouter_model: str = "arcee-ai/trinity-large-preview:free"
     openrouter_intent_model: str = "z-ai/glm-4.5-air:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_fallback_models: str = ""
