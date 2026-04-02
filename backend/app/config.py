@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     # Pinecone (Fast Vector Search)
     pinecone_api_key: str = ""
     pinecone_index_name: str = "unigpt-index"
+    pinecone_query_timeout_seconds: int = 6
 
     # LLM (Generation via OpenRouter)
     openrouter_api_key: str = ""
