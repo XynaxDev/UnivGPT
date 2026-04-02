@@ -46,6 +46,35 @@ _OPENROUTER_CLIENT: Optional[httpx.AsyncClient] = None
 _PINECONE_EMBEDDING_DISABLED = False
 _OFFENSE_STATE_CACHE: dict[str, dict[str, Any]] = {}
 MAX_MODERATION_WARNINGS = 2
+_ADMIN_ALLOWED_INTENT_TYPES = {
+    "count_users",
+    "count_documents",
+    "list_documents",
+    "document_date_lookup",
+    "holiday_check",
+    "count_courses",
+    "list_courses",
+    "count_faculty",
+    "list_faculty",
+    "faculty_profile",
+    "course_faculty_map",
+}
+_ADMIN_ALLOWED_TARGETS = {
+    "users",
+    "students",
+    "faculty",
+    "admins",
+    "documents",
+    "notices",
+    "courses",
+    "audit",
+    "logs",
+    "moderation",
+    "appeals",
+    "system",
+    "metrics",
+    "pipeline",
+}
 
 
 def get_openrouter_client() -> httpx.AsyncClient:
@@ -642,6 +671,29 @@ def _normalize(value: Any) -> str:
     return str(value or "").strip().lower()
 
 
+def role_badge_for(role: str) -> str:
+    role_norm = _normalize(role)
+    if role_norm == "admin":
+        return "Admin Assistant"
+    if role_norm == "faculty":
+        return "Faculty Assistant"
+    return "Student Assistant"
+
+
+def is_admin_scope_intent(intent: dict[str, Any]) -> bool:
+    conversation_mode = _normalize(intent.get("conversation_mode"))
+    if conversation_mode == "casual":
+        return True
+
+    intent_type = _normalize(intent.get("intent_type"))
+    target_entity = _normalize(intent.get("target_entity"))
+    if intent_type in _ADMIN_ALLOWED_INTENT_TYPES:
+        return True
+    if target_entity in _ADMIN_ALLOWED_TARGETS:
+        return True
+    return False
+
+
 def _matches_filter(value: Any, expected: str) -> bool:
     return expected in _normalize(value)
 
@@ -1211,7 +1263,7 @@ async def run_agent_pipeline(
             answer=answer,
             sources=[],
             conversation_id=conversation_id,
-            role_badge="Admin Assistant" if user_role == "admin" else f"{user_role.title()} Agent",
+            role_badge=role_badge_for(user_role),
         )
 
     # Moderation Intercept
@@ -1391,13 +1443,27 @@ async def run_agent_pipeline(
     query_text = _normalize(query)
     count_request = bool(re.search(r"\b(how many|count|number of|total)\b", query_text))
 
+    if _normalize(user_role) == "admin" and not is_admin_scope_intent(intent):
+        forced_answer = (
+            "I am in **Admin Assistant** mode, so I can only handle operational admin queries.\n\n"
+            "I can help with:\n"
+            "- user counts and role distribution\n"
+            "- document and notice pipeline status\n"
+            "- audit and moderation review context\n"
+            "- course/faculty directory summaries for governance\n\n"
+            "Try one of these:\n"
+            "- \"Show today’s uploads and who uploaded them\"\n"
+            "- \"How many students, faculty, and admins are active?\"\n"
+            "- \"List recent audit actions for admin workflows\""
+        )
+
     course_faculty_snapshot: dict[str, Any] = {}
     should_route_directory = should_use_course_faculty_snapshot(query, intent)
     attach_directory_context = should_route_directory or (
         intent_type in {"", "general"} and target_entity in {"", "general"}
     )
 
-    if supabase and attach_directory_context:
+    if supabase and attach_directory_context and forced_answer is None:
         course_faculty_snapshot = fetch_course_faculty_snapshot(
             supabase=supabase,
             user_role=user_role,
@@ -1700,7 +1766,7 @@ async def run_agent_pipeline(
 
         ADMIN GUARDRAILS:
         1. Professionalism: NEVER speak negatively or disrespectfully about any faculty, staff, student, or the university.
-        2. Admin Scope: You may help with operational topics such as system health, audit logs, document ingestion, routing, and user management. Do not provide instructions outside university context.
+        2. Admin Scope: You may help with operational topics such as system health, audit logs, document ingestion, routing, and user management. If the query is not admin-operational, decline and redirect to admin workflows.
         3. Accuracy (No Hallucinations): If asked about internal policies or data not in context, explicitly say you do not have access to that information.
         4. Privacy: Do not expose credentials, secrets, or sensitive personal data. Summarize or aggregate when possible.
 
@@ -1739,6 +1805,7 @@ async def run_agent_pipeline(
             - Prioritize faculty workflows: course updates, notices, department circulars, and student-facing policy clarifications.
             - When asked about courses/faculty mappings, use structured directory data first.
             - If a query is outside faculty-visible scope, state the limitation briefly and offer the closest available data.
+            - Do not answer admin-only operations (global user counts, privileged audit governance, dean moderation decisions).
             """
         else:
             role_directive = """
@@ -1849,6 +1916,6 @@ async def run_agent_pipeline(
             for c in merged_sources
         ],
         conversation_id=conversation_id,
-        role_badge="Admin Assistant" if user_role == "admin" else f"{user_role.title()} Agent",
+        role_badge=role_badge_for(user_role),
     )
 
