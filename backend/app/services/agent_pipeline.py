@@ -45,6 +45,7 @@ _DOCUMENTS_HAS_UPLOADED_AT: Optional[bool] = None
 _OPENROUTER_CLIENT: Optional[httpx.AsyncClient] = None
 _PINECONE_EMBEDDING_DISABLED = False
 _OFFENSE_STATE_CACHE: dict[str, dict[str, Any]] = {}
+MAX_MODERATION_WARNINGS = 2
 
 
 def get_openrouter_client() -> httpx.AsyncClient:
@@ -77,11 +78,58 @@ def _is_pinecone_timeout_error(exc: Exception) -> bool:
 
 
 def _load_offense_state(supabase, user_id: str) -> dict[str, Any]:
+    def _default_state() -> dict[str, Any]:
+        return {
+            "warning_count": 0,
+            "offensive_messages": [],
+            "offense_total": 0,
+            "blocked": False,
+            "blocked_at": None,
+            "appeal": {
+                "status": "none",  # none | pending | approved | rejected
+                "message": None,
+                "submitted_at": None,
+                "reviewed_at": None,
+                "reviewed_by": None,
+                "decision_note": None,
+            },
+        }
+
+    def _normalize_state(raw: dict[str, Any]) -> dict[str, Any]:
+        base = _default_state()
+        raw_state = raw if isinstance(raw, dict) else {}
+        warning_count = int(raw_state.get("warning_count", 0) or 0)
+        history = raw_state.get("offensive_messages")
+        history = [str(item) for item in history] if isinstance(history, list) else []
+        offense_total = int(raw_state.get("offense_total", 0) or 0)
+        blocked = bool(raw_state.get("blocked", False))
+        blocked_at = str(raw_state.get("blocked_at")) if raw_state.get("blocked_at") else None
+        appeal_raw = raw_state.get("appeal") if isinstance(raw_state.get("appeal"), dict) else {}
+        appeal = {
+            "status": str(appeal_raw.get("status") or "none"),
+            "message": str(appeal_raw.get("message")) if appeal_raw.get("message") else None,
+            "submitted_at": str(appeal_raw.get("submitted_at")) if appeal_raw.get("submitted_at") else None,
+            "reviewed_at": str(appeal_raw.get("reviewed_at")) if appeal_raw.get("reviewed_at") else None,
+            "reviewed_by": str(appeal_raw.get("reviewed_by")) if appeal_raw.get("reviewed_by") else None,
+            "decision_note": str(appeal_raw.get("decision_note")) if appeal_raw.get("decision_note") else None,
+        }
+        base.update(
+            {
+                "warning_count": warning_count,
+                "offensive_messages": history[-12:],
+                "offense_total": offense_total,
+                "blocked": blocked,
+                "blocked_at": blocked_at,
+                "appeal": appeal,
+            }
+        )
+        return base
+
     cached = _OFFENSE_STATE_CACHE.get(user_id)
     if cached:
-        return {"warning_count": int(cached.get("warning_count", 0)), "offensive_messages": list(cached.get("offensive_messages", []))}
+        return _normalize_state(cached)
 
-    base_state = {"warning_count": 0, "offensive_messages": []}
+    base_state = _default_state()
     if not supabase or not user_id or user_id.startswith("dummy-id-"):
         return base_state
 
@@ -96,10 +144,7 @@ def _load_offense_state(supabase, user_id: str) -> dict[str, Any]:
         row = (res.data or [{}])[0]
         preferences = row.get("preferences") if isinstance(row.get("preferences"), dict) else {}
         moderation = preferences.get("moderation") if isinstance(preferences.get("moderation"), dict) else {}
-        warnings = int(moderation.get("warning_count", 0) or 0)
-        history = moderation.get("offensive_messages")
-        history = [str(item) for item in history] if isinstance(history, list) else []
-        state = {"warning_count": warnings, "offensive_messages": history[-12:]}
+        state = _normalize_state(moderation)
         _OFFENSE_STATE_CACHE[user_id] = state
         return state
     except Exception:
@@ -108,8 +153,23 @@ def _load_offense_state(supabase, user_id: str) -> dict[str, Any]:
 
 def _persist_offense_state(supabase, user_id: str, state: dict[str, Any]) -> None:
     normalized = {
-        "warning_count": int(state.get("warning_count", 0)),
+        "warning_count": int(state.get("warning_count", 0) or 0),
         "offensive_messages": [str(item) for item in (state.get("offensive_messages") or [])][-12:],
+        "offense_total": int(state.get("offense_total", 0) or 0),
+        "blocked": bool(state.get("blocked", False)),
+        "blocked_at": str(state.get("blocked_at")) if state.get("blocked_at") else None,
+        "appeal": (
+            state.get("appeal")
+            if isinstance(state.get("appeal"), dict)
+            else {
+                "status": "none",
+                "message": None,
+                "submitted_at": None,
+                "reviewed_at": None,
+                "reviewed_by": None,
+                "decision_note": None,
+            }
+        ),
     }
     _OFFENSE_STATE_CACHE[user_id] = normalized
 
@@ -130,6 +190,175 @@ def _persist_offense_state(supabase, user_id: str, state: dict[str, Any]) -> Non
         supabase.table("profiles").update({"preferences": preferences}).eq("id", user_id).execute()
     except Exception as exc:
         logger.warning("Failed to persist moderation state: %s", exc)
+
+
+def _build_moderation_meta(state: dict[str, Any]) -> dict[str, Any]:
+    appeal = state.get("appeal") if isinstance(state.get("appeal"), dict) else {}
+    appeal_status = str(appeal.get("status") or "none")
+    return {
+        "blocked": bool(state.get("blocked", False)),
+        "warning_count": int(state.get("warning_count", 0) or 0),
+        "max_warnings": MAX_MODERATION_WARNINGS,
+        "offense_total": int(state.get("offense_total", 0) or 0),
+        "appeal_required": bool(state.get("blocked", False)),
+        "appeal_status": appeal_status,
+        "appeal_submitted_at": appeal.get("submitted_at"),
+        "blocked_at": state.get("blocked_at"),
+    }
+
+
+def moderation_meta_from_state(state: dict[str, Any]) -> dict[str, Any]:
+    return _build_moderation_meta(state)
+
+
+def get_user_moderation_state(supabase, user_id: str) -> dict[str, Any]:
+    return _load_offense_state(supabase, user_id)
+
+
+def submit_user_moderation_appeal(
+    supabase,
+    user_id: str,
+    appeal_message: str,
+) -> dict[str, Any]:
+    state = _load_offense_state(supabase, user_id)
+    appeal_text = str(appeal_message or "").strip()
+    if not appeal_text:
+        raise ValueError("Appeal message is required.")
+    if not bool(state.get("blocked")):
+        raise ValueError("Appeal is available only for blocked users.")
+
+    state["appeal"] = {
+        "status": "pending",
+        "message": appeal_text,
+        "submitted_at": utc_now_iso(),
+        "reviewed_at": None,
+        "reviewed_by": None,
+        "decision_note": None,
+    }
+    _persist_offense_state(supabase, user_id, state)
+    return state
+
+
+def review_user_moderation_appeal(
+    supabase,
+    target_user_id: str,
+    approved: bool,
+    reviewer_id: str,
+    reviewer_email: str,
+    decision_note: Optional[str] = None,
+) -> dict[str, Any]:
+    state = _load_offense_state(supabase, target_user_id)
+    decision_time = utc_now_iso()
+    appeal = state.get("appeal") if isinstance(state.get("appeal"), dict) else {}
+    appeal["reviewed_at"] = decision_time
+    appeal["reviewed_by"] = reviewer_id or reviewer_email
+    appeal["decision_note"] = str(decision_note or "").strip() or None
+
+    if approved:
+        # Full reset after dean approval.
+        state["warning_count"] = 0
+        state["offense_total"] = 0
+        state["offensive_messages"] = []
+        state["blocked"] = False
+        state["blocked_at"] = None
+        appeal["status"] = "approved"
+    else:
+        state["blocked"] = True
+        if not state.get("blocked_at"):
+            state["blocked_at"] = decision_time
+        appeal["status"] = "rejected"
+
+    state["appeal"] = appeal
+    _persist_offense_state(supabase, target_user_id, state)
+    return state
+
+
+def admin_reset_user_moderation_flags(
+    supabase,
+    target_user_id: str,
+    reviewer_id: str,
+    reviewer_email: str,
+    note: Optional[str] = None,
+) -> dict[str, Any]:
+    state = _load_offense_state(supabase, target_user_id)
+    state["warning_count"] = 0
+    state["offense_total"] = 0
+    state["offensive_messages"] = []
+    state["blocked"] = False
+    state["blocked_at"] = None
+    state["appeal"] = {
+        "status": "approved",
+        "message": None,
+        "submitted_at": None,
+        "reviewed_at": utc_now_iso(),
+        "reviewed_by": reviewer_id or reviewer_email,
+        "decision_note": str(note or "").strip() or "Flags reset by dean.",
+    }
+    _persist_offense_state(supabase, target_user_id, state)
+    return state
+
+
+def list_moderation_appeals(
+    supabase,
+    status: str = "pending",
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    if not supabase:
+        return []
+    try:
+        rows = (
+            supabase.table("profiles")
+            .select("id,email,full_name,role,department,preferences")
+            .limit(limit)
+            .execute()
+        ).data or []
+    except Exception:
+        return []
+
+    normalized_status = str(status or "pending").strip().lower()
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        preferences = row.get("preferences") if isinstance(row.get("preferences"), dict) else {}
+        moderation = preferences.get("moderation") if isinstance(preferences.get("moderation"), dict) else {}
+        state = {
+            "warning_count": int(moderation.get("warning_count", 0) or 0),
+            "offensive_messages": moderation.get("offensive_messages") or [],
+            "offense_total": int(moderation.get("offense_total", 0) or 0),
+            "blocked": bool(moderation.get("blocked", False)),
+            "blocked_at": moderation.get("blocked_at"),
+            "appeal": moderation.get("appeal") if isinstance(moderation.get("appeal"), dict) else {},
+        }
+        appeal = state.get("appeal") if isinstance(state.get("appeal"), dict) else {}
+        appeal_status = str(appeal.get("status") or "none").lower()
+        if normalized_status != "all" and appeal_status != normalized_status:
+            continue
+        if appeal_status == "none":
+            continue
+        items.append(
+            {
+                "user_id": str(row.get("id") or ""),
+                "email": row.get("email"),
+                "full_name": row.get("full_name"),
+                "role": row.get("role"),
+                "department": row.get("department"),
+                "blocked": bool(state.get("blocked")),
+                "blocked_at": state.get("blocked_at"),
+                "offense_total": int(state.get("offense_total", 0) or 0),
+                "warning_count": int(state.get("warning_count", 0) or 0),
+                "offensive_messages": [str(msg) for msg in (state.get("offensive_messages") or [])][-12:],
+                "appeal": {
+                    "status": appeal_status,
+                    "message": appeal.get("message"),
+                    "submitted_at": appeal.get("submitted_at"),
+                    "reviewed_at": appeal.get("reviewed_at"),
+                    "reviewed_by": appeal.get("reviewed_by"),
+                    "decision_note": appeal.get("decision_note"),
+                },
+            }
+        )
+
+    items.sort(key=lambda item: str((item.get("appeal") or {}).get("submitted_at") or ""), reverse=True)
+    return items
 
 def _safe_iso(raw: Optional[str]) -> str:
     if not raw:
@@ -866,6 +1095,39 @@ async def run_agent_pipeline(
     now_iso = utc_now_iso()
 
     supabase = None if settings.supabase_offline_mode else get_supabase_admin()
+    moderation_state = _load_offense_state(supabase, user_id)
+
+    if bool(moderation_state.get("blocked")):
+        moderation_meta = _build_moderation_meta(moderation_state)
+        appeal_status = str((moderation_state.get("appeal") or {}).get("status") or "none")
+        if appeal_status == "pending":
+            blocked_answer = (
+                "Your chat access is currently blocked due to repeated policy violations. "
+                "Your appeal is under review by the Dean section. Please wait for a decision."
+            )
+        elif appeal_status == "rejected":
+            blocked_answer = (
+                "Your chat access remains blocked after appeal review. "
+                "You may submit a fresh apology appeal for reconsideration."
+            )
+        else:
+            blocked_answer = (
+                "Your chat access is blocked due to repeated abusive messages. "
+                "Submit an apology appeal to request flag reset and access restoration."
+            )
+
+        await log_audit_event(
+            user_id=audit_user_id,
+            action="blocked_user_query_attempt",
+            payload={"conv_id": conversation_id, "appeal_status": appeal_status},
+        )
+        return AgentQueryResponse(
+            answer=blocked_answer,
+            sources=[],
+            conversation_id=conversation_id,
+            role_badge="UnivGPT Safety",
+            moderation=moderation_meta,
+        )
 
     # Fast deterministic profanity moderation before remote intent extraction.
     early_moderation = detect_local_moderation(query)
@@ -959,21 +1221,38 @@ async def run_agent_pipeline(
 
         moderation_state = _load_offense_state(supabase, user_id)
         prior_messages = moderation_state.get("offensive_messages") or []
-        warning_count = int(moderation_state.get("warning_count", 0)) + 1
+        warning_count = int(moderation_state.get("warning_count", 0) or 0) + 1
+        offense_total = int(moderation_state.get("offense_total", 0) or 0) + 1
         offensive_messages = [*prior_messages, query][-12:]
-        _persist_offense_state(
-            supabase,
-            user_id,
-            {"warning_count": warning_count, "offensive_messages": offensive_messages},
-        )
+        next_state = {
+            **moderation_state,
+            "warning_count": warning_count,
+            "offense_total": offense_total,
+            "offensive_messages": offensive_messages,
+        }
 
-        if warning_count <= 2:
+        if warning_count <= MAX_MODERATION_WARNINGS:
             answer = (
-                f"Warning {warning_count}/2: Your message was flagged for abusive or disrespectful language. "
+                f"Warning {warning_count}/{MAX_MODERATION_WARNINGS}: Your message was flagged for abusive or disrespectful language. "
                 "Please keep the conversation professional and respectful. Further violations will be escalated."
             )
             audit_action = "flagged_query_warning"
+            _persist_offense_state(supabase, user_id, next_state)
         else:
+            # Hard-block user after max warnings and reset warning counter.
+            next_state["blocked"] = True
+            next_state["blocked_at"] = now_iso
+            next_state["warning_count"] = 0
+            next_state["appeal"] = {
+                "status": "none",
+                "message": None,
+                "submitted_at": None,
+                "reviewed_at": None,
+                "reviewed_by": None,
+                "decision_note": None,
+            }
+            _persist_offense_state(supabase, user_id, next_state)
+
             # Send escalation email with complete offensive history.
             from app.services.email_service import EmailService
 
@@ -986,12 +1265,12 @@ async def run_agent_pipeline(
                     user_name,
                     user_email,
                     offensive_messages,
-                    warning_count,
+                    offense_total,
                 )
             )
             answer = (
-                "SAFETY ALERT: Repeated abusive messages were detected. This incident has been escalated to University Administration. "
-                "Your recent flagged message history has been reported."
+                "SAFETY ALERT: Repeated abusive messages were detected. Your chat access is now blocked. "
+                "Submit an apology appeal and the Dean section can review your case."
             )
             audit_action = "flagged_query_escalated"
 
@@ -1035,8 +1314,10 @@ async def run_agent_pipeline(
             payload={
                 "query": query,
                 "user_email": user_email,
-                "warning_count": warning_count,
+                "warning_count": int(next_state.get("warning_count", 0) or 0),
+                "offense_total": offense_total,
                 "offensive_messages": offensive_messages,
+                "blocked": bool(next_state.get("blocked")),
             },
         )
 
@@ -1044,7 +1325,8 @@ async def run_agent_pipeline(
             answer=answer,
             sources=[],
             conversation_id=conversation_id,
-            role_badge="🛡️ UnivGPT Safety",
+            role_badge="UnivGPT Safety",
+            moderation=_build_moderation_meta(next_state),
         )
 
     # 2. Search Pinecone for context
@@ -1514,3 +1796,4 @@ async def run_agent_pipeline(
         conversation_id=conversation_id,
         role_badge="Admin Assistant" if user_role == "admin" else f"{user_role.title()} Agent",
     )
+

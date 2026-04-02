@@ -14,10 +14,16 @@ from pydantic import BaseModel
 from app.middleware.auth import AuthenticatedUser
 from app.middleware.auth import is_academic_email
 from app.middleware.rbac import require_roles
-from app.models.schemas import UserRole
+from app.models.schemas import UserRole, DeanAppealDecisionRequest
 from app.services.pinecone_client import pinecone_client
 from app.services.supabase_client import get_supabase_admin
 from app.services.audit import log_audit_event
+from app.services.agent_pipeline import (
+    list_moderation_appeals,
+    review_user_moderation_appeal,
+    admin_reset_user_moderation_flags,
+    moderation_meta_from_state,
+)
 
 router = APIRouter(tags=["Admin"])
 
@@ -35,6 +41,18 @@ class AdminUserUpdateRequest(BaseModel):
     role: Optional[str] = None
     department: Optional[str] = None
     avatar_url: Optional[str] = None
+
+
+def _require_dean_access(user: AuthenticatedUser) -> None:
+    dean_emails = set(settings.dean_emails_list)
+    smtp_user = (settings.smtp_user or "").strip().lower()
+    if smtp_user:
+        dean_emails.add(smtp_user)
+    if not dean_emails:
+        # Dev fallback: if dean list is not configured, allow admin access.
+        return
+    if (user.email or "").strip().lower() not in dean_emails:
+        raise HTTPException(status_code=403, detail="Dean access required.")
 
 
 @router.get("/admin/metrics")
@@ -300,3 +318,89 @@ async def update_admin_user(
             "identity_provider": None,
         }
     }
+
+
+@router.get("/admin/dean/appeals")
+async def get_dean_appeals(
+    status: str = "pending",
+    limit: int = 100,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+) -> dict[str, Any]:
+    _require_dean_access(user)
+    supabase = get_supabase_admin()
+    normalized_status = str(status or "pending").strip().lower()
+    if normalized_status not in {"pending", "approved", "rejected", "all"}:
+        raise HTTPException(status_code=400, detail="Invalid status filter.")
+    items = list_moderation_appeals(supabase, status=normalized_status, limit=max(1, min(limit, 500)))
+    return {"appeals": items, "total": len(items), "status": normalized_status}
+
+
+@router.post("/admin/dean/appeals/{target_user_id}/approve")
+async def approve_dean_appeal(
+    target_user_id: str,
+    body: DeanAppealDecisionRequest,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+) -> dict[str, Any]:
+    _require_dean_access(user)
+    supabase = get_supabase_admin()
+    state = review_user_moderation_appeal(
+        supabase=supabase,
+        target_user_id=target_user_id,
+        approved=True,
+        reviewer_id=user.id,
+        reviewer_email=user.email,
+        decision_note=body.note,
+    )
+    await log_audit_event(
+        user_id=None if user.id.startswith("dummy-id-") else user.id,
+        action="dean_appeal_approved",
+        payload={"target_user_id": target_user_id, "note": body.note},
+    )
+    return {"status": "success", "message": "Appeal approved and user flags reset.", "moderation": moderation_meta_from_state(state)}
+
+
+@router.post("/admin/dean/appeals/{target_user_id}/reject")
+async def reject_dean_appeal(
+    target_user_id: str,
+    body: DeanAppealDecisionRequest,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+) -> dict[str, Any]:
+    _require_dean_access(user)
+    supabase = get_supabase_admin()
+    state = review_user_moderation_appeal(
+        supabase=supabase,
+        target_user_id=target_user_id,
+        approved=False,
+        reviewer_id=user.id,
+        reviewer_email=user.email,
+        decision_note=body.note,
+    )
+    await log_audit_event(
+        user_id=None if user.id.startswith("dummy-id-") else user.id,
+        action="dean_appeal_rejected",
+        payload={"target_user_id": target_user_id, "note": body.note},
+    )
+    return {"status": "success", "message": "Appeal rejected. User remains blocked.", "moderation": moderation_meta_from_state(state)}
+
+
+@router.post("/admin/dean/users/{target_user_id}/reset-flags")
+async def reset_user_flags(
+    target_user_id: str,
+    body: DeanAppealDecisionRequest,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+) -> dict[str, Any]:
+    _require_dean_access(user)
+    supabase = get_supabase_admin()
+    state = admin_reset_user_moderation_flags(
+        supabase=supabase,
+        target_user_id=target_user_id,
+        reviewer_id=user.id,
+        reviewer_email=user.email,
+        note=body.note,
+    )
+    await log_audit_event(
+        user_id=None if user.id.startswith("dummy-id-") else user.id,
+        action="dean_flags_reset",
+        payload={"target_user_id": target_user_id, "note": body.note},
+    )
+    return {"status": "success", "message": "User flags reset and chat access restored.", "moderation": moderation_meta_from_state(state)}

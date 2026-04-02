@@ -8,12 +8,19 @@ import httpx
 
 from app.models.schemas import (
     AgentQueryRequest, AgentQueryResponse,
+    AgentAppealRequest, AgentAppealResponse,
     ConversationResponse, ConversationListResponse, UserRole
 )
 from app.config import settings
 from app.middleware.auth import AuthenticatedUser, get_current_user
-from app.services.agent_pipeline import run_agent_pipeline
+from app.services.agent_pipeline import (
+    run_agent_pipeline,
+    get_user_moderation_state,
+    submit_user_moderation_appeal,
+    moderation_meta_from_state,
+)
 from app.services.supabase_client import get_supabase_admin
+from app.services.audit import log_audit_event
 
 router = APIRouter(tags=["Agent"])
 
@@ -74,3 +81,45 @@ async def get_history(user: AuthenticatedUser = Depends(get_current_user)):
         ) for c in res.data
     ]
     return ConversationListResponse(conversations=convs, total=len(convs))
+
+
+@router.get("/agent/moderation-state")
+async def get_moderation_state(
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    supabase = None if settings.supabase_offline_mode else get_supabase_admin()
+    state = get_user_moderation_state(supabase, user.id)
+    return {"moderation": moderation_meta_from_state(state)}
+
+
+@router.post("/agent/appeal", response_model=AgentAppealResponse)
+async def submit_appeal(
+    body: AgentAppealRequest,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    if settings.supabase_offline_mode:
+        raise HTTPException(status_code=503, detail="Appeal submission unavailable in offline mode.")
+    supabase = get_supabase_admin()
+    try:
+        state = submit_user_moderation_appeal(
+            supabase=supabase,
+            user_id=user.id,
+            appeal_message=body.message,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        if is_network_error(exc):
+            raise HTTPException(status_code=503, detail="Cannot reach Supabase right now. Please retry.")
+        raise
+
+    await log_audit_event(
+        user_id=None if user.id.startswith("dummy-id-") else user.id,
+        action="moderation_appeal_submitted",
+        payload={"message_preview": body.message[:140]},
+    )
+
+    return AgentAppealResponse(
+        message="Apology appeal submitted successfully. The Dean section will review your request.",
+        moderation=moderation_meta_from_state(state),
+    )

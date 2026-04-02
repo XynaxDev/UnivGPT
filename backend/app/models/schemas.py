@@ -238,6 +238,21 @@ class AgentQueryResponse(BaseModel):
     conversation_id: str
     role_badge: str  # "Student Agent" / "Faculty Agent" / "Admin Agent"
     rationale: Optional[str] = None
+    moderation: Optional[dict] = None
+
+
+class AgentAppealRequest(BaseModel):
+    message: str = Field(min_length=12, max_length=2000)
+
+
+class AgentAppealResponse(BaseModel):
+    status: str = "success"
+    message: str
+    moderation: Optional[dict] = None
+
+
+class DeanAppealDecisionRequest(BaseModel):
+    note: Optional[str] = Field(default=None, max_length=1000)
 
 
 class ConversationResponse(BaseModel):
