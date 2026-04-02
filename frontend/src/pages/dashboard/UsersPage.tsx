@@ -46,6 +46,8 @@ const UsersPage = () => {
     const [formName, setFormName] = useState('');
     const [formRole, setFormRole] = useState<RoleType>('student');
     const [formDept, setFormDept] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 10;
 
     const loadUsers = async () => {
         if (!token) return;
@@ -82,6 +84,16 @@ const UsersPage = () => {
             );
         });
     }, [searchQuery, users]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, users.length]);
+
+    const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE));
+    const paginatedUsers = filtered.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE,
+    );
 
     const stats = useMemo(() => {
         const base = users;
@@ -182,7 +194,7 @@ const UsersPage = () => {
                     {!isLoading && filtered.length === 0 && (
                         <div className="px-5 py-10 text-sm text-zinc-500">No users found in the database.</div>
                     )}
-                    {filtered.map((user, idx) => {
+                    {paginatedUsers.map((user, idx) => {
                         const role = roleValue(user.role);
                         const status = statusFromProfile(user);
                         return (
@@ -227,6 +239,53 @@ const UsersPage = () => {
                     })}
                 </div>
             </div>
+
+            {filtered.length > 0 && (
+                <div className="flex items-center justify-between pt-1 text-[11px] text-zinc-500">
+                    <span>
+                        Showing{' '}
+                        <span className="text-zinc-300">
+                            {(currentPage - 1) * ITEMS_PER_PAGE + 1}
+                            {'-'}
+                            {Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}
+                        </span>{' '}
+                        of <span className="text-zinc-300">{filtered.length}</span> users
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                        <button
+                            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                        >
+                            Prev
+                        </button>
+                        {Array.from({ length: totalPages }).map((_, idx) => {
+                            const page = idx + 1;
+                            const active = page === currentPage;
+                            return (
+                                <button
+                                    key={page}
+                                    onClick={() => setCurrentPage(page)}
+                                    className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold transition-colors ${
+                                        active
+                                            ? 'bg-orange-600 text-white'
+                                            : 'border border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.08]'
+                                    }`}
+                                >
+                                    {page}
+                                </button>
+                            );
+                        })}
+                        <button
+                            onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
 
             <AnimatePresence>
                 {showEditModal && editingUser && (

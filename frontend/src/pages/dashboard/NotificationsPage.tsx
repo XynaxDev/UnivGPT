@@ -28,9 +28,16 @@ export default function NotificationsPage() {
     const [items, setItems] = useState<UserNotificationItem[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [focusedNotificationId, setFocusedNotificationId] = useState<string | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
     const hasLoadedOnceRef = useRef(false);
+    const ITEMS_PER_PAGE = 8;
 
     const unread = useMemo(() => items.filter((item) => item.unread).length, [items]);
+    const totalPages = Math.max(1, Math.ceil(items.length / ITEMS_PER_PAGE));
+    const paginatedItems = items.slice(
+        (currentPage - 1) * ITEMS_PER_PAGE,
+        currentPage * ITEMS_PER_PAGE,
+    );
 
     const loadNotifications = useCallback(async (force = false) => {
         if (!token) {
@@ -64,10 +71,18 @@ export default function NotificationsPage() {
     }, [token, unread]);
 
     useEffect(() => {
+        setCurrentPage(1);
+    }, [items.length]);
+
+    useEffect(() => {
         const state = location.state as { focusNotificationId?: string } | null;
         const nextId = state?.focusNotificationId || null;
         if (!nextId) return;
         setFocusedNotificationId(nextId);
+        const itemIndex = items.findIndex((item) => item.id === nextId);
+        if (itemIndex >= 0) {
+            setCurrentPage(Math.floor(itemIndex / ITEMS_PER_PAGE) + 1);
+        }
 
         const timer = window.setTimeout(() => {
             setFocusedNotificationId(null);
@@ -75,7 +90,7 @@ export default function NotificationsPage() {
         }, 2800);
 
         return () => window.clearTimeout(timer);
-    }, [location.pathname, location.state, navigate]);
+    }, [location.pathname, location.state, navigate, items]);
 
     useEffect(() => {
         if (!focusedNotificationId || items.length === 0) return;
@@ -128,7 +143,7 @@ export default function NotificationsPage() {
                         <div className="px-5 py-10 text-sm text-zinc-500">No notifications yet.</div>
                     )}
                     {!isLoading &&
-                        items.map((item) => (
+                        paginatedItems.map((item) => (
                             <div
                                 key={item.id}
                                 data-notification-id={item.id}
@@ -170,6 +185,53 @@ export default function NotificationsPage() {
                             </div>
                         ))}
                 </div>
+
+                {!isLoading && items.length > 0 && (
+                    <div className="flex items-center justify-between pt-1 text-[11px] text-zinc-500">
+                        <span>
+                            Showing{' '}
+                            <span className="text-zinc-300">
+                                {(currentPage - 1) * ITEMS_PER_PAGE + 1}
+                                {'-'}
+                                {Math.min(currentPage * ITEMS_PER_PAGE, items.length)}
+                            </span>{' '}
+                            of <span className="text-zinc-300">{items.length}</span> notifications
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                            >
+                                Prev
+                            </button>
+                            {Array.from({ length: totalPages }).map((_, idx) => {
+                                const page = idx + 1;
+                                const active = page === currentPage;
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => setCurrentPage(page)}
+                                        className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold transition-colors ${
+                                            active
+                                                ? 'bg-orange-600 text-white'
+                                                : 'border border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.08]'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
