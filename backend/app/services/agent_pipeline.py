@@ -505,17 +505,19 @@ async def build_fast_smalltalk_answer(
     role_focus = role_capabilities.get(user_role, role_capabilities["student"])
 
     mode_instruction = (
-        "The user is in casual conversation or light venting mode. Respond in 1-2 short, supportive sentences."
+        "The user is in casual conversation or light venting mode. Reply naturally in 1-2 short lines. "
+        "Match the user's tone, sound human and friendly, and avoid robotic phrasing."
         if conversation_mode == "casual"
-        else "The user asked what you can do. Respond in 1-2 short sentences with practical capability summary."
+        else "The user asked what you can do. Reply naturally in 1-2 short lines with practical capability summary."
     )
 
     system_prompt = (
-        "You are UnivGPT, a professional university assistant. "
+        "You are UnivGPT, a friendly university assistant. "
         f"The user role is `{user_role}`. "
         f"Capability scope: {role_focus}. "
         f"{mode_instruction} "
-        "Do not use bullet points. Avoid sounding templated. Keep it warm and concise."
+        "Do not use bullet points. Keep it warm, concise, and non-repetitive. "
+        "If the user message is just a greeting, greet back first, then offer help."
     )
 
     user_prompt = query
@@ -529,12 +531,12 @@ async def build_fast_smalltalk_answer(
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt},
                 ],
-                max_tokens=90,
-                temperature=0.45,
-                allow_fallback_models=False,
-                max_retries_override=0,
+                max_tokens=120,
+                temperature=0.6,
+                allow_fallback_models=True,
+                max_retries_override=1,
             ),
-            timeout=6.0,
+            timeout=8.0,
         )
         cleaned = str(llm_text or "").strip()
         if cleaned and cleaned != "I'm sorry, I'm having trouble connecting to my brain right now.":
@@ -542,10 +544,10 @@ async def build_fast_smalltalk_answer(
     except Exception:
         pass
 
-    greeting = f"Hi {first_name}," if first_name else "Hi,"
-    if conversation_mode == "casual":
-        return f"{greeting} I hear you. I can help with practical next steps like notices, deadlines, and course updates."
-    return f"{greeting} I can help with role-scoped university tasks like notices, course updates, and policy guidance."
+    # Minimal emergency fallback only when all model calls fail.
+    if first_name:
+        return f"Hi {first_name}, I couldn't generate a reply just now. Please retry."
+    return "Hi, I couldn't generate a reply just now. Please retry."
 
 
 def should_filter_recent_documents(query: str, intent: dict[str, Any]) -> bool:
