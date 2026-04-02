@@ -113,7 +113,7 @@ export default function CoursesPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [isHydratingFaculty, setIsHydratingFaculty] = useState(false);
     const navigate = useNavigate();
-    const { token } = useAuthStore();
+    const { token, user } = useAuthStore();
 
     useEffect(() => {
         let active = true;
@@ -306,7 +306,9 @@ export default function CoursesPage() {
 
                 {!isLoading && filteredCourses.length === 0 && (
                     <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/35 p-6 text-sm text-zinc-500">
-                        No course documents available yet for your role. Upload course documents to populate this section.
+                        {searchQuery.trim()
+                            ? 'No courses matched your search. Try another keyword.'
+                            : `No live course updates are available yet for your ${user?.role || 'student'} account.`}
                     </div>
                 )}
 

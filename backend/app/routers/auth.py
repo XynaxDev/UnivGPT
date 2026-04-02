@@ -1167,6 +1167,10 @@ async def get_faculty_directory(
             )
             for row in rows
         ]
+        if not faculty:
+            response = build_demo_faculty_response(safe_limit)
+            _USER_FACULTY_CACHE[cache_key] = (now_ts, response)
+            return response
         response = FacultyListResponse(faculty=faculty, total=len(faculty))
         _USER_FACULTY_CACHE[cache_key] = (now_ts, response)
         return response
@@ -1301,6 +1305,10 @@ async def get_course_directory(
         ]
         items.sort(key=lambda i: i.next_update_at or "", reverse=True)
         items = items[:safe_limit]
+        if not items:
+            response = build_demo_courses_response(safe_limit)
+            _USER_COURSES_CACHE[cache_key] = (now_ts, response)
+            return response
         response = CourseDirectoryResponse(courses=items, total=len(items))
         _USER_COURSES_CACHE[cache_key] = (now_ts, response)
         return response
