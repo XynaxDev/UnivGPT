@@ -14,6 +14,8 @@ export default function DeanAppealsPage() {
     const [appeals, setAppeals] = useState<DeanAppealItem[]>([]);
     const [loading, setLoading] = useState(false);
     const [actingUserId, setActingUserId] = useState<string | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const ITEMS_PER_PAGE = 6;
 
     const loadAppeals = async () => {
         if (!token) return;
@@ -33,9 +35,22 @@ export default function DeanAppealsPage() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, filter]);
 
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [filter, appeals.length]);
+
     const pendingCount = useMemo(
         () => appeals.filter((item) => (item.appeal?.status || '').toLowerCase() === 'pending').length,
         [appeals],
+    );
+    const totalPages = Math.max(1, Math.ceil(appeals.length / ITEMS_PER_PAGE));
+    const paginatedAppeals = useMemo(
+        () =>
+            appeals.slice(
+                (currentPage - 1) * ITEMS_PER_PAGE,
+                currentPage * ITEMS_PER_PAGE,
+            ),
+        [appeals, currentPage],
     );
 
     const runAction = async (userId: string, action: 'approve' | 'reject' | 'reset') => {
@@ -113,7 +128,7 @@ export default function DeanAppealsPage() {
                         <div className="px-6 py-10 text-sm text-zinc-500">No appeals found for this filter.</div>
                     ) : (
                         <div className="divide-y divide-white/10">
-                            {appeals.map((item) => {
+                            {paginatedAppeals.map((item) => {
                                 const status = (item.appeal?.status || 'none').toLowerCase();
                                 return (
                                     <div key={item.user_id} className="px-5 py-4">
@@ -184,8 +199,54 @@ export default function DeanAppealsPage() {
                         </div>
                     )}
                 </div>
+
+                {!loading && appeals.length > 0 && (
+                    <div className="flex items-center justify-between pt-1 text-[11px] text-zinc-500">
+                        <span>
+                            Showing{' '}
+                            <span className="text-zinc-300">
+                                {(currentPage - 1) * ITEMS_PER_PAGE + 1}
+                                {'-'}
+                                {Math.min(currentPage * ITEMS_PER_PAGE, appeals.length)}
+                            </span>{' '}
+                            of <span className="text-zinc-300">{appeals.length}</span> appeals
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                                disabled={currentPage === 1}
+                                className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                            >
+                                Prev
+                            </button>
+                            {Array.from({ length: totalPages }).map((_, idx) => {
+                                const page = idx + 1;
+                                const active = page === currentPage;
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => setCurrentPage(page)}
+                                        className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold transition-colors ${
+                                            active
+                                                ? 'bg-orange-600 text-white'
+                                                : 'border border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.08]'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                                disabled={currentPage === totalPages}
+                                className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                            >
+                                Next
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
 }
-

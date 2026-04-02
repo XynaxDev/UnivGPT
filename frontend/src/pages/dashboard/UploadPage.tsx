@@ -40,6 +40,8 @@ const UploadPage = () => {
     const [editingId, setEditingId] = useState<string | null>(null);
     const [editDraft, setEditDraft] = useState<Partial<DocumentResponse>>({});
     const [isSaving, setIsSaving] = useState(false);
+    const [docsPage, setDocsPage] = useState(1);
+    const DOCS_PER_PAGE = 8;
 
     const role = user?.role || 'student';
     const canUpload = role === 'admin' || role === 'faculty';
@@ -158,6 +160,20 @@ const UploadPage = () => {
     useEffect(() => {
         loadDocuments();
     }, [loadDocuments]);
+
+    useEffect(() => {
+        setDocsPage(1);
+    }, [documents.length]);
+
+    const totalDocPages = Math.max(1, Math.ceil(documents.length / DOCS_PER_PAGE));
+    const paginatedDocuments = useMemo(
+        () =>
+            documents.slice(
+                (docsPage - 1) * DOCS_PER_PAGE,
+                docsPage * DOCS_PER_PAGE,
+            ),
+        [documents, docsPage],
+    );
 
     const handleUploadAll = async () => {
         if (!files.length || isUploading || !token) return;
@@ -457,7 +473,7 @@ const UploadPage = () => {
                         <div className="text-xs text-zinc-500">No documents uploaded yet.</div>
                     ) : (
                         <div className="space-y-2">
-                            {documents.map((doc) => {
+                            {paginatedDocuments.map((doc) => {
                                 const isEditing = editingId === doc.id;
                                 return (
                                     <div key={doc.id} className="rounded-xl border border-white/[0.06] bg-black/40 p-3 space-y-2">
@@ -528,6 +544,53 @@ const UploadPage = () => {
                                     </div>
                                 );
                             })}
+                        </div>
+                    )}
+
+                    {!isLoadingDocs && documents.length > 0 && (
+                        <div className="flex items-center justify-between pt-1 text-[11px] text-zinc-500">
+                            <span>
+                                Showing{' '}
+                                <span className="text-zinc-300">
+                                    {(docsPage - 1) * DOCS_PER_PAGE + 1}
+                                    {'-'}
+                                    {Math.min(docsPage * DOCS_PER_PAGE, documents.length)}
+                                </span>{' '}
+                                of <span className="text-zinc-300">{documents.length}</span> documents
+                            </span>
+                            <div className="flex items-center gap-1.5">
+                                <button
+                                    onClick={() => setDocsPage((p) => Math.max(1, p - 1))}
+                                    disabled={docsPage === 1}
+                                    className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                                >
+                                    Prev
+                                </button>
+                                {Array.from({ length: totalDocPages }).map((_, idx) => {
+                                    const page = idx + 1;
+                                    const active = page === docsPage;
+                                    return (
+                                        <button
+                                            key={page}
+                                            onClick={() => setDocsPage(page)}
+                                            className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold transition-colors ${
+                                                active
+                                                    ? 'bg-orange-600 text-white'
+                                                    : 'border border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.08]'
+                                            }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    );
+                                })}
+                                <button
+                                    onClick={() => setDocsPage((p) => Math.min(totalDocPages, p + 1))}
+                                    disabled={docsPage === totalDocPages}
+                                    className="h-7 px-2 rounded-lg border border-white/[0.08] bg-white/[0.02] disabled:opacity-40 disabled:cursor-not-allowed hover:bg-white/[0.08] text-xs font-medium"
+                                >
+                                    Next
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
