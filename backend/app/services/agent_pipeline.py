@@ -680,7 +680,7 @@ def role_badge_for(role: str) -> str:
     return "Student Assistant"
 
 
-def is_admin_scope_intent(intent: dict[str, Any]) -> bool:
+def is_admin_scope_intent(intent: dict[str, Any], query: str = "") -> bool:
     conversation_mode = _normalize(intent.get("conversation_mode"))
     if conversation_mode == "casual":
         return True
@@ -690,6 +690,33 @@ def is_admin_scope_intent(intent: dict[str, Any]) -> bool:
     if intent_type in _ADMIN_ALLOWED_INTENT_TYPES:
         return True
     if target_entity in _ADMIN_ALLOWED_TARGETS:
+        return True
+    query_text = _normalize(query)
+    if query_text and any(
+        marker in query_text
+        for marker in (
+            "audit",
+            "log",
+            "logs",
+            "moderation",
+            "appeal",
+            "appeals",
+            "user",
+            "users",
+            "student",
+            "faculty",
+            "admin",
+            "document",
+            "documents",
+            "upload",
+            "uploads",
+            "metrics",
+            "system",
+            "pipeline",
+            "activity",
+            "activities",
+        )
+    ):
         return True
     return False
 
@@ -1443,15 +1470,15 @@ async def run_agent_pipeline(
     query_text = _normalize(query)
     count_request = bool(re.search(r"\b(how many|count|number of|total)\b", query_text))
 
-    if _normalize(user_role) == "admin" and not is_admin_scope_intent(intent):
+    if _normalize(user_role) == "admin" and not is_admin_scope_intent(intent, query):
         forced_answer = (
-            "I am in **Admin Assistant** mode, so I can only handle operational admin queries.\n\n"
-            "I can help with:\n"
+            "I can help with admin operations queries.\n\n"
+            "Try asking about:\n"
             "- user counts and role distribution\n"
             "- document and notice pipeline status\n"
             "- audit and moderation review context\n"
             "- course/faculty directory summaries for governance\n\n"
-            "Try one of these:\n"
+            "Examples:\n"
             "- \"Show today’s uploads and who uploaded them\"\n"
             "- \"How many students, faculty, and admins are active?\"\n"
             "- \"List recent audit actions for admin workflows\""

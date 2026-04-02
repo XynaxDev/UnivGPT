@@ -5,6 +5,9 @@ from typing import Any
 def _normalize(value: Any) -> str:
     return str(value or "").strip().lower()
 
+def _contains_any(text: str, markers: tuple[str, ...]) -> bool:
+    return any(marker in text for marker in markers)
+
 
 def is_fast_smalltalk_query(query: str) -> bool:
     text = _normalize(re.sub(r"[^a-z0-9\s?]", " ", query))
@@ -52,6 +55,8 @@ def should_filter_recent_documents(query: str, intent: dict[str, Any]) -> bool:
 def infer_intent_from_query(query: str, intent: dict[str, Any]) -> dict[str, Any]:
     text = _normalize(query)
     hydrated = dict(intent or {})
+    count_request = bool(re.search(r"\b(how many|count|number of|total)\b", text))
+    list_request = bool(re.search(r"\b(list|show|display|summarize|latest|recent)\b", text))
 
     if not hydrated.get("date_reference"):
         for marker in ("today", "tomorrow", "yesterday"):
@@ -64,6 +69,47 @@ def infer_intent_from_query(query: str, intent: dict[str, Any]) -> dict[str, Any
 
     if not hydrated.get("target_entity"):
         hydrated["target_entity"] = "general"
+
+    # Deterministic fallback routing when LLM intent extraction is unavailable/partial.
+    if _contains_any(text, ("audit", "audit log", "logs", "moderation", "appeal", "appeals")):
+        hydrated["target_entity"] = "audit"
+
+    if _contains_any(text, ("user", "users", "student", "students", "faculty", "admin", "admins")):
+        if count_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "count_users"
+        if hydrated.get("target_entity") in {"", "general"}:
+            if "students" in text or "student" in text:
+                hydrated["target_entity"] = "students"
+            elif "faculty" in text:
+                hydrated["target_entity"] = "faculty"
+            elif "admins" in text or "admin" in text:
+                hydrated["target_entity"] = "admins"
+            else:
+                hydrated["target_entity"] = "users"
+
+    if _contains_any(text, ("document", "documents", "notice", "notices", "upload", "uploads")):
+        if count_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "count_documents"
+        elif list_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "list_documents"
+        if hydrated.get("target_entity") in {"", "general"}:
+            hydrated["target_entity"] = "documents"
+
+    if _contains_any(text, ("course", "courses", "curriculum", "syllabus")):
+        if count_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "count_courses"
+        elif list_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "list_courses"
+        if hydrated.get("target_entity") in {"", "general"}:
+            hydrated["target_entity"] = "courses"
+
+    if _contains_any(text, ("teacher", "teachers", "professor", "professors", "faculty", "mentor", "mentors")):
+        if count_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "count_faculty"
+        elif list_request and hydrated.get("intent_type") in {"", "general"}:
+            hydrated["intent_type"] = "list_faculty"
+        if hydrated.get("target_entity") in {"", "general"}:
+            hydrated["target_entity"] = "faculty"
 
     if not hydrated.get("course"):
         course_patterns = [
