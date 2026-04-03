@@ -293,6 +293,7 @@ def build_user_profile(profile: dict, auth_user: Any = None) -> UserProfile:
         ),
         section=profile.get("section") or metadata.get("section"),
         roll_number=profile.get("roll_number") or metadata.get("roll_number"),
+        avatar_url=profile.get("avatar_url"),
         created_at=str(profile.get("created_at")) if profile.get("created_at") else None,
         academic_verified=is_academic_email(email),
         identity_provider=extract_identity_provider(auth_user),
@@ -303,14 +304,14 @@ def load_profile_row(admin: Any, user_id: str) -> dict[str, Any]:
     """Fetch a profile row with graceful fallback for older schemas."""
     preferred_select = (
         "id,email,full_name,role,department,program,semester,section,"
-        "roll_number,created_at,preferences,identity_provider"
+        "roll_number,avatar_url,created_at,preferences,identity_provider"
     )
     fallback_select = "id,email,full_name,role,department,created_at,preferences,identity_provider"
     try:
         res = admin.table("profiles").select(preferred_select).eq("id", user_id).limit(1).execute()
     except Exception as exc:
         msg = str(exc).lower()
-        if any(marker in msg for marker in ("program", "semester", "section", "roll_number", "preferences")):
+        if any(marker in msg for marker in ("program", "semester", "section", "roll_number", "preferences", "avatar_url")):
             res = admin.table("profiles").select(fallback_select).eq("id", user_id).limit(1).execute()
         else:
             raise
@@ -1001,6 +1002,7 @@ async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
         semester=user.semester,
         section=user.section,
         roll_number=user.roll_number,
+        avatar_url=user.avatar_url,
         created_at=user.created_at,
         academic_verified=user.academic_verified or user.id.startswith("dummy-id-"),
         identity_provider=provider,
@@ -1026,6 +1028,7 @@ async def update_profile(
             "semester": body.semester if body.semester is not None else user.semester,
             "section": body.section if body.section is not None else user.section,
             "roll_number": body.roll_number if body.roll_number is not None else user.roll_number,
+            "avatar_url": body.avatar_url if body.avatar_url is not None else user.avatar_url,
             "created_at": user.created_at,
         }
         return UserProfile(
@@ -1038,6 +1041,7 @@ async def update_profile(
             semester=merged["semester"],
             section=merged["section"],
             roll_number=merged["roll_number"],
+            avatar_url=merged["avatar_url"],
             created_at=merged["created_at"],
             academic_verified=True,
             identity_provider=user.identity_provider or "email",
@@ -1047,16 +1051,39 @@ async def update_profile(
         admin = get_supabase_admin()
         existing = load_profile_row(admin, user.id)
         update_payload: dict[str, Any] = {}
-        for field in ("full_name", "department", "program", "semester", "section", "roll_number"):
-            value = getattr(body, field)
-            if value is not None:
-                update_payload[field] = str(value).strip()
+        editable_fields = ("full_name", "department", "program", "semester", "section", "roll_number")
+        body_data = body.model_dump(exclude_unset=True)
+        for field in editable_fields:
+            if field in body_data:
+                value = body_data.get(field)
+                update_payload[field] = str(value).strip() if value is not None else None
+        if "avatar_url" in body_data:
+            avatar = body_data.get("avatar_url")
+            update_payload["avatar_url"] = str(avatar).strip() if avatar else None
 
         if update_payload:
-            updated_res = (
-                admin.table("profiles").update(update_payload).eq("id", user.id).execute()
-            )
-            updated = updated_res.data[0] if updated_res.data else {**existing, **update_payload}
+            try:
+                updated_res = (
+                    admin.table("profiles").update(update_payload).eq("id", user.id).execute()
+                )
+            except Exception as exc:
+                msg = str(exc).lower()
+                if "avatar_url" in msg and "avatar_url" in update_payload:
+                    fallback_payload = {k: v for k, v in update_payload.items() if k != "avatar_url"}
+                    if fallback_payload:
+                        updated_res = (
+                            admin.table("profiles").update(fallback_payload).eq("id", user.id).execute()
+                        )
+                        update_payload = fallback_payload
+                    else:
+                        updated_res = None
+                        update_payload = {}
+                else:
+                    raise
+            if updated_res and getattr(updated_res, "data", None):
+                updated = updated_res.data[0]
+            else:
+                updated = {**existing, **update_payload}
         else:
             updated = existing
 
@@ -1082,6 +1109,7 @@ async def update_profile(
             ),
             section=updated.get("section") or user.section,
             roll_number=updated.get("roll_number") or user.roll_number,
+            avatar_url=updated.get("avatar_url"),
             created_at=str(updated.get("created_at")) if updated.get("created_at") else user.created_at,
             academic_verified=is_academic_email(email),
             identity_provider=updated.get("identity_provider") or user.identity_provider or "email",
@@ -1149,7 +1177,7 @@ async def get_user_notifications(
 ):
     """Generate dynamic notification feed from documents and admin appeal events."""
     try:
-        safe_limit = min(max(limit, 1), 100)
+        safe_limit = min(max(limit, 1), 300)
         if user.id.startswith("dummy-id-"):
             return UserNotificationListResponse(notifications=[], total=0, unread=0)
 
@@ -1170,7 +1198,7 @@ async def get_user_notifications(
         )
         last_seen_at = parse_timestamp(last_seen_raw)
 
-        feed_scan_limit = min(240, max(120, safe_limit * 4))
+        feed_scan_limit = min(1200, max(200, safe_limit * 8))
         docs = fetch_documents_feed(admin, feed_scan_limit)
         relevant = [doc for doc in docs if is_document_relevant_for_user(doc, user)]
 
@@ -1192,7 +1220,7 @@ async def get_user_notifications(
             )
 
         if is_admin:
-            appeal_scan_limit = min(240, max(80, safe_limit * 4))
+            appeal_scan_limit = min(800, max(120, safe_limit * 6))
             pending_appeals = fetch_pending_appeals_feed(admin, appeal_scan_limit)
             for appeal in pending_appeals:
                 submitted_at = appeal.get("submitted_at")
@@ -1223,7 +1251,7 @@ async def get_user_notifications(
                 )
 
         if is_admin:
-            report_notice_limit = min(220, max(60, safe_limit * 3))
+            report_notice_limit = min(700, max(100, safe_limit * 5))
             report_notices = fetch_admin_report_notice_feed(admin, report_notice_limit)
             for report_notice in report_notices:
                 notice_at = report_notice.get("timestamp")
@@ -1343,7 +1371,7 @@ async def get_faculty_directory(
             try:
                 res = (
                     admin.table("profiles")
-                    .select("id,full_name,email,department,program,role")
+                    .select("id,full_name,email,department,program,role,avatar_url")
                     .eq("role", UserRole.FACULTY.value)
                     .in_("id", list(faculty_ids_from_docs))
                     .order("full_name")
@@ -1351,19 +1379,48 @@ async def get_faculty_directory(
                     .execute()
                 )
                 rows = res.data or []
-            except Exception:
-                rows = []
+            except Exception as exc:
+                if "avatar_url" in str(exc).lower():
+                    try:
+                        res = (
+                            admin.table("profiles")
+                            .select("id,full_name,email,department,program,role")
+                            .eq("role", UserRole.FACULTY.value)
+                            .in_("id", list(faculty_ids_from_docs))
+                            .order("full_name")
+                            .limit(safe_limit)
+                            .execute()
+                        )
+                        rows = res.data or []
+                    except Exception:
+                        rows = []
+                else:
+                    rows = []
 
         if not rows:
-            query = (
-                admin.table("profiles")
-                .select("id,full_name,email,department,program,role")
-                .eq("role", UserRole.FACULTY.value)
-            )
-            if user.role != UserRole.ADMIN.value and user.department:
-                query = query.eq("department", user.department)
-            res = query.order("full_name").limit(safe_limit).execute()
-            rows = res.data or []
+            try:
+                query = (
+                    admin.table("profiles")
+                    .select("id,full_name,email,department,program,role,avatar_url")
+                    .eq("role", UserRole.FACULTY.value)
+                )
+                if user.role != UserRole.ADMIN.value and user.department:
+                    query = query.eq("department", user.department)
+                res = query.order("full_name").limit(safe_limit).execute()
+                rows = res.data or []
+            except Exception as exc:
+                if "avatar_url" in str(exc).lower():
+                    query = (
+                        admin.table("profiles")
+                        .select("id,full_name,email,department,program,role")
+                        .eq("role", UserRole.FACULTY.value)
+                    )
+                    if user.role != UserRole.ADMIN.value and user.department:
+                        query = query.eq("department", user.department)
+                    res = query.order("full_name").limit(safe_limit).execute()
+                    rows = res.data or []
+                else:
+                    raise
 
         faculty = [
             FacultySummary(
@@ -1372,6 +1429,7 @@ async def get_faculty_directory(
                 email=str(row.get("email") or ""),
                 department=row.get("department"),
                 program=row.get("program"),
+                avatar_url=row.get("avatar_url"),
             )
             for row in rows
         ]
@@ -1695,6 +1753,7 @@ async def set_role(
             ),
             section=profile.get("section") or user.section,
             roll_number=profile.get("roll_number") or user.roll_number,
+            avatar_url=profile.get("avatar_url") or user.avatar_url,
             created_at=str(profile.get("created_at")) if profile.get("created_at") else None,
             academic_verified=is_academic_email(email) or user.id.startswith("dummy-id-"),
             identity_provider=user.identity_provider or "email",

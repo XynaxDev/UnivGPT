@@ -94,6 +94,7 @@ class UserProfileUpdateRequest(BaseModel):
     semester: Optional[str] = None
     section: Optional[str] = None
     roll_number: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class UserSettingsPayload(BaseModel):
@@ -128,6 +129,7 @@ class FacultySummary(BaseModel):
     email: str
     department: Optional[str] = None
     program: Optional[str] = None
+    avatar_url: Optional[str] = None
 
 
 class FacultyListResponse(BaseModel):

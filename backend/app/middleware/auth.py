@@ -31,6 +31,7 @@ class AuthenticatedUser:
         semester: Optional[str] = None,
         section: Optional[str] = None,
         roll_number: Optional[str] = None,
+        avatar_url: Optional[str] = None,
         created_at: Optional[str] = None,
         identity_provider: str = "email",
         academic_verified: bool = False,
@@ -44,6 +45,7 @@ class AuthenticatedUser:
         self.semester = semester
         self.section = section
         self.roll_number = roll_number
+        self.avatar_url = avatar_url
         self.created_at = created_at
         self.identity_provider = identity_provider
         self.academic_verified = academic_verified
@@ -201,6 +203,7 @@ async def get_current_user(
             semester=str(p.get("semester")) if p.get("semester") is not None else None,
             section=p.get("section"),
             roll_number=p.get("roll_number"),
+            avatar_url=p.get("avatar_url"),
             created_at=str(p.get("created_at")) if p.get("created_at") else None,
             identity_provider=identity_provider,
             academic_verified=is_verified,
