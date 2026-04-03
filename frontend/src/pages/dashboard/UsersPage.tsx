@@ -53,7 +53,7 @@ const UsersPage = () => {
         if (!token) return;
         setIsLoading(true);
         try {
-            const res = await adminApi.getUsers(token, 1, 200);
+            const res = await adminApi.getUsers(token, 1, 100);
             setUsers(res.users || []);
         } catch (err: any) {
             showToast(err?.message || 'Failed to load users from database.', 'error');
@@ -142,8 +142,11 @@ const UsersPage = () => {
 
     return (
         <div className="h-full overflow-y-auto p-5 md:p-8 space-y-6 max-w-7xl mx-auto pb-20">
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/90 to-zinc-900/40 p-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-orange-500/20 bg-gradient-to-r from-[#201108] via-[#161117] to-[#0b1226] p-5">
                 <div>
+                    <div className="inline-flex items-center rounded-full border border-orange-400/30 bg-orange-500/10 px-3 py-1 text-[10px] tracking-[0.18em] uppercase font-bold text-orange-300 mb-2">
+                        Admin User Desk
+                    </div>
                     <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
                         <Users className="w-5 h-5 text-orange-400" /> User Management
                     </h1>
@@ -166,6 +169,7 @@ const UsersPage = () => {
                         onClick={loadUsers}
                         className="h-10 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold px-5 transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 text-white"
                         disabled={isLoading}
+                        title="Reload users from database."
                     >
                         <RefreshCcw className="w-4 h-4 mr-2" /> Refresh
                     </Button>
@@ -259,23 +263,13 @@ const UsersPage = () => {
                         >
                             Prev
                         </button>
-                        {Array.from({ length: totalPages }).map((_, idx) => {
-                            const page = idx + 1;
-                            const active = page === currentPage;
-                            return (
-                                <button
-                                    key={page}
-                                    onClick={() => setCurrentPage(page)}
-                                    className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold transition-colors ${
-                                        active
-                                            ? 'bg-orange-600 text-white'
-                                            : 'border border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.08]'
-                                    }`}
-                                >
-                                    {page}
-                                </button>
-                            );
-                        })}
+                        <button
+                            className="h-7 min-w-[52px] px-2 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white"
+                            title="Current page"
+                        >
+                            {currentPage}
+                        </button>
+                        <span className="text-zinc-600">/ {totalPages}</span>
                         <button
                             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
                             disabled={currentPage === totalPages}
