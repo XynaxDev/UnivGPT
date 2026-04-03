@@ -238,12 +238,12 @@ export default function StudentDashboard() {
 
                     <div className="flex flex-wrap items-center gap-3">
                         <Link to="/dashboard/chat">
-                            <Button className="bg-orange-600 hover:bg-orange-500 text-white font-semibold px-6 h-11 rounded-2xl shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex gap-2 text-sm">
+                            <Button title="Open student assistant chat" className="bg-orange-600 hover:bg-orange-500 text-white font-semibold px-6 h-11 rounded-2xl shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex gap-2 text-sm">
                                 <Sparkles className="w-4 h-4" /> Ask UnivGPT Assistant
                             </Button>
                         </Link>
                         <Link to="/dashboard/courses">
-                            <Button variant="outline" className="h-11 rounded-2xl px-5 text-zinc-200 border-white/15 hover:text-white">
+                            <Button title="View your course directory" variant="outline" className="h-11 rounded-2xl px-5 text-zinc-200 border-white/15 hover:text-white">
                                 <BookOpen className="w-4 h-4 mr-2" /> Open Courses
                             </Button>
                         </Link>
@@ -301,6 +301,7 @@ export default function StudentDashboard() {
                     <Button
                         variant="outline"
                         onClick={() => navigate('/dashboard/faculty')}
+                        title="Open full faculty directory"
                         className="border-white/[0.12] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl h-10 font-semibold text-xs group"
                     >
                         Explore Faculty Directory
@@ -401,7 +402,7 @@ export default function StudentDashboard() {
                         </div>
 
                         <Link to="/dashboard/courses" className="block mt-4">
-                            <Button variant="outline" className="w-full border-white/[0.12] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl h-11 font-semibold text-xs group">
+                            <Button title="Open courses section" variant="outline" className="w-full border-white/[0.12] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl h-11 font-semibold text-xs group">
                                 View Course Directory
                                 <ChevronRight className="w-4 h-4 ml-2 text-zinc-600 group-hover:text-orange-400 transition-colors" />
                             </Button>
@@ -426,7 +427,7 @@ export default function StudentDashboard() {
                                 </p>
                             </div>
                             <Link to="/dashboard/chat" state={{ prefill: 'Show me the latest student notices with deadlines and categories.' }}>
-                                <Button className="bg-white text-black hover:bg-zinc-200 h-12 px-7 rounded-xl font-semibold transition-all shadow-xl shadow-black/20 text-sm">
+                                <Button title="Open campus policy chat" className="bg-white text-black hover:bg-zinc-200 h-12 px-7 rounded-xl font-semibold transition-all shadow-xl shadow-black/20 text-sm">
                                     Ask Assistant
                                 </Button>
                             </Link>
