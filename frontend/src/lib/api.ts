@@ -17,7 +17,7 @@ interface RequestOptions {
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = 'GET', body, token, isFormData = false } = options;
-    const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 20_000 : 60_000);
+    const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 30_000 : 60_000);
     const headers: Record<string, string> = {};
     const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -69,7 +69,25 @@ async function cachedGet<T>(
 ): Promise<T> {
     const now = Date.now();
     const cached = responseCache.get(key);
-    if (cached && cached.expiresAt > now) {
+    if (cached) {
+        if (cached.expiresAt > now) {
+            return cached.data as T;
+        }
+        // Stale-while-revalidate: return stale data immediately for faster UX
+        // and refresh cache in the background.
+        const inflightStaleRefresh = inflightCache.get(key);
+        if (!inflightStaleRefresh) {
+            const refreshPromise = loader()
+                .then((data) => {
+                    responseCache.set(key, { expiresAt: Date.now() + ttlMs, data });
+                    return data;
+                })
+                .catch(() => cached.data as T)
+                .finally(() => {
+                    inflightCache.delete(key);
+                });
+            inflightCache.set(key, refreshPromise);
+        }
         return cached.data as T;
     }
 
@@ -80,8 +98,15 @@ async function cachedGet<T>(
 
     const promise = loader()
         .then((data) => {
-            responseCache.set(key, { expiresAt: now + ttlMs, data });
+            responseCache.set(key, { expiresAt: Date.now() + ttlMs, data });
             return data;
+        })
+        .catch((err) => {
+            const stale = responseCache.get(key);
+            if (stale?.data !== undefined) {
+                return stale.data as T;
+            }
+            throw err;
         })
         .finally(() => {
             inflightCache.delete(key);
@@ -132,7 +157,11 @@ export const authApi = {
         return { ...res, user: normalizeUserProfile(res.user) };
     },
     getMe: async (token: string) =>
-        normalizeUserProfile(await request<UserProfile>('/user/me', { token })),
+        normalizeUserProfile(await cachedGet(
+            buildCacheKey('user-me', token),
+            20_000,
+            () => request<UserProfile>('/user/me', { token, timeoutMs: 20_000 }),
+        )),
     updateProfile: async (
         token: string,
         data: Partial<Pick<UserProfile, 'full_name' | 'department' | 'program' | 'semester' | 'section' | 'roll_number' | 'avatar_url'>>
@@ -157,7 +186,7 @@ export const authApi = {
         }
         return cachedGet(
             buildCacheKey('user-notifications', token, String(limit)),
-            10_000,
+            25_000,
             () => request<UserNotificationListResponse>(endpoint, { token, timeoutMs: 15_000 }),
         );
     },
@@ -169,7 +198,7 @@ export const authApi = {
     getFacultyDirectory: (token: string, limit = 20) =>
         cachedGet(
             buildCacheKey('user-faculty', token, String(limit)),
-            20_000,
+            60_000,
             () =>
                 request<FacultyListResponse>(
                     `/user/faculty?limit=${encodeURIComponent(String(limit))}`,
@@ -179,7 +208,7 @@ export const authApi = {
     getCourseDirectory: (token: string, limit = 50) =>
         cachedGet(
             buildCacheKey('user-courses', token, String(limit)),
-            20_000,
+            60_000,
             () =>
                 request<CourseDirectoryResponse>(
                     `/user/courses?limit=${encodeURIComponent(String(limit))}`,
@@ -191,7 +220,7 @@ export const authApi = {
     exportUserData: (token: string) =>
         cachedGet(
             buildCacheKey('user-export-data', token),
-            20_000,
+            60_000,
             () => request<UserExportData>('/user/export-data', { token, timeoutMs: 20_000 }),
         ),
     listUsers: (token: string) =>
@@ -206,18 +235,35 @@ export const documentsApi = {
         if (params?.page) query.set('page', String(params.page));
         if (params?.per_page) query.set('per_page', String(params.per_page));
         if (params?.doc_type) query.set('doc_type', params.doc_type);
-        return request<DocumentListResponse>(`/documents?${query.toString()}`, { token });
+        const endpoint = `/documents?${query.toString()}`;
+        return cachedGet(
+            buildCacheKey('documents-list', token, endpoint),
+            60_000,
+            () => request<DocumentListResponse>(endpoint, { token, timeoutMs: 25_000 }),
+        );
     },
     upload: (token: string, formData: FormData) =>
-        request<DocumentResponse>('/admin/documents', { method: 'POST', body: formData, token, isFormData: true, timeoutMs: 180_000 }),
+        request<DocumentResponse>('/admin/documents', { method: 'POST', body: formData, token, isFormData: true, timeoutMs: 180_000 }).then((res) => {
+            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
+            return res;
+        }),
     update: (
         token: string,
         id: string,
         data: Partial<Pick<DocumentResponse, 'doc_type' | 'department' | 'course' | 'tags' | 'visibility'>> & { metadata?: Record<string, unknown> }
     ) =>
-        request<DocumentResponse>(`/admin/documents/${id}`, { method: 'PATCH', body: data, token }),
+        request<DocumentResponse>(`/admin/documents/${id}`, { method: 'PATCH', body: data, token }).then((res) => {
+            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
+            return res;
+        }),
     delete: (token: string, id: string) =>
-        request<void>(`/admin/documents/${id}`, { method: 'DELETE', token }),
+        request<void>(`/admin/documents/${id}`, { method: 'DELETE', token }).then((res) => {
+            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
+            return res;
+        }),
     preview: (token: string, id: string) =>
         request<DocumentPreviewResponse>(`/documents/${encodeURIComponent(id)}/preview`, { token, timeoutMs: 20_000 }),
 };
@@ -237,9 +283,13 @@ export const agentApi = {
 
 export const adminApi = {
     getUsers: (token: string, page = 1, perPage = 100) =>
-        request<{ users: UserProfile[]; total: number; page: number; per_page: number }>(
-            `/admin/users?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`,
-            { token, timeoutMs: 20_000 },
+        cachedGet(
+            buildCacheKey('admin-users', token, `${page}:${perPage}`),
+            45_000,
+            () => request<{ users: UserProfile[]; total: number; page: number; per_page: number }>(
+                `/admin/users?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`,
+                { token, timeoutMs: 25_000 },
+            ),
         ),
     updateUser: (
         token: string,
@@ -249,32 +299,59 @@ export const adminApi = {
         request<{ user: UserProfile }>(
             `/admin/users/${encodeURIComponent(userId)}`,
             { method: 'PATCH', token, body: data },
-        ),
+        ).then((res) => {
+            invalidateCacheByPrefix(`admin-users:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`admin-metrics:${tokenSuffix(token)}`);
+            return res;
+        }),
     getAuditLogs: (token: string, page = 1, perPage = 20) =>
-        request<AuditLogListResponse>(
-            `/admin/audit?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`,
-            { token, timeoutMs: 25_000 },
+        cachedGet(
+            buildCacheKey('admin-audit', token, `${page}:${perPage}`),
+            25_000,
+            () => request<AuditLogListResponse>(
+                `/admin/audit?page=${encodeURIComponent(String(page))}&per_page=${encodeURIComponent(String(perPage))}`,
+                { token, timeoutMs: 25_000 },
+            ),
         ),
     getDeanAppeals: (token: string, status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending', limit = 100) =>
-        request<{ appeals: DeanAppealItem[]; total: number; status: string }>(
-            `/admin/dean/appeals?status=${encodeURIComponent(status)}&limit=${encodeURIComponent(String(limit))}`,
-            { token },
+        cachedGet(
+            buildCacheKey('admin-dean-appeals', token, `${status}:${limit}`),
+            20_000,
+            () => request<{ appeals: DeanAppealItem[]; total: number; status: string }>(
+                `/admin/dean/appeals?status=${encodeURIComponent(status)}&limit=${encodeURIComponent(String(limit))}`,
+                { token, timeoutMs: 25_000 },
+            ),
         ),
     approveDeanAppeal: (token: string, userId: string, note?: string) =>
         request<{ status: string; message: string; moderation?: ModerationMeta }>(
             `/admin/dean/appeals/${encodeURIComponent(userId)}/approve`,
             { method: 'POST', token, body: { note: note || null } },
-        ),
+        ).then((res) => {
+            invalidateCacheByPrefix(`admin-dean-appeals:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`admin-audit:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
+            return res;
+        }),
     rejectDeanAppeal: (token: string, userId: string, note?: string) =>
         request<{ status: string; message: string; moderation?: ModerationMeta }>(
             `/admin/dean/appeals/${encodeURIComponent(userId)}/reject`,
             { method: 'POST', token, body: { note: note || null } },
-        ),
+        ).then((res) => {
+            invalidateCacheByPrefix(`admin-dean-appeals:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`admin-audit:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
+            return res;
+        }),
     resetUserFlags: (token: string, userId: string, note?: string) =>
         request<{ status: string; message: string; moderation?: ModerationMeta }>(
             `/admin/dean/users/${encodeURIComponent(userId)}/reset-flags`,
             { method: 'POST', token, body: { note: note || null } },
-        ),
+        ).then((res) => {
+            invalidateCacheByPrefix(`admin-dean-appeals:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`admin-audit:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
+            return res;
+        }),
     createUserActivityReportNotice: (
         token: string,
         body: {
@@ -305,7 +382,11 @@ export const adminApi = {
 
 export const systemApi = {
     metrics: (token: string) =>
-        request<MetricsResponse>('/admin/metrics', { token, timeoutMs: 25_000 })
+        cachedGet(
+            buildCacheKey('admin-metrics', token),
+            30_000,
+            () => request<MetricsResponse>('/admin/metrics', { token, timeoutMs: 25_000 }),
+        )
 };
 
 export interface UserProfile {
