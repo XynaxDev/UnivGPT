@@ -12,6 +12,7 @@ import { BrandLogo } from '@/components/ui/BrandLogo';
 import { Sidebar, SidebarBody, SidebarLink } from '@/components/ui/sidebar';
 import { useToastStore } from '@/store/toastStore';
 import { authApi, type UserNotificationItem } from '@/lib/api';
+import { HoverTooltip } from '@/components/ui/tooltip';
 
 export default function DashboardLayout() {
     const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -247,20 +248,21 @@ export default function DashboardLayout() {
                         <div className="flex items-center gap-4">
                             {/* Notification Bell */}
                             <div className="relative">
-                                <button
-                                    onClick={() => {
-                                        setIsLoadingNotifications(true);
-                                        setShowNotifications((prev) => !prev);
-                                        setTimeout(() => setIsLoadingNotifications(false), 150);
-                                    }}
-                                    title="Open notifications"
-                                    className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-white transition-colors rounded-full hover:bg-white/[0.06] relative"
-                                >
-                                    <Bell className="w-[18px] h-[18px]" />
-                                    {unreadCount > 0 && (
-                                        <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-orange-500 rounded-full" />
-                                    )}
-                                </button>
+                                <HoverTooltip content="Open notifications">
+                                    <button
+                                        onClick={() => {
+                                            setIsLoadingNotifications(true);
+                                            setShowNotifications((prev) => !prev);
+                                            setTimeout(() => setIsLoadingNotifications(false), 150);
+                                        }}
+                                        className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-white transition-colors rounded-full hover:bg-white/[0.06] relative"
+                                    >
+                                        <Bell className="w-[18px] h-[18px]" />
+                                        {unreadCount > 0 && (
+                                            <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-orange-500 rounded-full" />
+                                        )}
+                                    </button>
+                                </HoverTooltip>
 
                                 <AnimatePresence>
                                     {showNotifications && (
@@ -309,31 +311,33 @@ export default function DashboardLayout() {
                                                     </div>
                                                 ))}
                                             </div>
-                                            <button
-                                                type="button"
-                                                onClick={() => {
-                                                    setShowNotifications(false);
-                                                    setIsLoadingNotifications(false);
-                                                    navigate('/dashboard/notifications');
-                                                }}
-                                                title="Open full notifications page"
-                                                className="w-full px-4 py-3 text-xs text-orange-300 hover:text-orange-200 border-t border-white/[0.06] flex items-center justify-center gap-1.5 bg-black/40 hover:bg-white/[0.03]"
-                                            >
-                                                View all notifications <ChevronRight className="w-3.5 h-3.5" />
-                                            </button>
+                                            <HoverTooltip content="Open full notifications page" side="top">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setShowNotifications(false);
+                                                        setIsLoadingNotifications(false);
+                                                        navigate('/dashboard/notifications');
+                                                    }}
+                                                    className="w-full px-4 py-3 text-xs text-orange-300 hover:text-orange-200 border-t border-white/[0.06] flex items-center justify-center gap-1.5 bg-black/40 hover:bg-white/[0.03]"
+                                                >
+                                                    View all notifications <ChevronRight className="w-3.5 h-3.5" />
+                                                </button>
+                                            </HoverTooltip>
                                         </motion.div>
                                     )}
                                 </AnimatePresence>
                             </div>
 
                             {/* Profile */}
-                            <button
-                                onClick={() => navigate('/dashboard/profile')}
-                                title="Open profile"
-                                className="hover:scale-110 transition-transform"
-                            >
-                                <ProfileAvatar size="sm" />
-                            </button>
+                            <HoverTooltip content="Open profile">
+                                <button
+                                    onClick={() => navigate('/dashboard/profile')}
+                                    className="hover:scale-110 transition-transform"
+                                >
+                                    <ProfileAvatar size="sm" />
+                                </button>
+                            </HoverTooltip>
                         </div>
                     </header>
 
