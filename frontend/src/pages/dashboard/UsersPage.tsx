@@ -330,7 +330,10 @@ const UsersPage = () => {
                                 Duplicates skipped: <span className="text-zinc-300 font-semibold">{reportPreview.duplicate_rows_skipped}</span>
                             </div>
                         </div>
-                        <div className="h-64 overflow-y-auto overscroll-contain pr-1 space-y-2 rounded-lg border border-white/[0.05] bg-black/25 p-2">
+                        <div
+                            className="max-h-[24rem] overflow-y-auto overscroll-y-contain pr-1 space-y-2 rounded-lg border border-white/[0.05] bg-black/25 p-2 scrollbar-thin scrollbar-thumb-white/10"
+                            onWheel={(e) => e.stopPropagation()}
+                        >
                             {reportPreview.preview_recipients.map((recipient) => (
                                 <div
                                     key={recipient.id}
@@ -451,7 +454,7 @@ const UsersPage = () => {
                         </button>
                         <HoverTooltip content="Current page">
                             <button
-                                className="h-8 w-8 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white"
+                                className="h-7 w-7 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white"
                             >
                                 {currentPage}
                             </button>

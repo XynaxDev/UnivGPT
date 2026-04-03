@@ -243,7 +243,7 @@ export default function DeanAppealsPage() {
                             >
                                 Prev
                             </button>
-                            <button className="h-8 w-8 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white">
+                            <button className="h-7 w-7 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white">
                                 {currentPage}
                             </button>
                             <span className="text-zinc-600">/ {totalPages}</span>
