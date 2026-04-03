@@ -12,6 +12,24 @@ logger = logging.getLogger(__name__)
 
 class EmailService:
     @staticmethod
+    def _format_datetime_human(raw: Optional[str], fallback: str = "Not available") -> str:
+        if not raw:
+            return fallback
+        try:
+            value = str(raw).strip()
+            if not value:
+                return fallback
+            if value.endswith("Z"):
+                value = value[:-1] + "+00:00"
+            dt = datetime.fromisoformat(value)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            local_dt = dt.astimezone()
+            return local_dt.strftime("%b %d, %Y, %I:%M:%S %p")
+        except Exception:
+            return fallback
+
+    @staticmethod
     def _resolve_sender() -> tuple[str, str]:
         smtp_user = (settings.smtp_user or "").strip()
         smtp_password = (settings.smtp_password or "").replace(" ", "").strip()
@@ -368,12 +386,8 @@ class EmailService:
             safe_message = html.escape((admin_message or "").strip() or "Please review this platform activity update.")
             safe_generated_by = html.escape(generated_by or "Admin")
             generated_iso = generated_at or datetime.now(timezone.utc).isoformat()
-            generated_label = generated_iso.replace("T", " ").replace("Z", " UTC")
-            last_query_label = (
-                str(last_query_at).replace("T", " ").replace("Z", " UTC")
-                if last_query_at
-                else "No query history yet"
-            )
+            generated_label = EmailService._format_datetime_human(generated_iso, fallback="Now")
+            last_query_label = EmailService._format_datetime_human(last_query_at, fallback="No query history yet")
 
             text_content = (
                 f"Hello {user_name},\n\n"
@@ -399,12 +413,15 @@ class EmailService:
                     .accent {{ color: #f97316; }}
                     .content {{ padding: 24px; color: #e5e7eb; line-height: 1.6; }}
                     .message {{ background: linear-gradient(135deg, #0b1220, #131e33); border: 1px solid #334155; border-radius: 10px; padding: 14px; margin: 14px 0 18px; }}
-                    .stats {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }}
-                    .stat {{ background: #0b1220; border: 1px solid #334155; border-radius: 10px; padding: 10px 12px; }}
-                    .label {{ color: #94a3b8; font-size: 12px; }}
-                    .value {{ color: #f8fafc; font-size: 17px; font-weight: 700; margin-top: 2px; }}
-                    .value-sm {{ color: #f8fafc; font-size: 13px; font-weight: 600; margin-top: 2px; }}
+                    .stats {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }}
+                    .stat {{ background: #0b1220; border: 1px solid #334155; border-radius: 10px; padding: 12px 14px; box-sizing: border-box; min-height: 84px; }}
+                    .label {{ color: #94a3b8; font-size: 12px; line-height: 1.25; margin-bottom: 6px; }}
+                    .value {{ color: #f8fafc; font-size: 18px; font-weight: 700; line-height: 1.25; margin-top: 0; }}
+                    .value-sm {{ color: #f8fafc; font-size: 13px; font-weight: 600; line-height: 1.4; margin-top: 0; word-break: break-word; }}
                     .footer {{ padding: 14px 24px; color: #94a3b8; font-size: 12px; border-top: 1px solid #1f2937; }}
+                    @media (max-width: 560px) {{
+                        .stats {{ grid-template-columns: 1fr; }}
+                    }}
                 </style>
             </head>
             <body>
