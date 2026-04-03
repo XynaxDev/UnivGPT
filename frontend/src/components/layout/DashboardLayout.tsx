@@ -253,6 +253,7 @@ export default function DashboardLayout() {
                                         setShowNotifications((prev) => !prev);
                                         setTimeout(() => setIsLoadingNotifications(false), 150);
                                     }}
+                                    title="Open notifications"
                                     className="w-9 h-9 flex items-center justify-center text-zinc-500 hover:text-white transition-colors rounded-full hover:bg-white/[0.06] relative"
                                 >
                                     <Bell className="w-[18px] h-[18px]" />
@@ -315,6 +316,7 @@ export default function DashboardLayout() {
                                                     setIsLoadingNotifications(false);
                                                     navigate('/dashboard/notifications');
                                                 }}
+                                                title="Open full notifications page"
                                                 className="w-full px-4 py-3 text-xs text-orange-300 hover:text-orange-200 border-t border-white/[0.06] flex items-center justify-center gap-1.5 bg-black/40 hover:bg-white/[0.03]"
                                             >
                                                 View all notifications <ChevronRight className="w-3.5 h-3.5" />
@@ -327,6 +329,7 @@ export default function DashboardLayout() {
                             {/* Profile */}
                             <button
                                 onClick={() => navigate('/dashboard/profile')}
+                                title="Open profile"
                                 className="hover:scale-110 transition-transform"
                             >
                                 <ProfileAvatar size="sm" />
