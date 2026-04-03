@@ -388,6 +388,47 @@ def notification_message_from_document(doc: dict[str, Any]) -> str:
     return f"{filename} was posted for your accessible feed."
 
 
+def fetch_pending_appeals_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
+    """Fetch pending moderation appeals from profile preferences for admin notifications."""
+    try:
+        rows = (
+            admin.table("profiles")
+            .select("id,email,full_name,role,department,preferences")
+            .limit(min(max(limit, 1), 500))
+            .execute()
+        ).data or []
+    except Exception:
+        return []
+
+    pending: list[dict[str, Any]] = []
+    for row in rows:
+        preferences = row.get("preferences") if isinstance(row.get("preferences"), dict) else {}
+        moderation = preferences.get("moderation") if isinstance(preferences.get("moderation"), dict) else {}
+        appeal = moderation.get("appeal") if isinstance(moderation.get("appeal"), dict) else {}
+        status = str(appeal.get("status") or "").strip().lower()
+        if status != "pending":
+            continue
+
+        submitted_at = to_iso(appeal.get("submitted_at"))
+        pending.append(
+            {
+                "id": str(row.get("id") or ""),
+                "email": str(row.get("email") or "").strip(),
+                "full_name": str(row.get("full_name") or "User").strip() or "User",
+                "role": str(row.get("role") or "student").strip().lower() or "student",
+                "department": str(row.get("department") or "").strip(),
+                "message": str(appeal.get("message") or "").strip(),
+                "submitted_at": submitted_at,
+            }
+        )
+
+    pending.sort(
+        key=lambda item: parse_timestamp(item.get("submitted_at")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return pending[:limit]
+
+
 def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
     global _DOCUMENTS_HAS_CREATED_AT, _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_ORDER_COLUMN
 
@@ -1075,16 +1116,17 @@ async def get_user_notifications(
     limit: int = 20,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
-    """Generate dynamic notification feed from latest uploaded documents."""
+    """Generate dynamic notification feed from documents and admin appeal events."""
     try:
         safe_limit = min(max(limit, 1), 100)
         if user.id.startswith("dummy-id-"):
             return UserNotificationListResponse(notifications=[], total=0, unread=0)
 
+        is_admin = str(user.role or "").strip().lower() == UserRole.ADMIN.value
         cache_key = (user.id, safe_limit)
         cached = _USER_NOTIFICATIONS_CACHE.get(cache_key)
         now_ts = time.monotonic()
-        if cached and (now_ts - cached[0]) <= _CACHE_TTL_NOTIFICATIONS_SECONDS:
+        if not is_admin and cached and (now_ts - cached[0]) <= _CACHE_TTL_NOTIFICATIONS_SECONDS:
             return cached[1]
 
         admin = get_supabase_admin()
@@ -1118,13 +1160,52 @@ async def get_user_notifications(
                 )
             )
 
+        if is_admin:
+            appeal_scan_limit = min(240, max(80, safe_limit * 4))
+            pending_appeals = fetch_pending_appeals_feed(admin, appeal_scan_limit)
+            for appeal in pending_appeals:
+                submitted_at = appeal.get("submitted_at")
+                submitted_dt = parse_timestamp(submitted_at)
+                unread = bool(submitted_dt and (last_seen_at is None or submitted_dt > last_seen_at))
+                role_label = str(appeal.get("role") or "user").strip().title()
+                dept = str(appeal.get("department") or "").strip()
+                dept_label = dept if dept else "No department"
+                display_name = str(appeal.get("full_name") or "User").strip() or "User"
+                appeal_message = str(appeal.get("message") or "").strip()
+                message_preview = appeal_message[:120] + ("..." if len(appeal_message) > 120 else "")
+                message = (
+                    f"{display_name} ({role_label}) submitted a moderation appeal. "
+                    f"Department: {dept_label}."
+                )
+                if message_preview:
+                    message = f"{message} Message: \"{message_preview}\""
+                notifications.append(
+                    UserNotificationItem(
+                        id=f"appeal:{appeal.get('id')}:{submitted_at or 'pending'}",
+                        title=f"New Appeal: {display_name}",
+                        message=message,
+                        course="Dean Desk",
+                        department=dept or None,
+                        uploaded_at=submitted_at,
+                        unread=unread,
+                    )
+                )
+
+        combined_total = len(notifications)
+        notifications.sort(
+            key=lambda item: parse_timestamp(item.uploaded_at) or datetime.min.replace(tzinfo=timezone.utc),
+            reverse=True,
+        )
+        notifications = notifications[:safe_limit]
+
         unread_count = sum(1 for item in notifications if item.unread)
         response = UserNotificationListResponse(
             notifications=notifications,
-            total=len(relevant),
+            total=combined_total,
             unread=unread_count,
         )
-        _USER_NOTIFICATIONS_CACHE[cache_key] = (now_ts, response)
+        if not is_admin:
+            _USER_NOTIFICATIONS_CACHE[cache_key] = (now_ts, response)
         return response
     except Exception as e:
         if is_network_error(e):
