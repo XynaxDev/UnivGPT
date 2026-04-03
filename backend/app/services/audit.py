@@ -6,6 +6,8 @@ Audit writes are queued off the request path to keep API latency low.
 
 import asyncio
 import logging
+import time
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import httpx
@@ -14,6 +16,7 @@ from app.config import settings
 from app.services.supabase_client import get_supabase_admin
 
 logger = logging.getLogger(__name__)
+_LAST_QUERY_PRUNE_MONO = 0.0
 
 def is_network_error(exc: Exception) -> bool:
     message = str(exc).lower()
@@ -43,6 +46,19 @@ def _handle_audit_error(exc: Exception) -> None:
         logger.info("[AUDIT] Supabase unreachable. Skipping audit log.")
         return
     logger.error(f"[AUDIT] Error logging event to Supabase: {exc}")
+
+
+def _prune_old_query_audits_sync() -> None:
+    retention_days = max(1, int(getattr(settings, "audit_query_retention_days", 14) or 14))
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    supabase = get_supabase_admin()
+    (
+        supabase.table("audit_logs")
+        .delete()
+        .eq("action", "agent_query")
+        .lt("timestamp", cutoff)
+        .execute()
+    )
 
 
 async def log_audit_event(
@@ -78,3 +94,19 @@ async def log_audit_event(
             _handle_audit_error(exc)
 
     loop.create_task(_write())
+
+    # Keep noisy query logs bounded in storage.
+    global _LAST_QUERY_PRUNE_MONO
+    if action == "agent_query":
+        now_mono = time.monotonic()
+        min_interval = float(getattr(settings, "audit_prune_interval_seconds", 900) or 900)
+        if (now_mono - _LAST_QUERY_PRUNE_MONO) >= max(30.0, min_interval):
+            _LAST_QUERY_PRUNE_MONO = now_mono
+
+            async def _prune():
+                try:
+                    await asyncio.to_thread(_prune_old_query_audits_sync)
+                except Exception as exc:
+                    _handle_audit_error(exc)
+
+            loop.create_task(_prune())
