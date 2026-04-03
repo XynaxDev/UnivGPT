@@ -215,8 +215,8 @@ async def get_audit_logs(
     per_page: int = 50,
     user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
 ) -> dict[str, Any]:
-    if per_page > 200:
-        raise HTTPException(status_code=400, detail="per_page too large")
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 200))
 
     supabase = get_supabase_admin()
     offset = (page - 1) * per_page
@@ -273,8 +273,8 @@ async def list_admin_users(
     per_page: int = 50,
     user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
 ) -> dict[str, Any]:
-    if per_page > 200:
-        raise HTTPException(status_code=400, detail="per_page too large")
+    page = max(1, int(page))
+    per_page = max(1, min(int(per_page), 200))
 
     supabase = get_supabase_admin()
     offset = (page - 1) * per_page
