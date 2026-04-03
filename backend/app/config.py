@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # LLM (Generation via OpenRouter)
     openrouter_api_key: str = ""
-    openrouter_model: str = "qwen/qwen3.6-plus-preview:free"
+    openrouter_model: str = "nvidia/nemotron-3-super-120b-a12b:free"
     openrouter_intent_model: str = "stepfun/step-3.5-flash:free"
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
     openrouter_fallback_models: str = ""
