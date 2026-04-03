@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Users, Search, Edit2, X, Check, RefreshCcw, Megaphone, BarChart3, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { HoverTooltip } from '@/components/ui/tooltip';
 import { adminApi, type UserProfile, type UserActivityReportNoticeResponse, type UserActivityReportPreviewResponse } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
@@ -383,10 +384,30 @@ const UsersPage = () => {
                     <span>Actions</span>
                 </div>
                 <div className="divide-y divide-white/[0.04]">
+                    {isLoading && (
+                        <div className="px-5 py-4 space-y-3">
+                            {Array.from({ length: 6 }).map((_, idx) => (
+                                <div key={`users-skeleton-${idx}`} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_80px_80px_90px_70px] gap-2 sm:gap-3 items-center py-2.5">
+                                    <div className="flex items-center gap-3">
+                                        <Skeleton className="w-8 h-8 rounded-full shrink-0" />
+                                        <div className="space-y-1.5 min-w-0 flex-1">
+                                            <Skeleton className="h-3.5 w-28" />
+                                            <Skeleton className="h-3 w-40" />
+                                        </div>
+                                    </div>
+                                    <Skeleton className="h-3.5 w-24" />
+                                    <Skeleton className="h-5 w-14 rounded-full" />
+                                    <Skeleton className="h-3.5 w-16" />
+                                    <Skeleton className="h-3.5 w-20" />
+                                    <Skeleton className="h-7 w-7 rounded-md" />
+                                </div>
+                            ))}
+                        </div>
+                    )}
                     {!isLoading && filtered.length === 0 && (
                         <div className="px-5 py-10 text-sm text-zinc-500">No users found in the database.</div>
                     )}
-                    {paginatedUsers.map((user, idx) => {
+                    {!isLoading && paginatedUsers.map((user, idx) => {
                         const role = roleValue(user.role);
                         const status = statusFromProfile(user);
                         return (
