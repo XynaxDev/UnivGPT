@@ -46,6 +46,13 @@ const UploadPage = () => {
     const role = user?.role || 'student';
     const canUpload = role === 'admin' || role === 'faculty';
     const canAdminCrud = role === 'admin';
+    const queueStats = useMemo(() => {
+        const total = files.length;
+        const pending = files.filter((f) => f.status === 'pending').length;
+        const done = files.filter((f) => f.status === 'done').length;
+        const failed = files.filter((f) => f.status === 'error').length;
+        return { total, pending, done, failed };
+    }, [files]);
 
     const docTypeOptions = useMemo(() => {
         if (role === 'admin') return ['public', 'student', 'faculty', 'admin'];
@@ -129,6 +136,10 @@ const UploadPage = () => {
 
     const removeFile = (index: number) => {
         setFiles((prev) => prev.filter((_, i) => i !== index));
+    };
+
+    const clearCompleted = () => {
+        setFiles((prev) => prev.filter((f) => f.status === 'pending' || f.status === 'uploading'));
     };
 
     const statusIcon = (status: UploadStatus) => {
@@ -303,11 +314,13 @@ const UploadPage = () => {
                 ) : (
                     <>
                         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-zinc-900/70 to-zinc-900/30 p-5 space-y-4">
-                            <div className="flex flex-wrap items-center gap-2">
+                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                <div className="flex flex-wrap items-center gap-2">
                                 <button
                                     type="button"
                                     onClick={() => { setMode('single'); setFiles((prev) => prev.slice(0, 1)); }}
                                     className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold border transition-all ${mode === 'single' ? 'bg-orange-500/15 border-orange-500/40 text-orange-200' : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white'}`}
+                                    title="Upload exactly one file with dedicated metadata."
                                 >
                                     <FileUp className="w-3.5 h-3.5" /> Single Upload
                                 </button>
@@ -315,13 +328,23 @@ const UploadPage = () => {
                                     type="button"
                                     onClick={() => setMode('batch')}
                                     className={`inline-flex items-center gap-2 rounded-xl px-3 py-1.5 text-xs font-semibold border transition-all ${mode === 'batch' ? 'bg-orange-500/15 border-orange-500/40 text-orange-200' : 'bg-white/[0.02] border-white/10 text-zinc-400 hover:text-white'}`}
+                                    title="Upload multiple files together under shared routing metadata."
                                 >
                                     <Layers className="w-3.5 h-3.5" /> Batch Upload
                                 </button>
                             </div>
+                                <div className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-black/30 px-3 py-1.5 text-[11px] text-zinc-400">
+                                    <span className="text-zinc-500">Queue</span>
+                                    <span className="text-white font-semibold">{queueStats.total}</span>
+                                    <span className="text-zinc-600">|</span>
+                                    <span className="text-emerald-400 font-semibold">{queueStats.done}</span>
+                                    <span className="text-red-400 font-semibold">{queueStats.failed}</span>
+                                </div>
+                            </div>
 
-                            <div className="grid grid-cols-1 gap-3">
-                                <label className="text-xs text-zinc-400">
+                            <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-4">
+                                <div className="space-y-3">
+                                    <label className="text-xs text-zinc-400 block">
                                     Audience
                                     <Select
                                         id="upload-audience"
@@ -335,7 +358,7 @@ const UploadPage = () => {
                                     />
                                 </label>
 
-                                <label className="text-xs text-zinc-400">
+                                    <label className="text-xs text-zinc-400 block">
                                     Department
                                     <input
                                         value={department}
@@ -345,7 +368,7 @@ const UploadPage = () => {
                                     />
                                 </label>
 
-                                <label className="text-xs text-zinc-400">
+                                    <label className="text-xs text-zinc-400 block">
                                     Course
                                     <input
                                         value={course}
@@ -355,7 +378,7 @@ const UploadPage = () => {
                                     />
                                 </label>
 
-                                <label className="text-xs text-zinc-400">
+                                    <label className="text-xs text-zinc-400 block">
                                     Tags (comma separated)
                                     <input
                                         value={tagsInput}
@@ -364,32 +387,52 @@ const UploadPage = () => {
                                         className="mt-1 w-full h-10 rounded-xl border border-white/10 bg-black/40 px-3 text-sm text-white outline-none focus:border-orange-500/30"
                                     />
                                 </label>
-                            </div>
-
-                            <div
-                                onDragEnter={handleDrag}
-                                onDragLeave={handleDrag}
-                                onDragOver={handleDrag}
-                                onDrop={handleDrop}
-                                className={`relative rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-300 cursor-pointer ${dragActive ? 'border-orange-500 bg-orange-500/5 shadow-[0_0_40px_-12px_rgba(249,115,22,0.2)]' : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.15]'}`}
-                            >
-                                <input
-                                    type="file"
-                                    multiple={mode === 'batch'}
-                                    accept={ACCEPTED_ATTR}
-                                    onChange={handleFileSelect}
-                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
-                                />
-                                <div className="space-y-2 pointer-events-none">
-                                    <div className="w-11 h-11 mx-auto rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
-                                        <CloudUpload className="w-5 h-5 text-orange-400" />
+                                    <div className="grid grid-cols-4 gap-2 pt-1">
+                                        <div className="rounded-xl border border-white/10 bg-black/40 px-2 py-2">
+                                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total</div>
+                                            <div className="text-sm font-bold text-white">{queueStats.total}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-white/10 bg-black/40 px-2 py-2">
+                                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Pending</div>
+                                            <div className="text-sm font-bold text-zinc-300">{queueStats.pending}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-2 py-2">
+                                            <div className="text-[10px] text-emerald-300 uppercase tracking-wider">Done</div>
+                                            <div className="text-sm font-bold text-emerald-300">{queueStats.done}</div>
+                                        </div>
+                                        <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-2 py-2">
+                                            <div className="text-[10px] text-red-300 uppercase tracking-wider">Failed</div>
+                                            <div className="text-sm font-bold text-red-300">{queueStats.failed}</div>
+                                        </div>
                                     </div>
-                                    <p className="text-sm font-semibold text-white">
-                                        {mode === 'single' ? 'Select one file' : 'Drag & drop files here'}
-                                    </p>
-                                    <p className="text-[11px] text-zinc-500">
-                                        Max 25MB each - {ACCEPTED_EXTENSIONS.join(', ')}
-                                    </p>
+                                </div>
+
+                                <div
+                                    onDragEnter={handleDrag}
+                                    onDragLeave={handleDrag}
+                                    onDragOver={handleDrag}
+                                    onDrop={handleDrop}
+                                    className={`relative rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-300 cursor-pointer min-h-[252px] flex items-center justify-center ${dragActive ? 'border-orange-500 bg-orange-500/5 shadow-[0_0_40px_-12px_rgba(249,115,22,0.2)]' : 'border-white/[0.08] bg-white/[0.02] hover:bg-white/[0.04] hover:border-white/[0.15]'}`}
+                                    title="Drop files here or click to browse."
+                                >
+                                    <input
+                                        type="file"
+                                        multiple={mode === 'batch'}
+                                        accept={ACCEPTED_ATTR}
+                                        onChange={handleFileSelect}
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-20"
+                                    />
+                                    <div className="space-y-2 pointer-events-none">
+                                        <div className="w-11 h-11 mx-auto rounded-2xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                                            <CloudUpload className="w-5 h-5 text-orange-400" />
+                                        </div>
+                                        <p className="text-sm font-semibold text-white">
+                                            {mode === 'single' ? 'Select one file' : 'Drag & drop files here'}
+                                        </p>
+                                        <p className="text-[11px] text-zinc-500">
+                                            Max 25MB each - {ACCEPTED_EXTENSIONS.join(', ')}
+                                        </p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -408,7 +451,11 @@ const UploadPage = () => {
                                             </div>
                                             <div className="flex items-center gap-2">
                                                 {statusIcon(file.status)}
-                                                <button onClick={() => removeFile(i)} className="w-6 h-6 rounded-md hover:bg-white/5 flex items-center justify-center text-zinc-600 hover:text-white transition-colors">
+                                                <button
+                                                    onClick={() => removeFile(i)}
+                                                    title="Remove file from queue"
+                                                    className="w-6 h-6 rounded-md hover:bg-white/5 flex items-center justify-center text-zinc-600 hover:text-white transition-colors"
+                                                >
                                                     <X className="w-3 h-3" />
                                                 </button>
                                             </div>
@@ -432,21 +479,34 @@ const UploadPage = () => {
                                         </div>
                                     )}
 
-                                    <Button
-                                        onClick={handleUploadAll}
-                                        disabled={!files.length || isUploading}
-                                        className="mt-2 rounded-xl h-9 px-5 w-auto bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-xs font-semibold transition-all shadow-md shadow-orange-500/20"
-                                    >
-                                        {isUploading ? (
-                                            <>
-                                                <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Uploading
-                                            </>
-                                        ) : (
-                                            <>
-                                                <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload
-                                            </>
-                                        )}
-                                    </Button>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                                        <Button
+                                            onClick={handleUploadAll}
+                                            disabled={!files.length || isUploading}
+                                            title="Upload queue and trigger ingestion + embeddings."
+                                            className="rounded-xl h-9 px-5 w-auto bg-orange-600 hover:bg-orange-500 disabled:opacity-40 text-white text-xs font-semibold transition-all shadow-md shadow-orange-500/20"
+                                        >
+                                            {isUploading ? (
+                                                <>
+                                                    <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Uploading
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <Upload className="w-3.5 h-3.5 mr-1.5" /> Upload
+                                                </>
+                                            )}
+                                        </Button>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={clearCompleted}
+                                            disabled={isUploading || (queueStats.done + queueStats.failed) === 0}
+                                            title="Clear completed and failed files from the queue."
+                                            className="rounded-xl h-9 px-4 text-xs border-white/15 text-zinc-300 hover:text-white"
+                                        >
+                                            Clear Completed
+                                        </Button>
+                                    </div>
                                 </div>
                             )}
                         </div>
@@ -459,6 +519,7 @@ const UploadPage = () => {
                         <button
                             type="button"
                             onClick={loadDocuments}
+                            title="Reload documents from server."
                             className="inline-flex items-center gap-2 rounded-lg border border-white/15 bg-white/[0.05] px-3 py-1.5 text-xs font-semibold text-white/90 hover:text-white hover:border-white/30 transition-all"
                             disabled={isLoadingDocs}
                         >
@@ -488,7 +549,11 @@ const UploadPage = () => {
                                                 {canAdminCrud && (
                                                     <>
                                                         {!isEditing ? (
-                                                            <button onClick={() => startEdit(doc)} className="w-7 h-7 rounded-lg border border-white/10 hover:border-orange-500/40 text-zinc-400 hover:text-orange-300 flex items-center justify-center transition-all">
+                                                            <button
+                                                                onClick={() => startEdit(doc)}
+                                                                title="Edit metadata"
+                                                                className="w-7 h-7 rounded-lg border border-white/10 hover:border-orange-500/40 text-zinc-400 hover:text-orange-300 flex items-center justify-center transition-all"
+                                                            >
                                                                 <Pencil className="w-3.5 h-3.5" />
                                                             </button>
                                                         ) : (
@@ -500,7 +565,11 @@ const UploadPage = () => {
                                                                 Save
                                                             </Button>
                                                         )}
-                                                        <button onClick={() => deleteDoc(doc.id)} className="w-7 h-7 rounded-lg border border-white/10 hover:border-red-500/40 text-zinc-400 hover:text-red-300 flex items-center justify-center transition-all">
+                                                        <button
+                                                            onClick={() => deleteDoc(doc.id)}
+                                                            title="Delete document"
+                                                            className="w-7 h-7 rounded-lg border border-white/10 hover:border-red-500/40 text-zinc-400 hover:text-red-300 flex items-center justify-center transition-all"
+                                                        >
                                                             <Trash2 className="w-3.5 h-3.5" />
                                                         </button>
                                                     </>
