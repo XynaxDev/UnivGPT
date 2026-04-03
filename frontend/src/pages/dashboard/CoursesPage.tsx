@@ -343,17 +343,34 @@ export default function CoursesPage() {
                 </div>
 
                 <div className="flex flex-col gap-3">
-                    <div className="relative flex-1 w-full">
-                        <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-                        <input
-                            type="text"
-                            placeholder="Search course, code, or department..."
-                            value={searchQuery}
-                            onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-white/[0.03] border border-white/[0.06] rounded-2xl py-3.5 pl-11 pr-4 text-sm text-white placeholder:text-zinc-700 focus:outline-none focus:border-orange-500/30 focus:bg-white/[0.05] transition-all"
-                        />
+                    <div className="grid grid-cols-1 lg:grid-cols-[1fr_auto] gap-3 items-center">
+                        <div className="relative w-full">
+                            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+                            <input
+                                type="text"
+                                placeholder="Search course, code, or department..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                className="w-full bg-white/[0.03] border border-white/[0.06] rounded-2xl py-3.5 pl-11 pr-4 text-sm text-white placeholder:text-zinc-700 focus:outline-none focus:border-orange-500/30 focus:bg-white/[0.05] transition-all"
+                            />
+                        </div>
+                        <Button
+                            variant="outline"
+                            onClick={() => {
+                                setSearchQuery('');
+                                setDepartmentFilter('all');
+                                setNoticeFilter('all');
+                                setFacultyFilter('all');
+                                setSortBy('recent');
+                            }}
+                            title="Clear all filters"
+                            className="h-11 px-5 border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl flex items-center gap-2 font-semibold text-xs w-full lg:w-auto"
+                        >
+                            <Filter className="w-4 h-4" />
+                            CLEAR FILTERS
+                        </Button>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
                         <div className="w-full">
                             <HoverTooltip content="Filter by department">
                                 <div className="relative">
@@ -419,24 +436,6 @@ export default function CoursesPage() {
                                 </Select>
                             </HoverTooltip>
                         </div>
-                    </div>
-
-                    <div className="flex justify-end">
-                        <Button
-                            variant="outline"
-                            onClick={() => {
-                                setSearchQuery('');
-                                setDepartmentFilter('all');
-                                setNoticeFilter('all');
-                                setFacultyFilter('all');
-                                setSortBy('recent');
-                            }}
-                            title="Clear all filters"
-                            className="h-11 px-5 border-white/[0.08] bg-white/[0.03] text-zinc-300 hover:text-white rounded-xl flex items-center gap-2 font-semibold text-xs"
-                        >
-                            <Filter className="w-4 h-4" />
-                            CLEAR FILTERS
-                        </Button>
                     </div>
                 </div>
 
