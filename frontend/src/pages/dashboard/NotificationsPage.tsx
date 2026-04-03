@@ -292,7 +292,9 @@ export default function NotificationsPage() {
                         <div className="w-full max-w-3xl rounded-2xl border border-white/[0.12] bg-zinc-950 shadow-2xl shadow-black/60 overflow-hidden">
                             <div className="px-5 py-4 border-b border-white/[0.08] flex items-start justify-between gap-3">
                                 <div className="min-w-0">
-                                    <p className="text-sm font-bold text-white truncate">{previewDoc.filename}</p>
+                                    <p className="text-sm font-bold text-white truncate">
+                                        {previewDoc.notice_title || previewDoc.filename}
+                                    </p>
                                     <p className="text-[11px] text-zinc-500 mt-0.5">
                                         {previewDoc.course || 'General'} â€¢ {previewDoc.department || 'No department'} â€¢ {previewDoc.doc_type}
                                     </p>
@@ -311,6 +313,13 @@ export default function NotificationsPage() {
                                         <Skeleton className="h-20 w-full rounded-xl" />
                                         <Skeleton className="h-20 w-full rounded-xl" />
                                         <Skeleton className="h-20 w-full rounded-xl" />
+                                    </div>
+                                ) : previewDoc.notice_message ? (
+                                    <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/8 px-4 py-4">
+                                        <div className="text-[10px] uppercase tracking-wider text-emerald-300 mb-2">Notice Message</div>
+                                        <p className="text-sm leading-relaxed text-zinc-100 whitespace-pre-wrap break-words">
+                                            {previewDoc.notice_message}
+                                        </p>
                                     </div>
                                 ) : previewDoc.has_preview && previewDoc.chunks.length > 0 ? (
                                     <div className="space-y-3 max-h-[58vh] overflow-y-auto pr-1">

@@ -35,6 +35,10 @@ const UploadPage = () => {
     const [files, setFiles] = useState<PendingFile[]>([]);
     const [isUploading, setIsUploading] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [uploadPhase, setUploadPhase] = useState<'idle' | 'uploading' | 'indexing' | 'completed'>('idle');
+    const [uploadLabel, setUploadLabel] = useState('');
+    const [elapsedSeconds, setElapsedSeconds] = useState(0);
+    const [etaSeconds, setEtaSeconds] = useState<number | null>(null);
 
     const [docType, setDocType] = useState('faculty');
     const [department, setDepartment] = useState(user?.department || '');
@@ -49,6 +53,9 @@ const UploadPage = () => {
     const [docsPage, setDocsPage] = useState(1);
     const DOCS_PER_PAGE = 8;
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const uploadTimerRef = useRef<number | null>(null);
+    const uploadStartRef = useRef<number | null>(null);
+    const estimatedTotalRef = useRef<number>(0);
 
     const role = user?.role || 'student';
     const canUpload = role === 'admin' || role === 'faculty';
@@ -83,11 +90,33 @@ const UploadPage = () => {
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
+    const formatDuration = (seconds: number) => {
+        const safe = Math.max(0, Math.floor(seconds));
+        const mins = Math.floor(safe / 60)
+            .toString()
+            .padStart(2, '0');
+        const secs = (safe % 60).toString().padStart(2, '0');
+        return `${mins}:${secs}`;
+    };
+
+    const stopUploadTimer = useCallback(() => {
+        if (uploadTimerRef.current) {
+            window.clearInterval(uploadTimerRef.current);
+            uploadTimerRef.current = null;
+        }
+    }, []);
+
+    useEffect(() => () => stopUploadTimer(), [stopUploadTimer]);
+
     const getExtension = (name: string) => name.split('.').pop()?.toLowerCase() || '';
 
     const appendFiles = (incoming: File[]) => {
         const valid: PendingFile[] = [];
         const rejected: string[] = [];
+        const alreadyUploaded: string[] = [];
+        const alreadyQueued: string[] = [];
+        const uploadedNameSet = new Set((documents || []).map((doc) => String(doc.filename || '').trim().toLowerCase()));
+        const queuedSet = new Set(files.map((f) => `${f.name.trim().toLowerCase()}::${f.file.size}`));
 
         incoming.forEach((f) => {
             const ext = getExtension(f.name);
@@ -95,6 +124,17 @@ const UploadPage = () => {
                 rejected.push(f.name);
                 return;
             }
+            const normalizedName = f.name.trim().toLowerCase();
+            if (uploadedNameSet.has(normalizedName)) {
+                alreadyUploaded.push(f.name);
+                return;
+            }
+            const sig = `${normalizedName}::${f.size}`;
+            if (queuedSet.has(sig)) {
+                alreadyQueued.push(f.name);
+                return;
+            }
+            queuedSet.add(sig);
             valid.push({
                 file: f,
                 name: f.name,
@@ -105,6 +145,12 @@ const UploadPage = () => {
 
         if (rejected.length) {
             showToast(`Unsupported file(s): ${rejected.join(', ')}. Allowed: ${ACCEPTED_EXTENSIONS.join(', ')}`, 'error');
+        }
+        if (alreadyUploaded.length) {
+            showToast(`Skipped already uploaded file(s): ${alreadyUploaded.join(', ')}`, 'error');
+        }
+        if (alreadyQueued.length) {
+            showToast(`Skipped duplicate queued file(s): ${alreadyQueued.join(', ')}`);
         }
 
         if (!valid.length) return;
@@ -172,7 +218,12 @@ const UploadPage = () => {
         setIsLoadingDocs(true);
         try {
             const response = await documentsApi.list(token, { page: 1, per_page: 100 });
-            setDocuments(response.documents || []);
+            const sorted = [...(response.documents || [])].sort((a, b) => {
+                const aa = new Date(a.uploaded_at || a.created_at || 0).getTime();
+                const bb = new Date(b.uploaded_at || b.created_at || 0).getTime();
+                return bb - aa;
+            });
+            setDocuments(sorted);
         } catch (err: any) {
             showToast(err.message || 'Failed to fetch documents.', 'error');
         } finally {
@@ -209,16 +260,52 @@ const UploadPage = () => {
             return;
         }
 
+        const processIndexes = files
+            .map((entry, idx) => ({ entry, idx }))
+            .filter(({ entry }) => entry.status === 'pending' || entry.status === 'error');
+        if (!processIndexes.length) {
+            showToast('No pending files to upload.');
+            return;
+        }
+
         setIsUploading(true);
         setProgress(0);
+        setUploadPhase('uploading');
+        setUploadLabel('Preparing upload queue...');
+        setElapsedSeconds(0);
 
         let completed = 0;
-        const total = files.length;
+        const total = processIndexes.length;
+        let processed = 0;
         const tags = parseTags(tagsInput);
+        const estimatedPerFileMs = processIndexes.map(({ entry }) =>
+            Math.min(30_000, Math.max(7_000, Math.round(entry.file.size / 45_000) + 6_000)),
+        );
+        estimatedTotalRef.current = estimatedPerFileMs.reduce((sum, value) => sum + value, 0);
+        uploadStartRef.current = Date.now();
 
-        for (let i = 0; i < files.length; i++) {
-            const fileObj = files[i];
-            setFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: 'uploading' } : f)));
+        stopUploadTimer();
+        uploadTimerRef.current = window.setInterval(() => {
+            if (!uploadStartRef.current) return;
+            const elapsedMs = Date.now() - uploadStartRef.current;
+            const elapsed = Math.floor(elapsedMs / 1000);
+            setElapsedSeconds(elapsed);
+            const remaining = Math.max(0, estimatedTotalRef.current - elapsedMs);
+            setEtaSeconds(Math.ceil(remaining / 1000));
+            setProgress((prev) => {
+                const estimateProgress = estimatedTotalRef.current > 0
+                    ? Math.round((elapsedMs / estimatedTotalRef.current) * 100)
+                    : prev;
+                const floor = Math.round((processed / total) * 100);
+                return Math.max(floor, Math.min(98, estimateProgress));
+            });
+        }, 400);
+
+        for (let i = 0; i < processIndexes.length; i++) {
+            const { entry: fileObj, idx: fileIndex } = processIndexes[i];
+            setUploadPhase('uploading');
+            setUploadLabel(`Uploading ${i + 1}/${total}: ${fileObj.name}`);
+            setFiles((prev) => prev.map((f, idx) => (idx === fileIndex ? { ...f, status: 'uploading' } : f)));
 
             const formData = new FormData();
             formData.append('file', fileObj.file);
@@ -243,21 +330,43 @@ const UploadPage = () => {
 
             try {
                 await documentsApi.upload(token, formData);
-                setFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: 'done' } : f)));
+                setUploadPhase('indexing');
+                setUploadLabel(`Indexing embeddings ${i + 1}/${total}: ${fileObj.name}`);
+                setFiles((prev) => prev.map((f, idx) => (idx === fileIndex ? { ...f, status: 'done' } : f)));
                 completed++;
             } catch (error: any) {
-                setFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, status: 'error' } : f)));
+                setFiles((prev) => prev.map((f, idx) => (idx === fileIndex ? { ...f, status: 'error' } : f)));
                 showToast(error.message || `Failed uploading ${fileObj.name}`, 'error');
             } finally {
-                setProgress(Math.round(((i + 1) / total) * 100));
+                processed++;
+                setProgress(Math.round((processed / total) * 100));
             }
         }
 
+        stopUploadTimer();
         setIsUploading(false);
+        setUploadPhase('completed');
+        setUploadLabel(completed === total ? 'Upload and indexing completed.' : 'Upload completed with some failures.');
+        setEtaSeconds(0);
+        setProgress(100);
+
+        // Keep failed entries visible; hide successfully uploaded ones from queue.
+        setFiles((prev) => prev.filter((f) => f.status !== 'done'));
+
         if (completed > 0) {
             showToast(`Uploaded ${completed}/${total} file(s).`, completed === total ? 'success' : undefined);
             await loadDocuments();
         }
+
+        window.setTimeout(() => {
+            if (!isUploading) {
+                setUploadPhase('idle');
+                setUploadLabel('');
+                setProgress(0);
+                setElapsedSeconds(0);
+                setEtaSeconds(null);
+            }
+        }, 2200);
     };
 
     const startEdit = (doc: DocumentResponse) => {
@@ -500,10 +609,10 @@ const UploadPage = () => {
                                         </div>
                                     ))}
 
-                                    {isUploading && (
+                                    {uploadPhase !== 'idle' && (
                                         <div className="space-y-1.5">
                                             <div className="flex items-center justify-between text-[11px] text-zinc-500">
-                                                <span>Uploading and indexing...</span>
+                                                <span className="text-zinc-300">{uploadLabel || 'Uploading and indexing...'}</span>
                                                 <span className="text-zinc-300 font-semibold">{progress}%</span>
                                             </div>
                                             <div className="h-1.5 rounded-full bg-white/[0.04] overflow-hidden">
@@ -511,8 +620,13 @@ const UploadPage = () => {
                                                     initial={{ width: 0 }}
                                                     animate={{ width: `${progress}%` }}
                                                     transition={{ duration: 0.15, ease: 'easeOut' }}
-                                                    className="h-full bg-gradient-to-r from-orange-500 via-amber-400 to-emerald-400"
+                                                    className="h-full bg-gradient-to-r from-emerald-500 via-green-400 to-lime-300"
                                                 />
+                                            </div>
+                                            <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-500">
+                                                <span>Stage: <span className="text-emerald-300 font-semibold">{uploadPhase}</span></span>
+                                                <span>Elapsed: <span className="text-zinc-300 font-semibold">{formatDuration(elapsedSeconds)}</span></span>
+                                                <span>ETA: <span className="text-zinc-300 font-semibold">{etaSeconds === null ? '--:--' : formatDuration(etaSeconds)}</span></span>
                                             </div>
                                         </div>
                                     )}
