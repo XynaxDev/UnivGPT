@@ -6,6 +6,7 @@ import { authApi, type CourseDirectoryItem, type FacultySummary } from '@/lib/ap
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
 const initialsFromName = (name: string) => {
@@ -95,8 +96,23 @@ export default function FacultyProfilePage() {
                     className="rounded-3xl border border-white/[0.08] bg-gradient-to-br from-zinc-900 via-zinc-900/85 to-black overflow-hidden"
                 >
                     {loading ? (
-                        <div className="p-6">
-                            <p className="text-sm text-zinc-500">Loading faculty profile...</p>
+                        <div className="p-6 space-y-5">
+                            <div className="flex items-center gap-4">
+                                <Skeleton className="w-16 h-16 rounded-2xl" />
+                                <div className="space-y-2">
+                                    <Skeleton className="h-6 w-56" />
+                                    <Skeleton className="h-4 w-40" />
+                                    <Skeleton className="h-3 w-32" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                                <Skeleton className="h-20 w-full rounded-2xl xl:col-span-2" />
+                                <Skeleton className="h-20 w-full rounded-2xl" />
+                                <Skeleton className="h-20 w-full rounded-2xl" />
+                                <Skeleton className="h-20 w-full rounded-2xl" />
+                                <Skeleton className="h-20 w-full rounded-2xl" />
+                            </div>
+                            <Skeleton className="h-40 w-full rounded-2xl" />
                         </div>
                     ) : !faculty ? (
                         <div className="p-6">

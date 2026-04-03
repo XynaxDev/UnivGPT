@@ -5,6 +5,7 @@ import { BookOpen, ChevronRight, GraduationCap, Mail } from 'lucide-react';
 import { authApi, type CourseDirectoryItem, type FacultySummary } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useToastStore } from '@/store/toastStore';
 
 const initialsFromName = (name: string) => {
@@ -181,8 +182,30 @@ export default function FacultyDirectoryPage() {
                 </motion.div>
 
                 {isLoading && (
-                    <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/35 p-6 text-sm text-zinc-500">
-                        Loading faculty directory...
+                    <div className="space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {Array.from({ length: 4 }).map((_, idx) => (
+                                <div key={`faculty-dir-skeleton-${idx}`} className="rounded-2xl border border-white/[0.08] bg-white/[0.02] p-4">
+                                    <div className="flex items-start gap-3">
+                                        <Skeleton className="w-10 h-10 rounded-xl shrink-0" />
+                                        <div className="flex-1 space-y-2">
+                                            <Skeleton className="h-4 w-40" />
+                                            <Skeleton className="h-3 w-28" />
+                                            <Skeleton className="h-3 w-52" />
+                                            <Skeleton className="h-3 w-full" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/35 p-5">
+                            <Skeleton className="h-4 w-40 mb-4" />
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                <Skeleton className="h-24 w-full rounded-xl" />
+                                <Skeleton className="h-24 w-full rounded-xl" />
+                                <Skeleton className="h-24 w-full rounded-xl" />
+                            </div>
+                        </div>
                     </div>
                 )}
 
