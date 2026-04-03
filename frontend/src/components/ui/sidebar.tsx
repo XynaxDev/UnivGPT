@@ -94,7 +94,7 @@ export const DesktopSidebar = ({
     children,
     ...props
 }: React.ComponentProps<typeof motion.div>) => {
-    const { open, animate, hovered, setHovered } = useSidebar();
+    const { animate, hovered, setHovered } = useSidebar();
     return (
         <motion.div
             className={cn(
@@ -102,11 +102,11 @@ export const DesktopSidebar = ({
                 className,
             )}
             animate={{
-                width: animate ? (hovered ? "160px" : "64px") : "64px",
+                width: animate ? (hovered ? "188px" : "72px") : "72px",
             }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
-            transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+            transition={{ duration: 0.2, ease: [0.2, 0.95, 0.2, 0.95] }}
             {...props}
         >
             {children}
@@ -168,13 +168,14 @@ export const SidebarLink = ({
     onClick?: () => void;
     props?: Omit<NavLinkProps, "to">;
 }) => {
-    const { open, setOpen, animate, hovered, isDesktop } = useSidebar();
-    const isExpanded = Boolean(hovered || (open && isDesktop));
+    const { setOpen, animate, hovered, setHovered, isDesktop } = useSidebar();
+    const isExpanded = Boolean(hovered && isDesktop);
     const tooltipLabel = isDesktop && !isExpanded ? link.label : undefined;
 
     const handleClick = () => {
         if (!isDesktop) {
             setOpen(false);
+            setHovered(false);
         }
         onClick?.();
     };
@@ -193,15 +194,13 @@ export const SidebarLink = ({
                 >
                     {link.icon}
                     <motion.span
+                        initial={false}
                         animate={{
-                            opacity: animate ? (hovered || (open && isDesktop) ? 1 : 0) : 1,
-                            display: animate
-                                ? hovered || (open && isDesktop)
-                                    ? "inline-block"
-                                    : "none"
-                                : "inline-block",
+                            opacity: animate ? (isExpanded ? 1 : 0) : 1,
+                            x: animate ? (isExpanded ? 0 : -8) : 0,
+                            width: animate ? (isExpanded ? "auto" : 0) : "auto",
                         }}
-                        className="text-[13px] font-medium transition duration-150 whitespace-pre ml-3"
+                        className="text-[13px] font-medium transition duration-150 whitespace-nowrap ml-3 overflow-hidden"
                     >
                         {link.label}
                     </motion.span>
@@ -219,23 +218,17 @@ export const SidebarLink = ({
                 {...props}
             >
                 {active && (
-                    <motion.div
-                        layoutId="sidebar-active"
-                        className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-orange-500 rounded-r-full hidden md:block"
-                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                    />
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-orange-500 rounded-r-full hidden md:block" />
                 )}
                 {link.icon}
                 <motion.span
+                    initial={false}
                     animate={{
-                        opacity: animate ? (hovered || (open && isDesktop) ? 1 : 0) : 1,
-                        display: animate
-                            ? hovered || (open && isDesktop)
-                                ? "inline-block"
-                                : "none"
-                            : "none",
+                        opacity: animate ? (isExpanded ? 1 : 0) : 1,
+                        x: animate ? (isExpanded ? 0 : -8) : 0,
+                        width: animate ? (isExpanded ? "auto" : 0) : "auto",
                     }}
-                    className="text-[13px] font-medium transition duration-150 whitespace-pre ml-3 hidden md:inline-block"
+                    className="text-[13px] font-medium transition duration-150 whitespace-nowrap ml-3 overflow-hidden hidden md:inline-block"
                 >
                     {link.label}
                 </motion.span>
@@ -243,4 +236,3 @@ export const SidebarLink = ({
         </HoverTooltip>
     );
 };
-
