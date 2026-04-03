@@ -295,16 +295,27 @@ const UploadPage = () => {
     return (
         <div className="h-full overflow-y-auto p-6 sm:p-8 md:p-10 w-full">
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto w-full space-y-6">
-                <div>
-                    <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-2 mb-2">
-                        <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
-                            <Upload className="w-4 h-4 text-orange-400" />
+                <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-r from-[#201108] via-[#161117] to-[#0b1226] p-5">
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <div className="inline-flex items-center rounded-full border border-orange-400/30 bg-orange-500/10 px-3 py-1 text-[10px] tracking-[0.18em] uppercase font-bold text-orange-300 mb-2">
+                                Document Control Hub
+                            </div>
+                            <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2 mb-2">
+                                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                                    <Upload className="w-4 h-4 text-orange-400" />
+                                </div>
+                                Document Upload Console
+                            </h1>
+                            <p className="text-sm text-zinc-300 max-w-2xl">
+                                Upload with role routing metadata and embed documents for RAG. Supported formats: {ACCEPTED_EXTENSIONS.join(', ')}.
+                            </p>
                         </div>
-                        Document Upload Console
-                    </h1>
-                    <p className="text-xs text-zinc-400 max-w-2xl">
-                        Upload with role routing metadata and embed documents for RAG. Supported formats: {ACCEPTED_EXTENSIONS.join(', ')}.
-                    </p>
+                        <div className="text-right text-xs text-zinc-400">
+                            <div className="font-semibold text-zinc-200">{documents.length} total docs</div>
+                            <div>{queueStats.total} files in queue</div>
+                        </div>
+                    </div>
                 </div>
 
                 {!canUpload ? (
@@ -635,23 +646,13 @@ const UploadPage = () => {
                                 >
                                     Prev
                                 </button>
-                                {Array.from({ length: totalDocPages }).map((_, idx) => {
-                                    const page = idx + 1;
-                                    const active = page === docsPage;
-                                    return (
-                                        <button
-                                            key={page}
-                                            onClick={() => setDocsPage(page)}
-                                            className={`h-7 min-w-[28px] px-2 rounded-lg text-xs font-semibold transition-colors ${
-                                                active
-                                                    ? 'bg-orange-600 text-white'
-                                                    : 'border border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:bg-white/[0.08]'
-                                            }`}
-                                        >
-                                            {page}
-                                        </button>
-                                    );
-                                })}
+                                <button
+                                    className="h-7 min-w-[52px] px-2 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white"
+                                    title="Current page"
+                                >
+                                    {docsPage}
+                                </button>
+                                <span className="text-zinc-600">/ {totalDocPages}</span>
                                 <button
                                     onClick={() => setDocsPage((p) => Math.min(totalDocPages, p + 1))}
                                     disabled={docsPage === totalDocPages}
