@@ -24,7 +24,7 @@ export function HoverTooltip({
 }) {
     if (!content) return children;
     const tooltipBase =
-        "z-[240] max-w-[300px] rounded-xl border border-orange-400/25 bg-gradient-to-b from-zinc-900/98 to-zinc-950/98 px-3 py-2 text-[11px] font-medium text-zinc-100 shadow-[0_14px_34px_rgba(0,0,0,0.55)] backdrop-blur-md";
+        "z-[260] max-w-[320px] rounded-xl border border-orange-400/35 bg-gradient-to-b from-zinc-900/98 to-black/98 px-3 py-2 text-[11px] font-medium text-zinc-100 shadow-[0_18px_40px_rgba(0,0,0,0.62)] backdrop-blur-md";
 
     if (followCursor) {
         const [open, setOpen] = React.useState(false);
@@ -34,13 +34,13 @@ export function HoverTooltip({
         const nextChild = React.cloneElement(children, {
             onMouseEnter: (event: React.MouseEvent) => {
                 setOpen(true);
-                setPosition({ x: event.clientX + 12, y: event.clientY + 22 });
+                setPosition({ x: event.clientX + 14, y: event.clientY + 18 });
                 if (typeof childProps.onMouseEnter === "function") {
                     (childProps.onMouseEnter as (e: React.MouseEvent) => void)(event);
                 }
             },
             onMouseMove: (event: React.MouseEvent) => {
-                setPosition({ x: event.clientX + 12, y: event.clientY + 22 });
+                setPosition({ x: event.clientX + 14, y: event.clientY + 18 });
                 if (typeof childProps.onMouseMove === "function") {
                     (childProps.onMouseMove as (e: React.MouseEvent) => void)(event);
                 }
@@ -60,11 +60,12 @@ export function HoverTooltip({
                     open &&
                     createPortal(
                         <div
-                            className={cn(
-                                "pointer-events-none fixed",
-                                tooltipBase,
-                                className,
-                            )}
+                        className={cn(
+                            "pointer-events-none fixed",
+                            "animate-in fade-in-0 zoom-in-95 duration-150",
+                            tooltipBase,
+                            className,
+                        )}
                             style={{ left: position.x, top: position.y }}
                         >
                             {content}
