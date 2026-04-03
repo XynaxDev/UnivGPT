@@ -173,6 +173,8 @@ export const SidebarLink = ({
     props?: Omit<NavLinkProps, 'to'>;
 }) => {
     const { open, setOpen, animate, hovered, isDesktop } = useSidebar() as any;
+    const isExpanded = Boolean(hovered || (open && isDesktop));
+    const tooltipLabel = isDesktop && !isExpanded ? link.label : undefined;
 
     const handleClick = (e: React.MouseEvent) => {
         if (!isDesktop) {
@@ -190,6 +192,7 @@ export const SidebarLink = ({
         return (
             <button
                 onClick={handleClick}
+                title={tooltipLabel}
                 className={cn(
                     baseClasses,
                     active ? activeClasses : inactiveClasses,
@@ -214,6 +217,7 @@ export const SidebarLink = ({
         <NavLink
             to={link.href}
             onClick={handleClick}
+            title={tooltipLabel}
             className={cn(
                 baseClasses,
                 active ? activeClasses : inactiveClasses,
