@@ -142,14 +142,19 @@ function MessageBubble({ message }: { message: ChatMessage }) {
 interface ChatWidgetProps {
     className?: string;
     fullHeight?: boolean;
+    scopeKey?: string;
 }
 
-export default function ChatWidget({ className = '', fullHeight = false }: ChatWidgetProps) {
+export default function ChatWidget({ className = '', fullHeight = false, scopeKey = 'chat-widget' }: ChatWidgetProps) {
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const { messages, isQuerying, sendQuery, newConversation } = useChatStore();
-    const { token } = useAuthStore();
+    const { messages, isQuerying, sendQuery, newConversation, setScope } = useChatStore();
+    const { token, user } = useAuthStore();
     const hasStreamingAssistant = messages.some((m) => m.role === 'assistant' && m.isStreaming);
+
+    useEffect(() => {
+        setScope(`${scopeKey}:${user?.id || 'anon'}`);
+    }, [scopeKey, setScope, user?.id]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });

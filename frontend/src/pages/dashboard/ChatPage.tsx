@@ -248,7 +248,7 @@ export default function ChatPage() {
     const [moderationState, setModerationState] = useState<ModerationMeta | null>(null);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-    const { messages, isQuerying, sendQuery, newConversation, error, clearError } = useChatStore();
+    const { messages, isQuerying, sendQuery, newConversation, error, clearError, setScope } = useChatStore();
     const { token, user } = useAuthStore();
     const location = useLocation();
     const navigate = useNavigate();
@@ -312,6 +312,7 @@ export default function ChatPage() {
 
     const firstName = user?.full_name?.split(' ')[0] || 'there';
     const role = ((user?.role || 'student') as ChatRole);
+    const chatScope = `dashboard-chat:${user?.id || 'anon'}:${role}`;
     const roleUI = CHAT_ROLE_UI[role] || CHAT_ROLE_UI.student;
     const isChatBlocked = Boolean(moderationState?.blocked);
     const appealPending = String(moderationState?.appeal_status || '').toLowerCase() === 'pending';
@@ -332,6 +333,10 @@ export default function ChatPage() {
             setIsSubmittingAppeal(false);
         }
     };
+
+    useEffect(() => {
+        setScope(chatScope);
+    }, [chatScope, setScope]);
 
     return (
         <div className="flex flex-col h-[calc(100vh-80px)]">

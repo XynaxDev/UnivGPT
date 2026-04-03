@@ -268,9 +268,13 @@ function AdminChatBubble() {
     const [isOpen, setIsOpen] = useState(false);
     const [input, setInput] = useState('');
     const endRef = useRef<HTMLDivElement>(null);
-    const { messages, isQuerying, sendQuery, newConversation, error, clearError } = useChatStore();
-    const { token } = useAuthStore();
+    const { messages, isQuerying, sendQuery, newConversation, error, clearError, setScope } = useChatStore();
+    const { token, user } = useAuthStore();
     const hasStreamingAssistant = messages.some((m) => m.role === 'assistant' && m.isStreaming);
+
+    useEffect(() => {
+        setScope(`admin-dashboard-bubble:${user?.id || 'anon'}`);
+    }, [setScope, user?.id]);
 
     useEffect(() => {
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
