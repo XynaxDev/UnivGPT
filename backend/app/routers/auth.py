@@ -56,9 +56,29 @@ _DOCUMENTS_ORDER_COLUMN: str = "uploaded_at"
 _USER_NOTIFICATIONS_CACHE: dict[tuple[str, int], tuple[float, UserNotificationListResponse]] = {}
 _USER_FACULTY_CACHE: dict[tuple[str, int], tuple[float, FacultyListResponse]] = {}
 _USER_COURSES_CACHE: dict[tuple[str, int], tuple[float, CourseDirectoryResponse]] = {}
+_USER_EXPORT_CACHE: dict[str, tuple[float, UserExportDataResponse]] = {}
+_DOCUMENTS_FEED_CACHE: dict[tuple[int, str, str, str], tuple[float, list[dict[str, Any]]]] = {}
 _CACHE_TTL_NOTIFICATIONS_SECONDS = 12.0
+_CACHE_TTL_NOTIFICATIONS_ADMIN_SECONDS = 6.0
 _CACHE_TTL_FACULTY_SECONDS = 20.0
 _CACHE_TTL_COURSES_SECONDS = 20.0
+_CACHE_TTL_EXPORT_SECONDS = 20.0
+_CACHE_TTL_DOCUMENTS_FEED_SECONDS = 8.0
+
+
+def _clear_user_runtime_caches(user_id: str) -> None:
+    if not user_id:
+        return
+    for key in list(_USER_NOTIFICATIONS_CACHE.keys()):
+        if key[0] == user_id:
+            _USER_NOTIFICATIONS_CACHE.pop(key, None)
+    for key in list(_USER_FACULTY_CACHE.keys()):
+        if key[0] == user_id:
+            _USER_FACULTY_CACHE.pop(key, None)
+    for key in list(_USER_COURSES_CACHE.keys()):
+        if key[0] == user_id:
+            _USER_COURSES_CACHE.pop(key, None)
+    _USER_EXPORT_CACHE.pop(user_id, None)
 
 
 def is_dummy_auth_enabled() -> bool:
@@ -461,6 +481,79 @@ def fetch_admin_report_notice_feed(admin: Any, limit: int) -> list[dict[str, Any
     return notices
 
 
+def fetch_user_appeal_decision_feed(admin: Any, user: AuthenticatedUser, limit: int) -> list[dict[str, Any]]:
+    """Fetch dean moderation decisions for a specific user from audit logs."""
+    actions = ["dean_appeal_approved", "dean_appeal_rejected", "dean_flags_reset"]
+    rows: list[dict[str, Any]] = []
+    per_action_limit = min(max(limit, 1), 200)
+
+    for action in actions:
+        try:
+            action_rows = (
+                admin.table("audit_logs")
+                .select("id,action,timestamp,payload")
+                .eq("action", action)
+                .order("timestamp", desc=True)
+                .limit(per_action_limit)
+                .execute()
+            ).data or []
+            rows.extend(action_rows)
+        except Exception:
+            continue
+
+    user_id = str(user.id or "").strip()
+    user_email = str(user.email or "").strip().lower()
+    decisions: list[dict[str, Any]] = []
+
+    for row in rows:
+        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
+        target_user_id = str(payload.get("target_user_id") or "").strip()
+        target_user_email = str(payload.get("target_user_email") or "").strip().lower()
+        if user_id and target_user_id and user_id == target_user_id:
+            matched = True
+        elif user_email and target_user_email and user_email == target_user_email:
+            matched = True
+        else:
+            matched = False
+
+        if not matched:
+            continue
+
+        action = str(row.get("action") or "").strip().lower()
+        note = str(payload.get("note") or "").strip()
+        actor = str(payload.get("reviewer_email") or "Dean Office").strip() or "Dean Office"
+        timestamp = to_iso(row.get("timestamp"))
+
+        if action == "dean_appeal_approved":
+            title = "Appeal Approved"
+            message = "Your moderation appeal was approved. Chat access has been restored."
+        elif action == "dean_appeal_rejected":
+            title = "Appeal Rejected"
+            message = "Your moderation appeal was reviewed and rejected."
+        else:
+            title = "Flags Reset by Dean"
+            message = "Your moderation flags were reset by the Dean Office."
+
+        if note:
+            message = f"{message} Note: {note}"
+
+        decisions.append(
+            {
+                "id": str(row.get("id") or ""),
+                "title": title,
+                "message": message,
+                "timestamp": timestamp,
+                "actor": actor,
+            }
+        )
+
+    decisions.sort(
+        key=lambda item: parse_timestamp(item.get("timestamp")) or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    return decisions[:limit]
+
+
 def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
     global _DOCUMENTS_HAS_CREATED_AT, _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_ORDER_COLUMN
 
@@ -481,9 +574,22 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
             .execute()
         )
 
+    cache_key = (
+        int(limit),
+        str(_DOCUMENTS_ORDER_COLUMN),
+        str(_DOCUMENTS_HAS_CREATED_AT),
+        str(_DOCUMENTS_HAS_UPLOADER_ID),
+    )
+    now_ts = time.monotonic()
+    cached = _DOCUMENTS_FEED_CACHE.get(cache_key)
+    if cached and (now_ts - cached[0]) <= _CACHE_TTL_DOCUMENTS_FEED_SECONDS:
+        return cached[1]
+
     for _ in range(3):
         try:
-            return (run_query().data or [])
+            rows = run_query().data or []
+            _DOCUMENTS_FEED_CACHE[cache_key] = (now_ts, rows)
+            return rows
         except Exception as exc:
             msg = str(exc).lower()
             updated = False
@@ -508,6 +614,8 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
 
             if not updated:
                 raise
+            # Query shape changed. Drop cache to avoid stale schema shape.
+            _DOCUMENTS_FEED_CACHE.clear()
 
     return []
 
@@ -1093,6 +1201,7 @@ async def update_profile(
             ip_address=request.client.host if request.client else None,
             payload={"fields": sorted(list(update_payload.keys()))},
         )
+        _clear_user_runtime_caches(user.id)
 
         email = updated.get("email") or user.email
         return UserProfile(
@@ -1163,6 +1272,7 @@ async def update_user_settings(
             ip_address=request.client.host if request.client else None,
             payload={"settings": body.model_dump()},
         )
+        _clear_user_runtime_caches(user.id)
         return UserSettingsResponse(settings=body)
     except Exception as e:
         if is_network_error(e):
@@ -1185,7 +1295,10 @@ async def get_user_notifications(
         cache_key = (user.id, safe_limit)
         cached = _USER_NOTIFICATIONS_CACHE.get(cache_key)
         now_ts = time.monotonic()
-        if not is_admin and cached and (now_ts - cached[0]) <= _CACHE_TTL_NOTIFICATIONS_SECONDS:
+        notifications_ttl = (
+            _CACHE_TTL_NOTIFICATIONS_ADMIN_SECONDS if is_admin else _CACHE_TTL_NOTIFICATIONS_SECONDS
+        )
+        if cached and (now_ts - cached[0]) <= notifications_ttl:
             return cached[1]
 
         admin = get_supabase_admin()
@@ -1250,6 +1363,23 @@ async def get_user_notifications(
                     )
                 )
 
+        appeal_decision_limit = min(120, max(20, safe_limit * 2))
+        appeal_decisions = fetch_user_appeal_decision_feed(admin, user, appeal_decision_limit)
+        for decision in appeal_decisions:
+            decision_dt = parse_timestamp(decision.get("timestamp"))
+            unread = bool(decision_dt and (last_seen_at is None or decision_dt > last_seen_at))
+            notifications.append(
+                UserNotificationItem(
+                    id=f"appeal-decision:{decision.get('id') or decision.get('timestamp')}",
+                    title=str(decision.get("title") or "Appeal Decision"),
+                    message=str(decision.get("message") or "Your appeal decision is available."),
+                    course="Dean Desk",
+                    department=None,
+                    uploaded_at=decision.get("timestamp"),
+                    unread=unread,
+                )
+            )
+
         if is_admin:
             report_notice_limit = min(700, max(100, safe_limit * 5))
             report_notices = fetch_admin_report_notice_feed(admin, report_notice_limit)
@@ -1282,8 +1412,7 @@ async def get_user_notifications(
             total=combined_total,
             unread=unread_count,
         )
-        if not is_admin:
-            _USER_NOTIFICATIONS_CACHE[cache_key] = (now_ts, response)
+        _USER_NOTIFICATIONS_CACHE[cache_key] = (now_ts, response)
         return response
     except Exception as e:
         if is_network_error(e):
@@ -1315,9 +1444,7 @@ async def mark_notifications_read(
             ip_address=request.client.host if request.client else None,
             payload={},
         )
-        for key in list(_USER_NOTIFICATIONS_CACHE.keys()):
-            if key[0] == user.id:
-                _USER_NOTIFICATIONS_CACHE.pop(key, None)
+        _clear_user_runtime_caches(user.id)
         return UserSettingsResponse(settings=normalize_user_settings(preferences.get("settings")))
     except Exception as e:
         if is_network_error(e):
@@ -1590,6 +1717,11 @@ async def export_user_data(
 ):
     """Return dynamic export data for the authenticated user."""
     try:
+        now_ts = time.monotonic()
+        cached_export = _USER_EXPORT_CACHE.get(user.id)
+        if cached_export and (now_ts - cached_export[0]) <= _CACHE_TTL_EXPORT_SECONDS:
+            return cached_export[1]
+
         supabase = get_supabase_admin()
         try:
             profile_res = (
@@ -1654,7 +1786,7 @@ async def export_user_data(
         role_value = profile.get("role") or user.role or UserRole.STUDENT.value
         created_at = profile.get("created_at") or user.created_at
 
-        return UserExportDataResponse(
+        response = UserExportDataResponse(
             exportDate=datetime.now(timezone.utc).isoformat(),
             profile=UserExportProfile(
                 name=str(name),
@@ -1676,6 +1808,8 @@ async def export_user_data(
             documents=documents,
             notices=recent_notices,
         )
+        _USER_EXPORT_CACHE[user.id] = (now_ts, response)
+        return response
     except Exception as e:
         if is_network_error(e):
             raise_supabase_unreachable()
@@ -1737,6 +1871,7 @@ async def set_role(
             ip_address=request.client.host if request.client else None,
             payload={"role": body.role.value},
         )
+        _clear_user_runtime_caches(user.id)
 
         email = profile.get("email") or user.email
         return UserProfile(

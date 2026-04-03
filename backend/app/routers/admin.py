@@ -727,7 +727,13 @@ async def approve_dean_appeal(
     await log_audit_event(
         user_id=None if user.id.startswith("dummy-id-") else user.id,
         action="dean_appeal_approved",
-        payload={"target_user_id": target_user_id, "note": body.note},
+        payload={
+            "target_user_id": target_user_id,
+            "target_user_email": target_email,
+            "target_user_name": target_name,
+            "reviewer_email": user.email,
+            "note": body.note,
+        },
     )
     await _send_appeal_status_email_if_possible(
         receiver_email=target_email,
@@ -758,7 +764,13 @@ async def reject_dean_appeal(
     await log_audit_event(
         user_id=None if user.id.startswith("dummy-id-") else user.id,
         action="dean_appeal_rejected",
-        payload={"target_user_id": target_user_id, "note": body.note},
+        payload={
+            "target_user_id": target_user_id,
+            "target_user_email": target_email,
+            "target_user_name": target_name,
+            "reviewer_email": user.email,
+            "note": body.note,
+        },
     )
     await _send_appeal_status_email_if_possible(
         receiver_email=target_email,
