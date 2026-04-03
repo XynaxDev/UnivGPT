@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Settings, Bell,
-    Trash2, AlertTriangle, Download, Eye
+    Trash2, AlertTriangle, Download, Eye,
+    UserCircle2, ShieldCheck, Building2, GraduationCap, Layers, Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuthStore } from '@/store/authStore';
@@ -132,14 +133,14 @@ const SettingsPage = () => {
 
     const sections = [
         {
-            id: 'notifications', title: 'Notifications', icon: Bell,
+            id: 'notifications', title: 'Notifications', icon: Bell, iconTone: 'text-orange-300 bg-orange-500/15 border-orange-500/30',
             items: [
                 { id: 'emailNotifications', label: 'Email Notifications', desc: 'Daily summary and important alerts via email.' },
                 { id: 'pushNotifications', label: 'Push Notifications', desc: 'Real-time browser/app notifications.' },
             ]
         },
         {
-            id: 'accessibility', title: 'Accessibility', icon: Eye,
+            id: 'accessibility', title: 'Accessibility', icon: Eye, iconTone: 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30',
             items: [
                 { id: 'reducedMotion', label: 'Reduced Motion', desc: 'Minimize UI animations for accessibility.' },
             ]
@@ -147,21 +148,21 @@ const SettingsPage = () => {
     ];
 
     const accountRows = [
-        { label: 'Name', value: user?.full_name || 'User' },
-        { label: 'Role', value: role.charAt(0).toUpperCase() + role.slice(1) },
-        { label: 'Department', value: user?.department || 'Not set' },
-        { label: 'Verification', value: user?.academic_verified ? 'Verified' : 'Pending' },
+        { label: 'Name', value: user?.full_name || 'User', icon: UserCircle2, tone: 'text-sky-300 bg-sky-500/15 border-sky-500/30' },
+        { label: 'Role', value: role.charAt(0).toUpperCase() + role.slice(1), icon: ShieldCheck, tone: 'text-orange-300 bg-orange-500/15 border-orange-500/30' },
+        { label: 'Department', value: user?.department || 'Not set', icon: Building2, tone: 'text-indigo-300 bg-indigo-500/15 border-indigo-500/30' },
+        { label: 'Verification', value: user?.academic_verified ? 'Verified' : 'Pending', icon: ShieldCheck, tone: 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30' },
         ...(isStudent
             ? [
-                  { label: 'Program', value: user?.program || 'Not set' },
-                  { label: 'Semester', value: user?.semester || 'Not set' },
-                  { label: 'Section', value: user?.section || 'Not set' },
-                  { label: 'Roll Number', value: user?.roll_number || 'Not set' },
+                  { label: 'Program', value: user?.program || 'Not set', icon: GraduationCap, tone: 'text-violet-300 bg-violet-500/15 border-violet-500/30' },
+                  { label: 'Semester', value: user?.semester || 'Not set', icon: Layers, tone: 'text-fuchsia-300 bg-fuchsia-500/15 border-fuchsia-500/30' },
+                  { label: 'Section', value: user?.section || 'Not set', icon: Layers, tone: 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30' },
+                  { label: 'Roll Number', value: user?.roll_number || 'Not set', icon: Hash, tone: 'text-amber-300 bg-amber-500/15 border-amber-500/30' },
               ]
             : []),
         ...(isFaculty
             ? [
-                  { label: 'Teaching Area', value: user?.program || 'Not set' },
+                  { label: 'Teaching Area', value: user?.program || 'Not set', icon: GraduationCap, tone: 'text-teal-300 bg-teal-500/15 border-teal-500/30' },
               ]
             : []),
     ];
@@ -189,7 +190,9 @@ const SettingsPage = () => {
                                 className="rounded-2xl bg-zinc-900/40 border border-white/[0.06] overflow-hidden"
                             >
                                 <div className="px-5 py-3.5 border-b border-white/[0.05] flex items-center gap-2.5">
-                                    <sec.icon className="w-4 h-4 text-orange-400" />
+                                    <span className={`w-6 h-6 rounded-lg border flex items-center justify-center ${sec.iconTone}`}>
+                                        <sec.icon className="w-3.5 h-3.5" />
+                                    </span>
                                     <span className="text-sm font-semibold text-white">{sec.title}</span>
                                 </div>
                                 <div className="divide-y divide-white/[0.04]">
@@ -274,9 +277,14 @@ const SettingsPage = () => {
                             </div>
                             <div className="p-4 space-y-2.5">
                                 {accountRows.map((row) => (
-                                    <div key={row.label} className="flex items-center justify-between">
-                                        <span className="text-[11px] text-zinc-500">{row.label}</span>
-                                        <span className="text-[11px] font-medium text-white">{row.value}</span>
+                                    <div key={row.label} className="flex items-center justify-between gap-3">
+                                        <span className="text-[11px] text-zinc-500 flex items-center gap-2 min-w-0">
+                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${row.tone}`}>
+                                                <row.icon className="w-3 h-3" />
+                                            </span>
+                                            <span className="truncate">{row.label}</span>
+                                        </span>
+                                        <span className="text-[11px] font-medium text-white text-right">{row.value}</span>
                                     </div>
                                 ))}
                             </div>
