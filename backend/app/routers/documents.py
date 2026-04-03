@@ -72,6 +72,36 @@ def parse_document_timestamp(raw: Any) -> Optional[datetime.datetime]:
         return None
 
 
+def is_document_relevant_for_user(doc: dict[str, Any], user: AuthenticatedUser) -> bool:
+    doc_type = str(doc.get("doc_type") or "").strip().lower()
+    role = str(user.role or "").strip().lower()
+    if role == UserRole.ADMIN.value:
+        allowed = True
+    elif role == UserRole.FACULTY.value:
+        allowed = doc_type in {UserRole.FACULTY.value, UserRole.STUDENT.value, "public"}
+    else:
+        allowed = doc_type in {UserRole.STUDENT.value, "public"}
+    if not allowed:
+        return False
+
+    user_dept = (user.department or "").strip().lower()
+    user_program = (user.program or "").strip().lower()
+    doc_dept = str(doc.get("department") or "").strip().lower()
+    doc_course = str(doc.get("course") or "").strip().lower()
+
+    if role == UserRole.ADMIN.value:
+        return True
+
+    if not doc_dept and not doc_course:
+        return True
+
+    if user_dept and doc_dept and user_dept == doc_dept:
+        return True
+    if user_program and doc_course and user_program in doc_course:
+        return True
+    return False
+
+
 def is_network_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return isinstance(exc, httpx.ConnectError) or "getaddrinfo failed" in message or "name or service not known" in message
@@ -115,6 +145,8 @@ async def preview_document(
     row = res.data[0]
     doc_type = str(row.get("doc_type") or "").strip().lower()
     if doc_type not in {str(t).strip().lower() for t in allowed_types}:
+        raise HTTPException(status_code=403, detail="You are not allowed to preview this document.")
+    if not is_document_relevant_for_user(row, user):
         raise HTTPException(status_code=403, detail="You are not allowed to preview this document.")
 
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
@@ -517,16 +549,40 @@ async def list_documents(
     user: AuthenticatedUser = Depends(get_current_user)
 ):
     ensure_supabase_available()
+    page = max(1, page)
+    per_page = min(max(1, per_page), 100)
     allowed_types = get_allowed_doc_types(user.role)
     supabase = get_supabase_admin()
     
     try:
-        query = supabase.table("documents").select("*", count="exact").in_("doc_type", allowed_types)
-        if doc_type:
-            query = query.eq("doc_type", doc_type)
-            
-        offset = (page - 1) * per_page
-        res = query.range(offset, offset + per_page - 1).execute()
+        selected_doc_type = str(doc_type or "").strip().lower() if doc_type else None
+        if selected_doc_type and selected_doc_type not in {str(t).strip().lower() for t in allowed_types}:
+            return DocumentListResponse(documents=[], total=0, page=page, per_page=per_page)
+
+        # Admin users can paginate directly from the source table.
+        if str(user.role or "").strip().lower() == UserRole.ADMIN.value:
+            query = supabase.table("documents").select("*", count="exact").in_("doc_type", allowed_types)
+            if selected_doc_type:
+                query = query.eq("doc_type", selected_doc_type)
+            offset = (page - 1) * per_page
+            res = query.range(offset, offset + per_page - 1).execute()
+            rows = res.data or []
+            total_count = int(res.count or len(rows))
+        else:
+            # Non-admin users get strict in-memory scope filtering to prevent cross-department leakage.
+            query = supabase.table("documents").select("*").in_("doc_type", allowed_types)
+            if selected_doc_type:
+                query = query.eq("doc_type", selected_doc_type)
+            rows_all = query.limit(1500).execute().data or []
+            scoped_rows = [row for row in rows_all if is_document_relevant_for_user(row, user)]
+            scoped_rows.sort(
+                key=lambda row: parse_document_timestamp(row.get("uploaded_at") or row.get("created_at"))
+                or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+                reverse=True,
+            )
+            total_count = len(scoped_rows)
+            offset = (page - 1) * per_page
+            rows = scoped_rows[offset : offset + per_page]
     except Exception as exc:
         if is_network_error(exc):
             raise HTTPException(
@@ -541,7 +597,7 @@ async def list_documents(
             department=d.get("department"), course=d.get("course"), tags=d.get("tags", []),
             visibility=bool(d.get("visibility", True)),
             uploaded_at=str(d.get("uploaded_at") or d.get("created_at") or "")
-        ) for d in (res.data or [])
+        ) for d in rows
     ]
 
-    return DocumentListResponse(documents=docs, total=res.count or len(docs), page=page, per_page=per_page)
+    return DocumentListResponse(documents=docs, total=total_count, page=page, per_page=per_page)

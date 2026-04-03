@@ -1222,23 +1222,24 @@ async def get_user_notifications(
                     )
                 )
 
-        report_notice_limit = min(220, max(60, safe_limit * 3))
-        report_notices = fetch_admin_report_notice_feed(admin, report_notice_limit)
-        for report_notice in report_notices:
-            notice_at = report_notice.get("timestamp")
-            notice_dt = parse_timestamp(notice_at)
-            unread = bool(notice_dt and (last_seen_at is None or notice_dt > last_seen_at))
-            notifications.append(
-                UserNotificationItem(
-                    id=f"report:{report_notice.get('id') or notice_at}",
-                    title=str(report_notice.get("subject") or "User Activity Report Notice"),
-                    message=str(report_notice.get("message") or "New admin report notice available."),
-                    course="Admin Notice",
-                    department=None,
-                    uploaded_at=notice_at,
-                    unread=unread,
+        if is_admin:
+            report_notice_limit = min(220, max(60, safe_limit * 3))
+            report_notices = fetch_admin_report_notice_feed(admin, report_notice_limit)
+            for report_notice in report_notices:
+                notice_at = report_notice.get("timestamp")
+                notice_dt = parse_timestamp(notice_at)
+                unread = bool(notice_dt and (last_seen_at is None or notice_dt > last_seen_at))
+                notifications.append(
+                    UserNotificationItem(
+                        id=f"report:{report_notice.get('id') or notice_at}",
+                        title=str(report_notice.get("subject") or "User Activity Report Notice"),
+                        message=str(report_notice.get("message") or "New admin report notice available."),
+                        course="Admin Notice",
+                        department=None,
+                        uploaded_at=notice_at,
+                        unread=unread,
+                    )
                 )
-            )
 
         combined_total = len(notifications)
         notifications.sort(
@@ -1567,11 +1568,12 @@ async def export_user_data(
 
         allowed_types = get_allowed_doc_types(user.role)
         doc_rows = fetch_documents_by_doc_types(supabase, allowed_types, 1000)
-        documents = len(doc_rows)
+        scoped_doc_rows = [row for row in doc_rows if is_document_relevant_for_user(row, user)]
+        documents = len(scoped_doc_rows)
 
         now_utc = datetime.now(timezone.utc)
         recent_notices = 0
-        for row in doc_rows:
+        for row in scoped_doc_rows:
             filename = str(row.get("filename") or "").lower()
             tags = [str(tag).lower() for tag in (row.get("tags") or [])]
             is_notice = any(marker in filename for marker in ("notice", "announcement", "circular")) or any(
