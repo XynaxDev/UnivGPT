@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { Upload, FileText, X, Check, AlertCircle, CloudUpload, Loader2, Pencil, Trash2, RefreshCw, Layers, FileUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Select } from '@/components/ui/auth-fuse';
+import { Skeleton } from '@/components/ui/skeleton';
 import { HoverTooltip } from '@/components/ui/tooltip';
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
@@ -563,7 +564,22 @@ const UploadPage = () => {
                     </div>
 
                     {isLoadingDocs ? (
-                        <div className="text-xs text-zinc-500">Loading documents...</div>
+                        <div className="space-y-2">
+                            {Array.from({ length: 5 }).map((_, idx) => (
+                                <div key={`doc-skeleton-${idx}`} className="rounded-xl border border-white/[0.06] bg-black/40 p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="min-w-0 flex-1 space-y-2">
+                                            <Skeleton className="h-3.5 w-56" />
+                                            <Skeleton className="h-3 w-72" />
+                                        </div>
+                                        <div className="flex gap-1.5">
+                                            <Skeleton className="w-7 h-7 rounded-lg" />
+                                            <Skeleton className="w-7 h-7 rounded-lg" />
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     ) : documents.length === 0 ? (
                         <div className="text-xs text-zinc-500">No documents uploaded yet.</div>
                     ) : (
