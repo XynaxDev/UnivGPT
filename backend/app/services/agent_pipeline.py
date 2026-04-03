@@ -407,6 +407,12 @@ def _format_short_date(raw: Optional[str]) -> str:
     except Exception:
         return str(raw)
 
+def _humanize_action(action: str) -> str:
+    clean = str(action or "").replace("_", " ").strip()
+    if not clean:
+        return "Unknown action"
+    return clean.title()
+
 def parse_date_string(raw: Optional[str]) -> Optional[datetime.date]:
     if not raw:
         return None
@@ -550,13 +556,22 @@ def fetch_admin_snapshot(supabase) -> dict:
 
     # Recent audits (lightweight)
     try:
-        audit_res = (
-            supabase.table("audit_logs")
-            .select("action, user_id, created_at")
-            .order("created_at", desc=True)
-            .limit(20)
-            .execute()
-        )
+        try:
+            audit_res = (
+                supabase.table("audit_logs")
+                .select("action, user_id, timestamp, created_at, payload, status, ip_address")
+                .order("timestamp", desc=True)
+                .limit(20)
+                .execute()
+            )
+        except Exception:
+            audit_res = (
+                supabase.table("audit_logs")
+                .select("action, user_id, created_at, payload, status, ip_address")
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+            )
         snapshot["recent_audits"] = audit_res.data or []
     except Exception:
         snapshot["recent_audits"] = []
@@ -599,6 +614,7 @@ def render_admin_snapshot(snapshot: dict) -> str:
     users_by_role = snapshot.get("users_by_role", {})
     recent_docs = snapshot.get("recent_documents", [])
     recent_users = snapshot.get("recent_users", [])
+    recent_audits = snapshot.get("recent_audits", [])
 
     today = datetime.datetime.now().date()
     tomorrow = today + datetime.timedelta(days=1)
@@ -636,6 +652,17 @@ def render_admin_snapshot(snapshot: dict) -> str:
             )
     else:
         lines.append("Recent users: none (0 total).")
+
+    if recent_audits:
+        lines.append("Recent audits (latest 20):")
+        for audit in recent_audits[:10]:
+            ts_value = audit.get("timestamp") or audit.get("created_at")
+            ts = _format_short_date(ts_value)
+            lines.append(
+                f"- {ts} | {_humanize_action(str(audit.get('action') or ''))} | user_id: {audit.get('user_id') or 'unknown'}"
+            )
+    else:
+        lines.append("Recent audits: none (0 total).")
 
     lines.append("If asked about holidays, check document titles/tags for 'holiday' or 'closed'. If none, state that no documents indicate a holiday.")
     return "\n".join(lines)
@@ -1781,6 +1808,39 @@ async def run_agent_pipeline(
                 forced_answer = f"There are **{int(users_by_role.get('admin', 0))} admin users** in the current database snapshot."
             else:
                 forced_answer = f"There are **{int(total_users or 0)} total users** in the current database snapshot."
+
+        audit_requested = (
+            target_entity in {"audit", "logs"}
+            or any(marker in query_text for marker in ("audit", "log", "logs", "activity", "activities"))
+        )
+        if audit_requested and not forced_answer:
+            recent_audits = (admin_snapshot.get("recent_audits") or []) if isinstance(admin_snapshot, dict) else []
+            if not recent_audits:
+                forced_answer = "I checked the latest audit snapshot and found **0 audit events**."
+            else:
+                action_counts: dict[str, int] = {}
+                for row in recent_audits:
+                    key = str(row.get("action") or "unknown")
+                    action_counts[key] = action_counts.get(key, 0) + 1
+
+                top_actions = sorted(action_counts.items(), key=lambda item: item[1], reverse=True)[:4]
+                summary_lines = [
+                    f"- {_humanize_action(action)}: {count}"
+                    for action, count in top_actions
+                ]
+                recent_lines = []
+                for row in recent_audits[:6]:
+                    row_ts = _format_short_date(row.get("timestamp") or row.get("created_at"))
+                    recent_lines.append(
+                        f"- {row_ts} | {_humanize_action(str(row.get('action') or ''))} | user_id: {row.get('user_id') or 'unknown'}"
+                    )
+                forced_answer = (
+                    f"Latest audit summary (showing {len(recent_audits)} recent events):\n\n"
+                    "Top actions:\n"
+                    f"{chr(10).join(summary_lines)}\n\n"
+                    "Most recent events:\n"
+                    f"{chr(10).join(recent_lines)}"
+                )
 
         system_message = f"""
         You are UnivGPT Admin Assistant, a professional operations copilot for university administrators.
