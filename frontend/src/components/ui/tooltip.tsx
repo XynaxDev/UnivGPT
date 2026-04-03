@@ -9,9 +9,9 @@ export function HoverTooltip({
     followCursor = false,
     side = "top",
     align = "center",
-    sideOffset = 8,
+    sideOffset = 10,
     className,
-    delayDuration = 180,
+    delayDuration = 120,
 }: {
     content?: React.ReactNode;
     children: React.ReactElement<any>;
@@ -23,6 +23,8 @@ export function HoverTooltip({
     delayDuration?: number;
 }) {
     if (!content) return children;
+    const tooltipBase =
+        "z-[240] max-w-[300px] rounded-xl border border-orange-400/25 bg-gradient-to-b from-zinc-900/98 to-zinc-950/98 px-3 py-2 text-[11px] font-medium text-zinc-100 shadow-[0_14px_34px_rgba(0,0,0,0.55)] backdrop-blur-md";
 
     if (followCursor) {
         const [open, setOpen] = React.useState(false);
@@ -32,13 +34,13 @@ export function HoverTooltip({
         const nextChild = React.cloneElement(children, {
             onMouseEnter: (event: React.MouseEvent) => {
                 setOpen(true);
-                setPosition({ x: event.clientX + 12, y: event.clientY + 16 });
+                setPosition({ x: event.clientX + 12, y: event.clientY + 22 });
                 if (typeof childProps.onMouseEnter === "function") {
                     (childProps.onMouseEnter as (e: React.MouseEvent) => void)(event);
                 }
             },
             onMouseMove: (event: React.MouseEvent) => {
-                setPosition({ x: event.clientX + 12, y: event.clientY + 16 });
+                setPosition({ x: event.clientX + 12, y: event.clientY + 22 });
                 if (typeof childProps.onMouseMove === "function") {
                     (childProps.onMouseMove as (e: React.MouseEvent) => void)(event);
                 }
@@ -59,7 +61,8 @@ export function HoverTooltip({
                     createPortal(
                         <div
                             className={cn(
-                                "pointer-events-none fixed z-[240] max-w-[260px] rounded-xl border border-white/20 bg-zinc-950/95 px-3 py-2 text-[11px] font-medium text-zinc-100 shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-md",
+                                "pointer-events-none fixed",
+                                tooltipBase,
                                 className,
                             )}
                             style={{ left: position.x, top: position.y }}
@@ -81,8 +84,10 @@ export function HoverTooltip({
                         side={side}
                         align={align}
                         sideOffset={sideOffset}
+                        avoidCollisions
+                        collisionPadding={12}
                         className={cn(
-                            "z-[240] max-w-[260px] rounded-xl border border-white/20 bg-zinc-950/95 px-3 py-2 text-[11px] font-medium text-zinc-100 shadow-[0_14px_34px_rgba(0,0,0,0.48)] backdrop-blur-md",
+                            tooltipBase,
                             "data-[state=delayed-open]:animate-in data-[state=closed]:animate-out",
                             "data-[state=closed]:fade-out-0 data-[state=delayed-open]:fade-in-0",
                             "data-[state=closed]:zoom-out-95 data-[state=delayed-open]:zoom-in-95",
