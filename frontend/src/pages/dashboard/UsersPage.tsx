@@ -399,9 +399,17 @@ const UsersPage = () => {
                             >
                                 <div className="flex items-center gap-3 min-w-0">
                                     <div className="w-8 h-8 rounded-full bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center shrink-0">
-                                        <span className="text-[10px] font-bold text-orange-400">
-                                            {(user.full_name || user.email || 'U').charAt(0).toUpperCase()}
-                                        </span>
+                                        {((user as any).avatar_url || (user as any).profileImage) ? (
+                                            <img
+                                                src={((user as any).avatar_url || (user as any).profileImage) as string}
+                                                alt="User avatar"
+                                                className="w-full h-full rounded-full object-cover"
+                                            />
+                                        ) : (
+                                            <span className="text-[10px] font-bold text-orange-400">
+                                                {(user.full_name || user.email || 'U').charAt(0).toUpperCase()}
+                                            </span>
+                                        )}
                                     </div>
                                     <div className="min-w-0">
                                         <div className="text-xs font-medium text-white truncate">{user.full_name || 'User'}</div>

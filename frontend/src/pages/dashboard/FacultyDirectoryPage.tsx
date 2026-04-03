@@ -22,6 +22,7 @@ const DEMO_FACULTY: FacultySummary[] = [
         email: 'priya.sharma@univgpt.edu',
         department: 'Computer Science',
         program: 'BTech CSE Mentor',
+        avatar_url: null,
     },
     {
         id: 'demo-fac-2',
@@ -29,6 +30,7 @@ const DEMO_FACULTY: FacultySummary[] = [
         email: 'rohan.verma@univgpt.edu',
         department: 'Computer Science',
         program: 'Academic Coordinator',
+        avatar_url: null,
     },
     {
         id: 'demo-fac-3',
@@ -36,6 +38,7 @@ const DEMO_FACULTY: FacultySummary[] = [
         email: 'meera.nair@univgpt.edu',
         department: 'Computer Science',
         program: 'Student Advisor',
+        avatar_url: null,
     },
 ];
 
@@ -206,7 +209,11 @@ export default function FacultyDirectoryPage() {
                                 >
                                     <div className="flex items-start gap-3">
                                         <div className="w-10 h-10 rounded-xl border border-cyan-400/25 bg-cyan-400/10 flex items-center justify-center text-[11px] font-bold text-cyan-200 shrink-0">
-                                            {initialsFromName(faculty.full_name)}
+                                            {faculty.avatar_url ? (
+                                                <img src={faculty.avatar_url} alt={faculty.full_name} className="w-full h-full rounded-xl object-cover" />
+                                            ) : (
+                                                initialsFromName(faculty.full_name)
+                                            )}
                                         </div>
                                         <div className="min-w-0 flex-1">
                                             <p className="text-sm font-semibold text-white truncate">{faculty.full_name}</p>

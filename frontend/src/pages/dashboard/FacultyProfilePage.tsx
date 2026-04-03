@@ -109,7 +109,11 @@ export default function FacultyProfilePage() {
                                 <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                                     <div className="flex items-center gap-4">
                                         <div className="w-16 h-16 rounded-2xl border border-orange-400/30 bg-gradient-to-br from-orange-500/20 to-amber-400/15 flex items-center justify-center shrink-0">
-                                            <span className="text-lg font-black text-orange-200">{initialsFromName(faculty.full_name)}</span>
+                                            {faculty.avatar_url ? (
+                                                <img src={faculty.avatar_url} alt={faculty.full_name} className="w-full h-full rounded-2xl object-cover" />
+                                            ) : (
+                                                <span className="text-lg font-black text-orange-200">{initialsFromName(faculty.full_name)}</span>
+                                            )}
                                         </div>
                                         <div>
                                             <h1 className="text-2xl md:text-3xl font-black text-white tracking-tight">{faculty.full_name}</h1>

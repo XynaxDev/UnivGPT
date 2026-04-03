@@ -35,6 +35,7 @@ type FacultyCard = {
     id: string;
     full_name: string;
     subtitle: string;
+    avatar_url?: string | null;
     synthetic?: boolean;
 };
 
@@ -119,15 +120,25 @@ export default function StudentDashboard() {
             if (!token) return;
             setFacultyLoading(true);
             try {
-                const [exportPayload, docsPayload, facultyPayload] = await Promise.all([
+                const [exportPayload, docsPayload] = await Promise.all([
                     authApi.exportUserData(token),
-                    documentsApi.list(token, { page: 1, per_page: 60 }),
-                    authApi.getFacultyDirectory(token, 12).catch(() => ({ faculty: [], total: 0 })),
+                    documentsApi.list(token, { page: 1, per_page: 24 }),
                 ]);
                 if (!alive) return;
                 setExportData(exportPayload);
                 setDocuments(docsPayload.documents || []);
-                setFacultyMembers(facultyPayload.faculty || []);
+
+                // Hydrate faculty in the background so dashboard metrics/notices render faster.
+                authApi
+                    .getFacultyDirectory(token, 12)
+                    .then((facultyPayload) => {
+                        if (!alive) return;
+                        setFacultyMembers(facultyPayload.faculty || []);
+                    })
+                    .catch(() => {
+                        if (!alive) return;
+                        setFacultyMembers([]);
+                    });
             } catch {
                 if (!alive) return;
                 setExportData(null);
@@ -162,6 +173,7 @@ export default function StudentDashboard() {
                 id: member.id,
                 full_name: member.full_name,
                 subtitle: member.program || member.department || 'Faculty',
+                avatar_url: member.avatar_url || null,
             }));
         }
         return buildFallbackFacultyCards(user?.program);
@@ -234,6 +246,9 @@ export default function StudentDashboard() {
                         <p className="text-zinc-400 text-sm max-w-xl">
                             Live academic dashboard for notices, faculty contacts, and assistant-driven study actions.
                         </p>
+                        <p className="text-zinc-500 text-xs max-w-xl">
+                            Welcome back, {firstName}. Your latest academic snapshot is ready.
+                        </p>
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
@@ -288,7 +303,11 @@ export default function StudentDashboard() {
                             className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center gap-3 hover:border-cyan-400/35 hover:bg-cyan-400/5 transition-all text-left"
                         >
                             <div className="w-10 h-10 rounded-lg border border-cyan-400/25 bg-cyan-400/10 flex items-center justify-center text-[11px] font-bold text-cyan-200 shrink-0">
-                                {initialsFromName(member.full_name)}
+                                {member.avatar_url ? (
+                                    <img src={member.avatar_url} alt={member.full_name} className="w-full h-full rounded-lg object-cover" />
+                                ) : (
+                                    initialsFromName(member.full_name)
+                                )}
                             </div>
                             <div className="min-w-0">
                                 <p className="text-xs font-semibold text-zinc-200 truncate">{member.full_name}</p>
