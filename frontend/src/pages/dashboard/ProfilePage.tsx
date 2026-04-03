@@ -30,6 +30,24 @@ const roleBadgeStyles: Record<string, string> = {
     admin: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
 };
 
+const iconToneByLabel: Record<string, string> = {
+    Email: 'text-cyan-300 bg-cyan-500/15 border-cyan-500/30',
+    Role: 'text-orange-300 bg-orange-500/15 border-orange-500/30',
+    'Member Since': 'text-violet-300 bg-violet-500/15 border-violet-500/30',
+    'Academic Verification': 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30',
+    Program: 'text-indigo-300 bg-indigo-500/15 border-indigo-500/30',
+    Semester: 'text-fuchsia-300 bg-fuchsia-500/15 border-fuchsia-500/30',
+    Section: 'text-sky-300 bg-sky-500/15 border-sky-500/30',
+    'Roll Number': 'text-amber-300 bg-amber-500/15 border-amber-500/30',
+    'Teaching Area': 'text-teal-300 bg-teal-500/15 border-teal-500/30',
+    Department: 'text-blue-300 bg-blue-500/15 border-blue-500/30',
+    'Access Level': 'text-red-300 bg-red-500/15 border-red-500/30',
+    'Admin Unit': 'text-orange-300 bg-orange-500/15 border-orange-500/30',
+    'Total Queries': 'text-orange-300 bg-orange-500/15 border-orange-500/30',
+    'Accessible Docs': 'text-emerald-300 bg-emerald-500/15 border-emerald-500/30',
+    'Recent Notices': 'text-violet-300 bg-violet-500/15 border-violet-500/30',
+};
+
 const statItems = (data: UserExportData | null) => [
     {
         label: 'Total Queries',
@@ -119,14 +137,21 @@ const ProfilePage = () => {
         };
     }, [token]);
 
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
         const reader = new FileReader();
-        reader.onload = (ev) => {
+        reader.onload = async (ev) => {
             const img = ev.target?.result as string;
-            updateUser({ profileImage: img } as any);
-            showToast('Profile image updated.', 'success');
+            updateUser({ profileImage: img, avatar_url: img } as any);
+            if (token) {
+                try {
+                    await authApi.updateProfile(token, { avatar_url: img });
+                } catch {
+                    // Keep optimistic local preview even if backend write fails.
+                }
+            }
+            showToast('Profile image updated across your account.', 'success');
         };
         reader.readAsDataURL(file);
     };
@@ -145,6 +170,7 @@ const ProfilePage = () => {
                 semester: isStudent ? formSemester.trim() : '',
                 section: isStudent ? formSection.trim() : '',
                 roll_number: isStudent ? formRollNumber.trim() : '',
+                avatar_url: (user as any)?.avatar_url ?? profileImage ?? null,
             });
             updateUser({
                 full_name: payload.full_name,
@@ -153,6 +179,8 @@ const ProfilePage = () => {
                 semester: isStudent ? payload.semester || '' : '',
                 section: isStudent ? payload.section || '' : '',
                 roll_number: isStudent ? payload.roll_number || '' : '',
+                avatar_url: payload.avatar_url ?? null,
+                profileImage: payload.avatar_url ?? null,
             });
             setIsEditing(false);
             showToast('Profile details saved.', 'success');
@@ -265,8 +293,15 @@ const ProfilePage = () => {
                                     />
                                     {profileImage && (
                                         <button
-                                            onClick={() => {
-                                                updateUser({ profileImage: null } as any);
+                                            onClick={async () => {
+                                                updateUser({ profileImage: null, avatar_url: null } as any);
+                                                if (token) {
+                                                    try {
+                                                        await authApi.updateProfile(token, { avatar_url: null });
+                                                    } catch {
+                                                        // Keep local reset even if backend write fails.
+                                                    }
+                                                }
                                                 showToast('Profile image removed.', 'success');
                                             }}
                                             className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center border-2 border-zinc-950"
@@ -444,7 +479,10 @@ const ProfilePage = () => {
                                     className="h-10 rounded-xl border border-white/[0.08] bg-white/[0.03] px-3 flex items-center justify-between"
                                 >
                                     <div className="flex items-center gap-2 text-zinc-500 text-xs">
-                                        <row.icon className="w-3.5 h-3.5" /> {row.label}
+                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel[row.label] || 'text-zinc-300 bg-white/10 border-white/15'}`}>
+                                            <row.icon className="w-3 h-3" />
+                                        </span>
+                                        {row.label}
                                     </div>
                                     <span className="text-xs text-white font-medium">{row.value}</span>
                                 </div>
@@ -456,57 +494,63 @@ const ProfilePage = () => {
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
-                        className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5"
+                        className="space-y-5"
                     >
-                        <h2 className="text-sm font-semibold text-white mb-4">{detailPanelTitle}</h2>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {academicRows.map((row) => (
-                                <div
-                                    key={row.label}
-                                    className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
-                                >
-                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                        <row.icon className="w-3.5 h-3.5" /> {row.label}
+                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
+                            <h2 className="text-sm font-semibold text-white mb-4">{detailPanelTitle}</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {academicRows.map((row) => (
+                                    <div
+                                        key={row.label}
+                                        className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
+                                    >
+                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel[row.label] || 'text-zinc-300 bg-white/10 border-white/15'}`}>
+                                                <row.icon className="w-3 h-3" />
+                                            </span>
+                                            {row.label}
+                                        </div>
+                                        <div className="text-sm font-semibold text-white mt-1.5 break-words">
+                                            {row.value}
+                                        </div>
                                     </div>
-                                    <div className="text-sm font-semibold text-white mt-1.5 break-words">
-                                        {row.value}
-                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center justify-between">
+                                <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                    <span className="w-5 h-5 rounded-md border border-cyan-500/30 text-cyan-300 bg-cyan-500/15 flex items-center justify-center">
+                                        <Building className="w-3 h-3" />
+                                    </span>
+                                    Identity Provider
                                 </div>
-                            ))}
+                                <ProviderBadge provider={user?.identity_provider || 'email'} />
+                            </div>
                         </div>
 
-                        <div className="mt-5 rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                <Building className="w-3.5 h-3.5" /> Identity Provider
+                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
+                            <h2 className="text-sm font-semibold text-white mb-4">Account Activity Snapshot</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3 gap-3">
+                                {statItems(exportData).map((stat) => (
+                                    <div
+                                        key={stat.label}
+                                        className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
+                                    >
+                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel[stat.label] || 'text-zinc-300 bg-white/10 border-white/15'}`}>
+                                                <stat.icon className="w-3 h-3" />
+                                            </span>
+                                            {stat.label}
+                                        </div>
+                                        <div className="text-xl font-extrabold text-white mt-2">
+                                            {isLoadingStats ? '...' : stat.value}
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
-                            <ProviderBadge provider={user?.identity_provider || 'email'} />
                         </div>
                     </motion.div>
                 </div>
-
-                <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.15 }}
-                    className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5"
-                >
-                    <h2 className="text-sm font-semibold text-white mb-4">Account Activity Snapshot</h2>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                        {statItems(exportData).map((stat) => (
-                            <div
-                                key={stat.label}
-                                className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
-                            >
-                                <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                    <stat.icon className="w-3.5 h-3.5" /> {stat.label}
-                                </div>
-                                <div className="text-xl font-extrabold text-white mt-2">
-                                    {isLoadingStats ? '...' : stat.value}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </motion.div>
             </div>
         </div>
     );
