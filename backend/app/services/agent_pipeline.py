@@ -102,6 +102,51 @@ def is_network_error(exc: Exception) -> bool:
     return "getaddrinfo failed" in message or "name or service not known" in message or "nodename nor servname provided" in message
 
 
+def _conversation_scope_filter(query_builder, user_id: str, user_role: str):
+    return (
+        query_builder
+        .eq("user_id", user_id)
+        .eq("role", user_role)
+    )
+
+
+def _ensure_conversation_scope(
+    supabase,
+    conversation_id: Optional[str],
+    user_id: str,
+    user_role: str,
+) -> str:
+    candidate = conversation_id or str(uuid.uuid4())
+    if not supabase:
+        return candidate
+    try:
+        existing = (
+            supabase.table("conversations")
+            .select("id,user_id,role")
+            .eq("id", candidate)
+            .limit(1)
+            .execute()
+        )
+        row = (existing.data or [None])[0]
+        if not row:
+            return candidate
+        same_user = str(row.get("user_id") or "") == str(user_id)
+        same_role = str(row.get("role") or "").strip().lower() == str(user_role).strip().lower()
+        if same_user and same_role:
+            return candidate
+        logger.warning(
+            "Rejected conversation id outside scope (id=%s, actor=%s, role=%s). Issuing fresh id.",
+            candidate,
+            user_id,
+            user_role,
+        )
+        return str(uuid.uuid4())
+    except Exception as exc:
+        if not is_network_error(exc):
+            logger.warning("Conversation scope check failed, proceeding with provided id: %s", exc)
+        return candidate
+
+
 def _is_embedding_runtime_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return "fbgemm.dll" in message or "winerror 126" in message or "error loading" in message
@@ -990,6 +1035,7 @@ async def run_agent_pipeline(
     now_iso = utc_now_iso()
 
     supabase = None if settings.supabase_offline_mode else get_supabase_admin()
+    conversation_id = _ensure_conversation_scope(supabase, conversation_id, user_id, user_role)
     moderation_state = _load_offense_state(supabase, user_id)
 
     if bool(moderation_state.get("blocked")):
@@ -1032,9 +1078,13 @@ async def run_agent_pipeline(
     if supabase and not early_moderation.get("is_flagged"):
         try:
             existing = (
-                supabase.table("conversations")
-                .select("messages")
-                .eq("id", conversation_id)
+                _conversation_scope_filter(
+                    supabase.table("conversations")
+                    .select("messages")
+                    .eq("id", conversation_id),
+                    user_id,
+                    user_role,
+                )
                 .execute()
             )
             messages = existing.data[0]["messages"] if existing.data else []
@@ -1191,9 +1241,13 @@ async def run_agent_pipeline(
         conversation_id = conversation_id or str(uuid.uuid4())
         if supabase:
             existing = (
-                supabase.table("conversations")
-                .select("messages")
-                .eq("id", conversation_id)
+                _conversation_scope_filter(
+                    supabase.table("conversations")
+                    .select("messages")
+                    .eq("id", conversation_id),
+                    user_id,
+                    user_role,
+                )
                 .execute()
             )
             messages = existing.data[0]["messages"] if existing.data else []
