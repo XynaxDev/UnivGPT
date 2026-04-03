@@ -98,12 +98,23 @@ function invalidateCacheByPrefix(prefix: string) {
     }
 }
 
+function normalizeUserProfile(user: UserProfile): UserProfile {
+    const avatar = (user.avatar_url || user.profileImage || null) as string | null;
+    return {
+        ...user,
+        avatar_url: avatar,
+        profileImage: avatar,
+    };
+}
+
 export const authApi = {
     signup: (data: { email: string; password: string; full_name: string; department?: string; role?: string }) =>
         request<{ message: string; email: string }>('/auth/signup', { method: 'POST', body: data }),
 
-    verifySignup: (data: { email: string; otp: string; password: string }) =>
-        request<{ access_token: string; user: UserProfile }>('/auth/verify', { method: 'POST', body: data }),
+    verifySignup: async (data: { email: string; otp: string; password: string }) => {
+        const res = await request<{ access_token: string; user: UserProfile }>('/auth/verify', { method: 'POST', body: data });
+        return { ...res, user: normalizeUserProfile(res.user) };
+    },
     resendSignupOtp: (data: { email: string }) =>
         request<{ status: string; message: string }>('/auth/resend-otp', { method: 'POST', body: data }),
 
@@ -116,12 +127,17 @@ export const authApi = {
     googleAuth: (role: string) =>
         request<{ url: string }>(`/auth/google?role=${encodeURIComponent(role)}`, { method: 'GET' }),
 
-    login: (data: { email: string; password: string; role?: string }) =>
-        request<{ access_token: string; user: UserProfile }>('/auth/login', { method: 'POST', body: data }),
-    getMe: (token: string) =>
-        request<UserProfile>('/user/me', { token }),
-    updateProfile: (token: string, data: Partial<Pick<UserProfile, 'full_name' | 'department' | 'program' | 'semester' | 'section' | 'roll_number'>>) =>
-        request<UserProfile>('/user/profile', { method: 'PATCH', token, body: data }),
+    login: async (data: { email: string; password: string; role?: string }) => {
+        const res = await request<{ access_token: string; user: UserProfile }>('/auth/login', { method: 'POST', body: data });
+        return { ...res, user: normalizeUserProfile(res.user) };
+    },
+    getMe: async (token: string) =>
+        normalizeUserProfile(await request<UserProfile>('/user/me', { token })),
+    updateProfile: async (
+        token: string,
+        data: Partial<Pick<UserProfile, 'full_name' | 'department' | 'program' | 'semester' | 'section' | 'roll_number' | 'avatar_url'>>
+    ) =>
+        normalizeUserProfile(await request<UserProfile>('/user/profile', { method: 'PATCH', token, body: data })),
     getSettings: (token: string) =>
         cachedGet(
             buildCacheKey('user-settings', token),
@@ -170,10 +186,14 @@ export const authApi = {
                     { token, timeoutMs: 9_000 },
                 ),
         ),
-    setRole: (token: string, role: UserProfile['role']) =>
-        request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } }),
+    setRole: async (token: string, role: UserProfile['role']) =>
+        normalizeUserProfile(await request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } })),
     exportUserData: (token: string) =>
-        request<UserExportData>('/user/export-data', { token }),
+        cachedGet(
+            buildCacheKey('user-export-data', token),
+            20_000,
+            () => request<UserExportData>('/user/export-data', { token, timeoutMs: 9_000 }),
+        ),
     listUsers: (token: string) =>
         request<UserProfile[]>('/auth/users', { token }),
     inviteUser: (token: string, data: { email: string; full_name: string; role: string }) =>
@@ -298,6 +318,7 @@ export interface UserProfile {
     semester?: string | null;
     section?: string | null;
     roll_number?: string | null;
+    avatar_url?: string | null;
     created_at?: string;
     profileImage?: string | null;
     academic_verified?: boolean;
@@ -355,6 +376,7 @@ export interface FacultySummary {
     email: string;
     department?: string | null;
     program?: string | null;
+    avatar_url?: string | null;
 }
 
 export interface FacultyListResponse {

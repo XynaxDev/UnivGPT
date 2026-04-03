@@ -52,18 +52,20 @@ const persistProfileImageForEmail = (email?: string, profileImage?: string | nul
 
 const hydrateProfileImage = (user: UserProfile): UserProfile => {
     const key = normalizeEmail(user.email);
+    const backendImage = user.avatar_url || user.profileImage || null;
+    if (backendImage) {
+        persistProfileImageForEmail(user.email, backendImage);
+        return { ...user, avatar_url: backendImage, profileImage: backendImage };
+    }
+
     if (!key) return user;
 
     const cache = readProfileImageCache();
     if (cache[key]) {
-        return { ...user, profileImage: cache[key] };
+        return { ...user, avatar_url: cache[key], profileImage: cache[key] };
     }
 
-    if (user.profileImage) {
-        persistProfileImageForEmail(user.email, user.profileImage);
-    }
-
-    return user;
+    return { ...user, avatar_url: null, profileImage: null };
 };
 
 interface AuthState {
@@ -228,10 +230,20 @@ export const useAuthStore = create<AuthState>()(
             updateUser: (updates) => {
                 const current = get().user;
                 if (current) {
-                    const nextUser = { ...current, ...updates };
+                    const nextUser = {
+                        ...current,
+                        ...updates,
+                        avatar_url: (updates as any).avatar_url ?? (updates as any).profileImage ?? current.avatar_url ?? null,
+                    };
+                    if ("profileImage" in updates && !(updates as any).avatar_url) {
+                        nextUser.avatar_url = (updates as any).profileImage ?? null;
+                    }
+                    nextUser.profileImage = nextUser.avatar_url ?? null;
 
                     if ('profileImage' in updates) {
                         persistProfileImageForEmail(nextUser.email, updates.profileImage ?? null);
+                    } else if ('avatar_url' in (updates as any)) {
+                        persistProfileImageForEmail(nextUser.email, (updates as any).avatar_url ?? null);
                     } else if ('email' in updates && current.profileImage) {
                         persistProfileImageForEmail(nextUser.email, current.profileImage);
                         if (normalizeEmail(nextUser.email) !== normalizeEmail(current.email)) {
