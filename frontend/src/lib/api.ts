@@ -17,7 +17,7 @@ interface RequestOptions {
 
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = 'GET', body, token, isFormData = false } = options;
-    const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 10_000 : 45_000);
+    const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 20_000 : 60_000);
     const headers: Record<string, string> = {};
     const path = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     if (token) headers['Authorization'] = `Bearer ${token}`;
@@ -158,7 +158,7 @@ export const authApi = {
         return cachedGet(
             buildCacheKey('user-notifications', token, String(limit)),
             10_000,
-            () => request<UserNotificationListResponse>(endpoint, { token, timeoutMs: 7_000 }),
+            () => request<UserNotificationListResponse>(endpoint, { token, timeoutMs: 15_000 }),
         );
     },
     markNotificationsRead: (token: string) =>
@@ -173,7 +173,7 @@ export const authApi = {
             () =>
                 request<FacultyListResponse>(
                     `/user/faculty?limit=${encodeURIComponent(String(limit))}`,
-                    { token, timeoutMs: 9_000 },
+                    { token, timeoutMs: 20_000 },
                 ),
         ),
     getCourseDirectory: (token: string, limit = 50) =>
@@ -183,7 +183,7 @@ export const authApi = {
             () =>
                 request<CourseDirectoryResponse>(
                     `/user/courses?limit=${encodeURIComponent(String(limit))}`,
-                    { token, timeoutMs: 9_000 },
+                    { token, timeoutMs: 20_000 },
                 ),
         ),
     setRole: async (token: string, role: UserProfile['role']) =>
@@ -192,7 +192,7 @@ export const authApi = {
         cachedGet(
             buildCacheKey('user-export-data', token),
             20_000,
-            () => request<UserExportData>('/user/export-data', { token, timeoutMs: 9_000 }),
+            () => request<UserExportData>('/user/export-data', { token, timeoutMs: 20_000 }),
         ),
     listUsers: (token: string) =>
         request<UserProfile[]>('/auth/users', { token }),
