@@ -55,6 +55,7 @@ router = APIRouter(tags=["Authentication"])
 # Most current Supabase docs schemas in this project use uploaded_at and may not expose created_at.
 _DOCUMENTS_HAS_CREATED_AT: bool | None = False
 _DOCUMENTS_HAS_UPLOADER_ID: bool | None = None
+_DOCUMENTS_HAS_METADATA: bool | None = None
 _DOCUMENTS_ORDER_COLUMN: str = "uploaded_at"
 _USER_NOTIFICATIONS_CACHE: dict[tuple[str, int], tuple[float, UserNotificationListResponse]] = {}
 _USER_FACULTY_CACHE: dict[tuple[str, int], tuple[float, FacultyListResponse]] = {}
@@ -403,6 +404,11 @@ def is_document_relevant_for_user(doc: dict[str, Any], user: AuthenticatedUser) 
 
 
 def notification_message_from_document(doc: dict[str, Any]) -> str:
+    metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+    notice_message = str(metadata.get("notice_message") or "").strip()
+    if notice_message:
+        return notice_message
+
     filename = str(doc.get("filename") or "New document")
     course = str(doc.get("course") or "").strip()
     department = str(doc.get("department") or "").strip()
@@ -558,7 +564,7 @@ def fetch_user_appeal_decision_feed(admin: Any, user: AuthenticatedUser, limit: 
 
 
 def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
-    global _DOCUMENTS_HAS_CREATED_AT, _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_ORDER_COLUMN
+    global _DOCUMENTS_HAS_CREATED_AT, _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_HAS_METADATA, _DOCUMENTS_ORDER_COLUMN
 
     def build_select_columns() -> str:
         cols = ["id", "filename", "doc_type", "department", "course", "tags", "uploaded_at"]
@@ -566,6 +572,8 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
             cols.append("created_at")
         if _DOCUMENTS_HAS_UPLOADER_ID is not False:
             cols.append("uploader_id")
+        if _DOCUMENTS_HAS_METADATA is not False:
+            cols.append("metadata")
         return ",".join(cols)
 
     def run_query():
@@ -582,6 +590,7 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
         str(_DOCUMENTS_ORDER_COLUMN),
         str(_DOCUMENTS_HAS_CREATED_AT),
         str(_DOCUMENTS_HAS_UPLOADER_ID),
+        str(_DOCUMENTS_HAS_METADATA),
     )
     now_ts = time.monotonic()
     cached = _DOCUMENTS_FEED_CACHE.get(cache_key)
@@ -606,6 +615,10 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
 
             if "uploader_id" in msg and _DOCUMENTS_HAS_UPLOADER_ID is not False:
                 _DOCUMENTS_HAS_UPLOADER_ID = False
+                updated = True
+
+            if "metadata" in msg and _DOCUMENTS_HAS_METADATA is not False:
+                _DOCUMENTS_HAS_METADATA = False
                 updated = True
 
             if "uploaded_at" in msg and _DOCUMENTS_ORDER_COLUMN != "created_at":
@@ -1323,10 +1336,12 @@ async def get_user_notifications(
             uploaded_at = to_iso(doc.get("uploaded_at") or doc.get("created_at"))
             uploaded_dt = parse_timestamp(uploaded_at)
             unread = bool(uploaded_dt and (last_seen_at is None or uploaded_dt > last_seen_at))
+            metadata = doc.get("metadata") if isinstance(doc.get("metadata"), dict) else {}
+            notice_title = str(metadata.get("notice_title") or "").strip()
             notifications.append(
                 UserNotificationItem(
                     id=str(doc.get("id")),
-                    title=str(doc.get("filename") or "New update"),
+                    title=notice_title or str(doc.get("filename") or "New update"),
                     message=notification_message_from_document(doc),
                     course=str(doc.get("course") or "") or None,
                     department=str(doc.get("department") or "") or None,

@@ -10,7 +10,7 @@ import uuid
 import json
 import datetime
 import httpx
-from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request
+from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request, Query
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -47,6 +47,15 @@ class DocumentUpdateRequest(BaseModel):
     tags: Optional[list[str]] = None
     visibility: Optional[bool] = None
     metadata: Optional[dict[str, Any]] = None
+
+
+class ServeNoticeRequest(BaseModel):
+    title: str
+    message: str
+    target: str = "students"  # students | faculty | both
+    department: Optional[str] = None
+    course: Optional[str] = None
+    tags: list[str] = []
 
 
 def get_allowed_upload_doc_types(role: str) -> list[str]:
@@ -109,12 +118,32 @@ def is_network_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return isinstance(exc, httpx.ConnectError) or "getaddrinfo failed" in message or "name or service not known" in message
 
+
 def ensure_supabase_available() -> None:
     if settings.supabase_offline_mode:
         raise HTTPException(
             status_code=503,
             detail="Supabase offline mode is enabled. Disable SUPABASE_OFFLINE_MODE to use database.",
         )
+
+
+def normalize_notice_target(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if text in {"student", "students"}:
+        return "students"
+    if text in {"faculty"}:
+        return "faculty"
+    if text in {"both", "all"}:
+        return "both"
+    raise HTTPException(status_code=400, detail="Invalid notice target. Use students, faculty, or both.")
+
+
+def notice_doc_types_for_target(target: str) -> list[str]:
+    if target == "students":
+        return [DocType.STUDENT.value]
+    if target == "faculty":
+        return [DocType.FACULTY.value]
+    return [DocType.STUDENT.value, DocType.FACULTY.value]
 
 
 @router.get("/documents/{document_id}/preview")
@@ -209,7 +238,184 @@ async def preview_document(
         "chunks": snippet_chunks,
         "has_preview": len(snippet_chunks) > 0,
         "preview_source": "pinecone" if len(snippet_chunks) > 0 else "none",
+        "is_notice": bool((metadata or {}).get("notice_type") == "served"),
+        "notice_title": str((metadata or {}).get("notice_title") or "").strip() or None,
+        "notice_message": str((metadata or {}).get("notice_message") or "").strip() or None,
     }
+
+@router.post("/admin/notices/serve")
+async def serve_notice(
+    body: ServeNoticeRequest,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+):
+    ensure_supabase_available()
+    title = str(body.title or "").strip()
+    message = str(body.message or "").strip()
+    if len(title) < 3:
+        raise HTTPException(status_code=400, detail="Notice title must be at least 3 characters.")
+    if len(message) < 8:
+        raise HTTPException(status_code=400, detail="Notice message must be at least 8 characters.")
+
+    target = normalize_notice_target(body.target)
+    if user.role == UserRole.FACULTY.value and target != "students":
+        raise HTTPException(
+            status_code=403,
+            detail="Faculty can send notices to students only.",
+        )
+
+    selected_doc_types = notice_doc_types_for_target(target)
+    department = str(body.department or user.department or "").strip()
+    course = str(body.course or "").strip()
+    manual_tags = [str(tag).strip() for tag in (body.tags or []) if str(tag).strip()]
+    supabase = get_supabase_admin()
+    audit_user_id = None if user.id.startswith("dummy-id-") else user.id
+
+    created: list[dict[str, Any]] = []
+    failures: list[str] = []
+    now_iso = utc_now_iso()
+    for doc_type in selected_doc_types:
+        notice_id = str(uuid.uuid4())
+        route_targets = derive_route_targets(doc_type)
+        tags = derive_document_tags(
+            filename=f"Notice - {title}",
+            doc_type=doc_type,
+            department=department,
+            course=course,
+            tags=manual_tags + ["notice", "announcement", "served_notice"],
+            metadata={"notice_type": "served"},
+        )
+        payload_base = {
+            "id": notice_id,
+            "uploader_id": audit_user_id,
+            "filename": f"NOTICE_{title}",
+            "doc_type": doc_type,
+            "department": department,
+            "course": course,
+            "tags": tags,
+            "visibility": True,
+        }
+        payload_extended = {
+            **payload_base,
+            "metadata": {
+                "notice_type": "served",
+                "notice_title": title,
+                "notice_message": message,
+                "served_target": target,
+                "served_doc_type": doc_type,
+                "served_by_role": user.role,
+                "served_by_email": user.email,
+                "served_at": now_iso,
+                "route_targets": route_targets,
+            },
+            "mime_type": "text/notice",
+        }
+        try:
+            supabase.table("documents").insert(payload_extended).execute()
+            created.append(
+                {
+                    "id": notice_id,
+                    "doc_type": doc_type,
+                    "department": department or None,
+                    "course": course or None,
+                    "title": title,
+                }
+            )
+        except Exception as exc:
+            if any(marker in str(exc).lower() for marker in ("metadata", "mime_type")):
+                try:
+                    supabase.table("documents").insert(payload_base).execute()
+                    created.append(
+                        {
+                            "id": notice_id,
+                            "doc_type": doc_type,
+                            "department": department or None,
+                            "course": course or None,
+                            "title": title,
+                        }
+                    )
+                except Exception as inner_exc:
+                    failures.append(f"{doc_type}: {inner_exc}")
+            else:
+                failures.append(f"{doc_type}: {exc}")
+
+    if not created:
+        raise HTTPException(status_code=500, detail=f"Failed to serve notice: {'; '.join(failures)}")
+
+    await log_audit_event(
+        user_id=audit_user_id,
+        action="notice_served",
+        payload={
+            "title": title,
+            "message": message,
+            "target": target,
+            "department": department or None,
+            "course": course or None,
+            "created_count": len(created),
+            "notice_doc_ids": [item["id"] for item in created],
+        },
+    )
+
+    return {
+        "status": "success",
+        "message": f"Notice sent to {target}.",
+        "target": target,
+        "created": created,
+        "failed": failures,
+    }
+
+
+@router.get("/admin/notices/served")
+async def list_served_notices(
+    limit: int = Query(default=80, ge=1, le=400),
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN, UserRole.FACULTY)),
+):
+    ensure_supabase_available()
+    supabase = get_supabase_admin()
+    try:
+        rows = (
+            supabase.table("documents")
+            .select("id,filename,doc_type,department,course,tags,uploaded_at,created_at,metadata,uploader_id")
+            .contains("tags", ["served_notice"])
+            .order("uploaded_at", desc=True)
+            .limit(limit)
+            .execute()
+        ).data or []
+    except Exception as exc:
+        if "uploaded_at" in str(exc).lower():
+            rows = (
+                supabase.table("documents")
+                .select("id,filename,doc_type,department,course,tags,uploaded_at,created_at,metadata,uploader_id")
+                .contains("tags", ["served_notice"])
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ).data or []
+        else:
+            raise
+
+    scoped_rows = [row for row in rows if is_document_relevant_for_user(row, user)]
+    result: list[dict[str, Any]] = []
+    for row in scoped_rows:
+        metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+        result.append(
+            {
+                "id": str(row.get("id") or ""),
+                "title": str(metadata.get("notice_title") or row.get("filename") or "Notice"),
+                "message": str(metadata.get("notice_message") or "").strip(),
+                "doc_type": str(row.get("doc_type") or ""),
+                "department": row.get("department"),
+                "course": row.get("course"),
+                "uploaded_at": str(row.get("uploaded_at") or row.get("created_at") or ""),
+            }
+        )
+
+    result.sort(
+        key=lambda item: parse_document_timestamp(item.get("uploaded_at"))
+        or datetime.datetime.min.replace(tzinfo=datetime.timezone.utc),
+        reverse=True,
+    )
+    return {"items": result[:limit], "total": len(result)}
+
 
 @router.post("/admin/documents", response_model=DocumentResponse)
 async def upload_document(
@@ -564,11 +770,30 @@ async def list_documents(
 
         # Admin users can paginate directly from the source table.
         if str(user.role or "").strip().lower() == UserRole.ADMIN.value:
-            query = supabase.table("documents").select("*", count="exact").in_("doc_type", allowed_types)
+            query = (
+                supabase.table("documents")
+                .select("*", count="exact")
+                .in_("doc_type", allowed_types)
+                .order("uploaded_at", desc=True)
+            )
             if selected_doc_type:
                 query = query.eq("doc_type", selected_doc_type)
             offset = (page - 1) * per_page
-            res = query.range(offset, offset + per_page - 1).execute()
+            try:
+                res = query.range(offset, offset + per_page - 1).execute()
+            except Exception as exc:
+                if "uploaded_at" in str(exc).lower():
+                    fallback_query = (
+                        supabase.table("documents")
+                        .select("*", count="exact")
+                        .in_("doc_type", allowed_types)
+                        .order("created_at", desc=True)
+                    )
+                    if selected_doc_type:
+                        fallback_query = fallback_query.eq("doc_type", selected_doc_type)
+                    res = fallback_query.range(offset, offset + per_page - 1).execute()
+                else:
+                    raise
             rows = res.data or []
             total_count = int(res.count or len(rows))
         else:
