@@ -253,6 +253,32 @@ export const adminApi = {
             `/admin/dean/users/${encodeURIComponent(userId)}/reset-flags`,
             { method: 'POST', token, body: { note: note || null } },
         ),
+    createUserActivityReportNotice: (
+        token: string,
+        body: {
+            subject?: string;
+            message?: string;
+            include_zero_query_users?: boolean;
+            max_recipients?: number;
+        },
+    ) =>
+        request<UserActivityReportNoticeResponse>(
+            `/admin/reports/user-activity-notice`,
+            { method: 'POST', token, body, timeoutMs: 120_000 },
+        ),
+    previewUserActivityReportNotice: (
+        token: string,
+        body: {
+            subject?: string;
+            message?: string;
+            include_zero_query_users?: boolean;
+            max_recipients?: number;
+        },
+    ) =>
+        request<UserActivityReportPreviewResponse>(
+            `/admin/reports/user-activity-notice/preview`,
+            { method: 'POST', token, body, timeoutMs: 60_000 },
+        ),
 };
 
 export const systemApi = {
@@ -480,4 +506,66 @@ export interface SourceCitation {
     snippet: string;
     relevance_score?: number;
     metadata?: Record<string, unknown>;
+}
+
+export interface UserActivityReportNoticeResponse {
+    status: string;
+    message: string;
+    subject: string;
+    generated_at: string;
+    stats: {
+        total_users: number;
+        total_queries: number;
+        active_users: number;
+        queries_per_user_avg: number;
+        users_by_role: {
+            student: number;
+            faculty: number;
+            admin: number;
+        };
+    };
+    top_users: Array<{
+        id: string;
+        full_name: string;
+        email: string;
+        role: string;
+        query_count: number;
+    }>;
+    recipients_sent: number;
+    recipients_failed: number;
+    duplicate_rows_skipped?: number;
+}
+
+export interface UserActivityReportPreviewResponse {
+    status: string;
+    message: string;
+    generated_at: string;
+    duplicate_rows_skipped: number;
+    recipients_total: number;
+    preview_limit: number;
+    preview_recipients: Array<{
+        id: string;
+        full_name: string;
+        email: string;
+        role: string;
+        query_count: number;
+    }>;
+    stats: {
+        total_users: number;
+        total_queries: number;
+        active_users: number;
+        queries_per_user_avg: number;
+        users_by_role: {
+            student: number;
+            faculty: number;
+            admin: number;
+        };
+    };
+    top_users: Array<{
+        id: string;
+        full_name: string;
+        email: string;
+        role: string;
+        query_count: number;
+    }>;
 }

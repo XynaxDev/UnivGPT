@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, Search, Edit2, X, Check, RefreshCcw } from 'lucide-react';
+import { Users, Search, Edit2, X, Check, RefreshCcw, Megaphone, BarChart3, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { adminApi, type UserProfile } from '@/lib/api';
+import { HoverTooltip } from '@/components/ui/tooltip';
+import { adminApi, type UserProfile, type UserActivityReportNoticeResponse, type UserActivityReportPreviewResponse } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
 
@@ -42,6 +43,12 @@ const UsersPage = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+    const [isGeneratingReport, setIsGeneratingReport] = useState(false);
+    const [isPreviewingReport, setIsPreviewingReport] = useState(false);
+    const [reportSubject, setReportSubject] = useState('UnivGPT User Activity Report Notice');
+    const [reportMessage, setReportMessage] = useState('Please review your activity summary and continue responsible usage of UnivGPT.');
+    const [reportResult, setReportResult] = useState<UserActivityReportNoticeResponse | null>(null);
+    const [reportPreview, setReportPreview] = useState<UserActivityReportPreviewResponse | null>(null);
 
     const [formName, setFormName] = useState('');
     const [formRole, setFormRole] = useState<RoleType>('student');
@@ -140,6 +147,47 @@ const UsersPage = () => {
         }
     };
 
+    const handleGenerateNotice = async () => {
+        if (!token) return;
+        setIsGeneratingReport(true);
+        try {
+            const res = await adminApi.createUserActivityReportNotice(token, {
+                subject: reportSubject.trim() || undefined,
+                message: reportMessage.trim() || undefined,
+                include_zero_query_users: true,
+                max_recipients: 500,
+            });
+            setReportResult(res);
+            showToast(
+                `Report sent to ${res.recipients_sent} users${res.recipients_failed ? ` (${res.recipients_failed} failed)` : ''}.`,
+                res.recipients_failed ? undefined : 'success',
+            );
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to generate user activity report notice.', 'error');
+        } finally {
+            setIsGeneratingReport(false);
+        }
+    };
+
+    const handlePreviewRecipients = async () => {
+        if (!token) return;
+        setIsPreviewingReport(true);
+        try {
+            const res = await adminApi.previewUserActivityReportNotice(token, {
+                subject: reportSubject.trim() || undefined,
+                message: reportMessage.trim() || undefined,
+                include_zero_query_users: true,
+                max_recipients: 500,
+            });
+            setReportPreview(res);
+            showToast(`Preview loaded for ${res.recipients_total} recipients.`, 'success');
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to preview recipients.', 'error');
+        } finally {
+            setIsPreviewingReport(false);
+        }
+    };
+
     return (
         <div className="h-full overflow-y-auto p-5 md:p-8 space-y-6 max-w-7xl mx-auto pb-20">
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-orange-500/20 bg-gradient-to-r from-[#201108] via-[#161117] to-[#0b1226] p-5">
@@ -183,6 +231,117 @@ const UsersPage = () => {
                         <div className="text-[9px] sm:text-[10px] text-zinc-500 uppercase tracking-wider mt-1">{stat.label}</div>
                     </div>
                 ))}
+            </div>
+
+            <div className="rounded-2xl border border-white/[0.08] bg-gradient-to-br from-zinc-900/70 to-zinc-900/35 p-4 sm:p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div>
+                        <div className="inline-flex items-center gap-2 rounded-full border border-orange-500/25 bg-orange-500/10 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-300">
+                            <Megaphone className="w-3.5 h-3.5" /> Report Notice Broadcast
+                        </div>
+                        <p className="text-xs text-zinc-400 mt-2">
+                            Generate a user activity report from live query logs and send a dynamic notice email to all users.
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            onClick={handlePreviewRecipients}
+                            disabled={isPreviewingReport}
+                            variant="outline"
+                            className="h-10 rounded-xl border-white/15 bg-white/[0.03] hover:bg-white/[0.07] text-xs font-bold px-4 text-white"
+                        >
+                            <Eye className="w-4 h-4 mr-2" />
+                            {isPreviewingReport ? 'Previewing...' : 'Preview Recipients'}
+                        </Button>
+                        <Button
+                            onClick={handleGenerateNotice}
+                            disabled={isGeneratingReport}
+                            className="h-10 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold px-5 transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 text-white"
+                        >
+                            <BarChart3 className="w-4 h-4 mr-2" />
+                            {isGeneratingReport ? 'Generating...' : 'Generate & Send'}
+                        </Button>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div>
+                        <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block mb-1.5">
+                            Email Subject
+                        </label>
+                        <input
+                            value={reportSubject}
+                            onChange={(e) => setReportSubject(e.target.value)}
+                            className="w-full h-10 px-3 rounded-xl border border-white/[0.08] bg-white/[0.03] text-xs outline-none focus:border-orange-500/30"
+                            placeholder="UnivGPT User Activity Report Notice"
+                        />
+                    </div>
+                    <div>
+                        <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-semibold block mb-1.5">
+                            Notice Message
+                        </label>
+                        <input
+                            value={reportMessage}
+                            onChange={(e) => setReportMessage(e.target.value)}
+                            className="w-full h-10 px-3 rounded-xl border border-white/[0.08] bg-white/[0.03] text-xs outline-none focus:border-orange-500/30"
+                            placeholder="Please review your activity summary..."
+                        />
+                    </div>
+                </div>
+
+                {reportResult && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                        <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2">
+                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Recipients</div>
+                            <div className="text-sm font-bold text-white">{reportResult.recipients_sent}</div>
+                        </div>
+                        <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2">
+                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Failures</div>
+                            <div className="text-sm font-bold text-red-300">{reportResult.recipients_failed}</div>
+                        </div>
+                        <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2">
+                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Total Queries</div>
+                            <div className="text-sm font-bold text-orange-300">{reportResult.stats.total_queries}</div>
+                        </div>
+                        <div className="rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2">
+                            <div className="text-[10px] text-zinc-500 uppercase tracking-wider">Active Users</div>
+                            <div className="text-sm font-bold text-emerald-300">{reportResult.stats.active_users}</div>
+                        </div>
+                    </div>
+                )}
+
+                {reportPreview && (
+                    <div className="rounded-xl border border-white/[0.08] bg-black/30 p-3 space-y-3">
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                            <div>
+                                <p className="text-xs font-semibold text-white">Recipient Preview</p>
+                                <p className="text-[11px] text-zinc-500">
+                                    {reportPreview.recipients_total} total recipients • showing first {reportPreview.preview_recipients.length}
+                                </p>
+                            </div>
+                            <div className="text-[11px] text-zinc-500">
+                                Duplicates skipped: <span className="text-zinc-300 font-semibold">{reportPreview.duplicate_rows_skipped}</span>
+                            </div>
+                        </div>
+                        <div className="max-h-44 overflow-y-auto pr-1 space-y-2">
+                            {reportPreview.preview_recipients.map((recipient) => (
+                                <div
+                                    key={recipient.id}
+                                    className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-white/[0.02] px-3 py-2"
+                                >
+                                    <div className="min-w-0">
+                                        <p className="text-xs font-semibold text-zinc-200 truncate">{recipient.full_name}</p>
+                                        <p className="text-[11px] text-zinc-500 truncate">{recipient.email}</p>
+                                    </div>
+                                    <div className="shrink-0 text-right">
+                                        <p className="text-[10px] uppercase tracking-wider text-zinc-500">{recipient.role}</p>
+                                        <p className="text-xs font-semibold text-orange-300">{recipient.query_count} queries</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
 
             <div className="rounded-2xl bg-gradient-to-br from-zinc-900/80 to-zinc-900/40 border border-white/[0.08] overflow-hidden">
@@ -230,13 +389,14 @@ const UsersPage = () => {
                                 </div>
                                 <span className="text-[10px] text-zinc-600">{formatJoined(user.created_at)}</span>
                                 <div className="flex items-center gap-1">
-                                    <button
-                                        onClick={() => openEditModal(user)}
-                                        className="w-7 h-7 rounded-md hover:bg-white/5 flex items-center justify-center text-zinc-600 hover:text-orange-400 transition-colors"
-                                        title="Edit user"
-                                    >
-                                        <Edit2 className="w-3 h-3" />
-                                    </button>
+                                    <HoverTooltip content="Edit user">
+                                        <button
+                                            onClick={() => openEditModal(user)}
+                                            className="w-7 h-7 rounded-md hover:bg-white/5 flex items-center justify-center text-zinc-600 hover:text-orange-400 transition-colors"
+                                        >
+                                            <Edit2 className="w-3 h-3" />
+                                        </button>
+                                    </HoverTooltip>
                                 </div>
                             </motion.div>
                         );
@@ -263,12 +423,13 @@ const UsersPage = () => {
                         >
                             Prev
                         </button>
-                        <button
-                            className="h-7 min-w-[52px] px-2 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white"
-                            title="Current page"
-                        >
-                            {currentPage}
-                        </button>
+                        <HoverTooltip content="Current page">
+                            <button
+                                className="h-8 w-8 rounded-lg text-xs font-semibold transition-colors bg-orange-600 text-white"
+                            >
+                                {currentPage}
+                            </button>
+                        </HoverTooltip>
                         <span className="text-zinc-600">/ {totalPages}</span>
                         <button
                             onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
