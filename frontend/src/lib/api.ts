@@ -433,9 +433,11 @@ export interface AuditLogEntry {
     id: string;
     action: string;
     user_id?: string;
-    user?: { email: string; full_name: string };
+    user?: { email: string; full_name: string; role?: string };
     target_id?: string;
     payload?: unknown;
+    ip_address?: string;
+    status?: string;
     timestamp?: string;
     created_at?: string; // Alias for timestamp
 }

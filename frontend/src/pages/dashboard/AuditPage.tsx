@@ -3,6 +3,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Shield, Search, Filter, Clock, Download, ChevronRight } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { adminApi, type AuditLogEntry } from '@/lib/api';
+import { useAuthStore } from '@/store/authStore';
+import { useToastStore } from '@/store/toastStore';
 
 interface AuditLog {
     id: string;
@@ -16,17 +19,44 @@ interface AuditLog {
     details: string;
 }
 
-const INITIAL_LOGS: AuditLog[] = [
-    { id: '1', event: 'Successful Login', user: 'admin@unigpt.edu', role: 'admin', timestamp: '2024-03-15T09:30:00Z', ip: '192.168.1.100', type: 'auth', status: 'success', details: 'Google OAuth login from Windows/Chrome.' },
-    { id: '2', event: 'Document Uploaded', user: 'dr.smith@unigpt.edu', role: 'faculty', timestamp: '2024-03-15T09:15:00Z', ip: '142.250.190.46', type: 'upload', status: 'success', details: 'Uploaded CS301_Syllabus.pdf (2.4MB)' },
-    { id: '3', event: 'Failed Login Attempt', user: 'unknown@unigpt.edu', role: 'unknown', timestamp: '2024-03-15T09:10:00Z', ip: 'Unknown', type: 'auth', status: 'error', details: 'Invalid credentials. 3rd attempt.' },
-    { id: '4', event: 'User Role Changed', user: 'admin@unigpt.edu', role: 'admin', timestamp: '2024-03-15T08:45:00Z', ip: '192.168.1.100', type: 'admin', status: 'warning', details: 'Changed john.doe role from Student to Faculty.' },
-    { id: '5', event: 'High Volume Queries', user: 'system', role: 'system', timestamp: '2024-03-15T08:00:00Z', ip: 'Internal', type: 'system', status: 'warning', details: 'Spike in API requests detected (+400%).' },
-    { id: '6', event: 'Query Processed', user: 'student1@unigpt.edu', role: 'student', timestamp: '2024-03-15T07:30:00Z', ip: '192.168.1.150', type: 'query', status: 'success', details: 'Query: "When is the CS101 final?" - Latency: 1.2s' },
-];
+const actionToType = (action: string): AuditLog['type'] => {
+    const lower = (action || '').toLowerCase();
+    if (lower.includes('upload') || lower.includes('document')) return 'upload';
+    if (lower.includes('login') || lower.includes('signup') || lower.includes('reset_password')) return 'auth';
+    if (lower.includes('query') || lower.includes('agent')) return 'query';
+    if (lower.includes('system')) return 'system';
+    return 'admin';
+};
+
+const actionToStatus = (action: string): AuditLog['status'] => {
+    const lower = (action || '').toLowerCase();
+    if (lower.includes('failed') || lower.includes('error') || lower.includes('reject')) return 'error';
+    if (lower.includes('flag') || lower.includes('warning') || lower.includes('escalat')) return 'warning';
+    return 'success';
+};
+
+const actionLabel = (action: string) => {
+    const clean = (action || '').replace(/_/g, ' ').trim();
+    if (!clean) return 'Unknown Event';
+    return clean.replace(/\b\w/g, (c) => c.toUpperCase());
+};
+
+const payloadToDetails = (payload: unknown) => {
+    if (!payload || typeof payload !== 'object') return 'No additional details.';
+    try {
+        const normalized = JSON.stringify(payload);
+        if (!normalized || normalized === '{}') return 'No additional details.';
+        return normalized;
+    } catch {
+        return 'No additional details.';
+    }
+};
 
 const AuditPage = () => {
-    const [logs, setLogs] = useState<AuditLog[]>(INITIAL_LOGS);
+    const { token } = useAuthStore();
+    const { showToast } = useToastStore();
+    const [logs, setLogs] = useState<AuditLog[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterType, setFilterType] = useState<string>('all');
     const [expandedLog, setExpandedLog] = useState<string | null>(null);
@@ -48,6 +78,44 @@ const AuditPage = () => {
         query: 'bg-indigo-400',
         system: 'bg-red-400',
     };
+
+    const loadAuditLogs = async () => {
+        if (!token) return;
+        setIsLoading(true);
+        try {
+            const response = await adminApi.getAuditLogs(token, 1, 200);
+            const mapped: AuditLog[] = (response.logs || []).map((row: AuditLogEntry) => {
+                const action = row.action || '';
+                const mappedType = actionToType(action);
+                const mappedStatus = actionToStatus(action);
+                const userEmail = row.user?.email || '';
+                const userName = row.user?.full_name || '';
+                const roleValue = row.user?.role || 'unknown';
+                return {
+                    id: row.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    event: actionLabel(action),
+                    user: userEmail || userName || row.user_id || 'system',
+                    role: roleValue,
+                    timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+                    ip: String(row.ip_address || 'Unknown'),
+                    type: mappedType,
+                    status: mappedStatus,
+                    details: payloadToDetails(row.payload),
+                };
+            });
+            setLogs(mapped);
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to load audit logs.', 'error');
+            setLogs([]);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        loadAuditLogs();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token]);
 
     const statusIcons: Record<string, React.ReactNode> = {
         success: <div className="w-2 h-2 rounded-full bg-emerald-500" />,
@@ -86,9 +154,19 @@ const AuditPage = () => {
                     <h1 className="text-xl font-extrabold tracking-tight text-white flex items-center gap-2">
                         <Shield className="w-5 h-5 text-orange-400" /> System Audit Logs
                     </h1>
-                    <p className="text-xs text-zinc-500 mt-1">Immutable record of system events, access, and changes.</p>
+                    <p className="text-xs text-zinc-500 mt-1">
+                        {isLoading ? 'Syncing live audit logs...' : 'Immutable record of system events, access, and changes.'}
+                    </p>
                 </div>
                 <div className="flex items-center gap-3 sm:justify-end">
+                    <Button
+                        onClick={loadAuditLogs}
+                        variant="glass"
+                        className="h-10 px-4 rounded-xl text-[11px] font-semibold"
+                        disabled={isLoading}
+                    >
+                        {isLoading ? 'Syncing...' : 'Refresh'}
+                    </Button>
                     <Button
                         onClick={() => {
                             const csv = ['Type,Event,User,Role,IP,Time,Status,Details', ...filtered.map(l => `${l.type},${l.event},${l.user},${l.role},${l.ip},${l.timestamp},${l.status},"${l.details}"`)].join('\n');
@@ -177,7 +255,10 @@ const AuditPage = () => {
                         </AnimatePresence>
                     </div>
                 ))}
-                {filtered.length === 0 && (
+                {isLoading && logs.length === 0 && (
+                    <div className="py-12 text-center text-zinc-600 text-xs">Loading live audit logs...</div>
+                )}
+                {!isLoading && filtered.length === 0 && (
                     <div className="py-12 text-center text-zinc-600 text-xs">No audit logs match criteria.</div>
                 )}
             </motion.div>
