@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/lib/utils';
 import { BrandLogo } from '@/components/ui/BrandLogo';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/sidebar';
 import { useToastStore } from '@/store/toastStore';
 import { authApi, type UserNotificationItem } from '@/lib/api';
@@ -306,12 +307,28 @@ export default function DashboardLayout() {
                                                 className="max-h-64 overflow-y-auto overflow-x-hidden overscroll-contain"
                                                 data-lenis-prevent
                                             >
+                                                {isLoadingNotifications && (
+                                                    <div className="p-3 space-y-2.5">
+                                                        {Array.from({ length: 4 }).map((_, idx) => (
+                                                            <div key={`nav-notification-skeleton-${idx}`} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-3">
+                                                                <div className="flex gap-2">
+                                                                    <Skeleton className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0" />
+                                                                    <div className="flex-1 space-y-2">
+                                                                        <Skeleton className="h-3 w-36" />
+                                                                        <Skeleton className="h-3 w-full" />
+                                                                        <Skeleton className="h-3 w-24" />
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
                                                 {!isLoadingNotifications && notifications.length === 0 && (
                                                     <div className="px-4 py-6 text-xs text-zinc-500">
                                                         No notifications yet.
                                                     </div>
                                                 )}
-                                                {notifications.map((n) => (
+                                                {!isLoadingNotifications && notifications.map((n) => (
                                                     <div
                                                         key={n.id}
                                                         className={cn("px-4 py-3 hover:bg-white/[0.03] cursor-pointer border-b border-white/[0.04] last:border-0 transition-colors", n.unread && "bg-orange-500/[0.03]")}
