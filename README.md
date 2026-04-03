@@ -63,7 +63,9 @@ GPT/
       store/
       lib/
   docs/
+    README.md
     design.md
+    tunnel_setup_local_vs_hosted.md
     private/           # ignored from git
   infrastructure/
     supabase/

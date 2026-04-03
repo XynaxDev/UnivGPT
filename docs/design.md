@@ -1,200 +1,87 @@
-# UniGPT Design Document — Agent Pipeline & Data Flow
+﻿# UnivGPT Design
 
-## Architecture Overview
+This document explains the current architecture, request flows, and role boundaries.
 
-UniGPT follows a modular full-stack architecture:
+## High-Level Architecture
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│  Frontend (web/)                                                 │
-│  React + Vite + TypeScript + Tailwind + Framer Motion            │
-│  ┌──────────┐ ┌──────────┐ ┌──────────────┐ ┌───────────────┐   │
-│  │ Landing   │ │ Auth     │ │ Dashboards   │ │ Chat Widget   │   │
-│  │ Page      │ │ Pages    │ │ (role-based) │ │ (persistent)  │   │
-│  └──────────┘ └──────────┘ └──────────────┘ └───────────────┘   │
-└───────────────────────────┬──────────────────────────────────────┘
-                            │ HTTP / JWT Auth
-┌───────────────────────────▼──────────────────────────────────────┐
-│  Backend (api/)                                                  │
-│  FastAPI + Python 3.11 + Pydantic                                │
-│  ┌─────────────┐ ┌──────────────┐ ┌──────────────────────┐      │
-│  │ Auth Router  │ │ Docs Router  │ │ Agent Router         │      │
-│  │ /auth/*      │ │ /documents/* │ │ /agent/query         │      │
-│  │ /user/me     │ │ /admin/docs  │ │ /agent/history       │      │
-│  └─────────────┘ └──────────────┘ └──────────────────────┘      │
-│  ┌─────────────┐ ┌──────────────┐ ┌──────────────────────┐      │
-│  │ Auth MW     │ │ RBAC MW      │ │ Agent Pipeline       │      │
-│  │ JWT verify  │ │ Role check   │ │ RAG orchestrator     │      │
-│  └─────────────┘ └──────────────┘ └──────────────────────┘      │
-└──────┬──────────────────────┬─────────────────────┬─────────────┘
-       │                      │                     │
-       ▼                      ▼                     ▼
-┌──────────────┐  ┌───────────────────┐  ┌────────────────────┐
-│ Supabase     │  │ Supabase Storage  │  │ OpenRouter LLM     │
-│ PostgreSQL   │  │ (raw files)       │  │ (via LangChain)    │
-│ + pgvector   │  │                   │  │                    │
-└──────────────┘  └───────────────────┘  └────────────────────┘
-```
+### Frontend
 
-## Agent Pipeline (RAG Orchestrator)
+- React + TypeScript + Vite
+- Role-based dashboard routes: `student`, `faculty`, `admin`
+- Key pages: chat, courses, faculty directory, notifications, upload, users, audit, dean appeals
 
-The agent pipeline processes every query through this sequence:
+### Backend
 
-```mermaid
-flowchart TD
-    A[User Query] --> B{1. Auth & Role Check}
-    B -->|Unauthorized| Z1[401 Reject]
-    B -->|Authenticated| C{2. Intent Classification}
+- FastAPI app (`backend/app/main.py`)
+- Routers:
+  - `app/routers/auth.py`
+  - `app/routers/agent.py`
+  - `app/routers/documents.py`
+  - `app/routers/admin.py`
+- Middleware:
+  - JWT auth (`app/middleware/auth.py`)
+  - RBAC (`app/middleware/rbac.py`)
 
-    C -->|Personal Data| D1[Block & Log Audit]
-    C -->|Admin Action| D2{User is Admin?}
-    D2 -->|No| D3[403 Deny + Log]
-    D2 -->|Yes| E
+### Core Integrations
 
-    C -->|Factual/Policy| E[3. Role-Filtered Vector Search]
+- Supabase: Auth + Postgres tables (`profiles`, `documents`, `conversations`, `audit_logs`)
+- Pinecone: vector search for RAG
+- OpenRouter: LLM generation + intent/moderation classification
+- SMTP: OTP and moderation/appeal decision emails
 
-    E --> F{4. Evidence Filtering}
-    F -->|No docs found| G[Safe fallback response]
-    F -->|Docs found| H[5. Response Generation]
+## Core Runtime Flows
 
-    H --> I[6. Build Source Citations]
-    I --> J[7. Redaction Guardrails Check]
-    J --> K[Save Conversation + Audit Log]
-    K --> L[Return Answer + Sources + rationale]
-```
+### 1) Auth Flow
 
-### Step Details
+1. User signs up or logs in.
+2. Backend validates against Supabase Auth.
+3. OTP flows (`signup`, `verify`, `forgot-password`, `reset-password`) use SMTP.
+4. Profile sync happens in `profiles`.
+5. JWT protects all role-scoped APIs.
 
-| Step | Component | Description |
-|------|-----------|-------------|
-| 1 | `middleware/auth.py` | Validate JWT, extract user ID, fetch role from `profiles` table |
-| 2 | `agent_pipeline.classify_intent()` | Deterministic keyword classifier: factual / policy / personal / admin |
-| 3 | `agent_pipeline.search_embeddings()` | pgvector cosine similarity with metadata filter `role ∈ allowed_types` |
-| 4 | Evidence Check | Require ≥1 matched chunk within user's role scope |
-| 5 | `agent_pipeline.generate_response()` | LangChain → OpenRouter LLM with system prompt + context chunks |
-| 6 | Citation Builder | Extract document ID, title, snippet for each source |
-| 7 | Redaction | Block student access to faculty/admin content; log escalation |
+### 2) Document Ingestion Flow
 
-## Document Upload Flow
+1. Admin/faculty uploads document with metadata (`doc_type`, `department`, `course`, `tags`).
+2. File is validated and text is extracted/chunked.
+3. Embeddings are generated and upserted to Pinecone.
+4. Document metadata is persisted in Supabase.
+5. Audit entry is written.
 
-```mermaid
-sequenceDiagram
-    participant Admin
-    participant API as FastAPI
-    participant Storage as Supabase Storage
-    participant DB as PostgreSQL
-    participant LLM as OpenRouter
+### 3) Agent Query Flow
 
-    Admin->>API: POST /admin/documents (file + metadata)
-    API->>API: Validate role (admin/faculty)
-    API->>Storage: Upload raw file
-    API->>DB: INSERT into documents table
-    API->>API: Extract text (pdfplumber/python-docx)
-    API->>API: Chunk text (1000 chars, 200 overlap)
-    API->>DB: INSERT chunks into document_texts
-    API->>LLM: Generate embeddings for each chunk
-    API->>DB: INSERT vectors into embeddings (with metadata)
-    API->>DB: INSERT audit_log entry
-    API-->>Admin: DocumentResponse
-```
+1. Query enters `agent_pipeline`.
+2. User role/scope is resolved.
+3. Intent + moderation checks run.
+4. Structured tools and/or vector retrieval are selected by intent.
+5. LLM response is generated with role-safe context.
+6. Conversation and audit rows are persisted.
 
-## Role-Based Access Matrix
+### 4) Moderation and Appeals Flow
 
-| Resource | Student | Faculty | Admin |
-|----------|---------|---------|-------|
-| Student docs | ✅ Read | ❌ | ✅ Full |
-| Faculty docs | ❌ | ✅ Read/Write | ✅ Full |
-| Admin docs | ❌ | ❌ | ✅ Full |
-| Public docs | ✅ Read | ✅ Read | ✅ Full |
-| Upload docs | ❌ | ✅ Faculty/Public | ✅ All types |
-| User management | ❌ | ❌ | ✅ |
-| Audit logs | ❌ | ❌ | ✅ |
+1. Abusive messages are flagged by moderation routing.
+2. Warning/escalation state is tracked per user.
+3. User may submit appeal.
+4. Dean/admin reviews appeal in admin UI.
+5. Decision updates moderation state and notifies user via email.
 
-## Database Relationships
+## Role Scope Model
 
-```mermaid
-erDiagram
-    PROFILES {
-        uuid id PK
-        text email UK
-        text full_name
-        enum role
-        timestamptz created_at
-    }
-    DOCUMENTS {
-        uuid id PK
-        uuid uploader_id FK
-        text filename
-        text storage_path
-        enum doc_type
-        text department
-        text course
-        jsonb tags
-        boolean visibility
-    }
-    DOCUMENT_TEXTS {
-        uuid id PK
-        uuid document_id FK
-        int chunk_index
-        text content
-    }
-    EMBEDDINGS {
-        uuid id PK
-        uuid document_id FK
-        int chunk_index
-        vector vector_1536
-        text model_name
-        jsonb metadata
-    }
-    CONVERSATIONS {
-        uuid id PK
-        uuid user_id FK
-        enum role
-        jsonb messages
-        text summary
-    }
-    AUDIT_LOGS {
-        uuid id PK
-        uuid user_id FK
-        text action
-        jsonb payload
-        timestamptz timestamp
-    }
+- `student`: `student` + `public` context
+- `faculty`: `faculty` + `student` + `public` context
+- `admin`: full context + governance endpoints
 
-    PROFILES ||--o{ DOCUMENTS : uploads
-    PROFILES ||--o{ CONVERSATIONS : has
-    PROFILES ||--o{ AUDIT_LOGS : generates
-    DOCUMENTS ||--o{ DOCUMENT_TEXTS : contains
-    DOCUMENTS ||--o{ EMBEDDINGS : has
-```
+Scope is enforced both at API authorization and retrieval context level.
 
-## LangChain + OpenRouter Configuration
+## Performance Notes
 
-```python
-# LLM (Chat completion)
-from langchain_openai import ChatOpenAI
-llm = ChatOpenAI(
-    model="meta-llama/llama-3.1-70b-instruct",  # via OPENROUTER_MODEL env
-    openai_api_key=OPENROUTER_API_KEY,
-    openai_api_base="https://openrouter.ai/api/v1",
-    temperature=0.3,
-    max_tokens=1500,
-)
+- Short-lived response caches are used for notifications, faculty directory, and course directory.
+- Audit query rows are pruned periodically to avoid unbounded growth.
+- OpenRouter timeout/retry/backoff are configurable.
+- Pinecone query timeout is configurable.
 
-# Embeddings
-from langchain_openai import OpenAIEmbeddings
-embeddings = OpenAIEmbeddings(
-    model="openai/text-embedding-3-small",  # via OPENROUTER_EMBEDDING_MODEL env
-    openai_api_key=OPENROUTER_API_KEY,
-    openai_api_base="https://openrouter.ai/api/v1",
-)
-```
+## Operational Notes
 
-## Security Principles
-
-1. **All queries include role filter** — `metadata.role ∈ allowed_roles_for_user`
-2. **Never return raw admin/faculty content to students**
-3. **Sensitive data requests blocked** — "my grades", "my GPA" → refuse + audit log
-4. **JWT validation on every request** — Supabase JWT decoded with shared secret
-5. **Audit trail** — Every upload, query, and admin action logged
-6. **Mock mode** — `MOCK_LLM=true` disables real API calls for dev/testing
+- Run migrations/runtime checks: `python migrate.py`
+- Seed/reset controlled datasets: `python seed.py`
+- Frontend build check: `npm run build`
+- Keep secrets in `.env` only; never commit secrets.
