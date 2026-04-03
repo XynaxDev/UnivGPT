@@ -14,6 +14,7 @@ import {
     Users,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { HoverTooltip } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
@@ -439,7 +440,34 @@ export default function CoursesPage() {
                     </div>
                 </div>
 
-                {isLoading && <div className="text-sm text-zinc-500">Loading course directory...</div>}
+                {isLoading && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {Array.from({ length: 6 }).map((_, idx) => (
+                            <div key={`course-skeleton-${idx}`} className="rounded-[2rem] border border-white/[0.06] bg-white/[0.02] p-7 space-y-5">
+                                <div className="flex items-center justify-between">
+                                    <Skeleton className="h-12 w-12 rounded-2xl" />
+                                    <Skeleton className="h-6 w-16 rounded-full" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-6 w-4/5" />
+                                    <Skeleton className="h-3 w-24" />
+                                </div>
+                                <div className="space-y-2">
+                                    <Skeleton className="h-10 w-full rounded-xl" />
+                                    <Skeleton className="h-10 w-full rounded-xl" />
+                                </div>
+                                <div className="grid grid-cols-2 gap-2">
+                                    <Skeleton className="h-14 w-full rounded-xl" />
+                                    <Skeleton className="h-14 w-full rounded-xl" />
+                                </div>
+                                <div className="flex gap-2">
+                                    <Skeleton className="h-12 flex-1 rounded-xl" />
+                                    <Skeleton className="h-12 w-12 rounded-xl" />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
                 {!isLoading && isHydratingFaculty && (
                     <div className="text-xs text-zinc-600">Refreshing faculty mapping in background...</div>
                 )}
