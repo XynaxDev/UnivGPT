@@ -6,6 +6,7 @@ import {
     UserCircle2, ShieldCheck, Building2, GraduationCap, Layers, Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/authStore';
 import { useNavigate } from 'react-router-dom';
 import { useToastStore } from '@/store/toastStore';
@@ -203,7 +204,7 @@ const SettingsPage = () => {
                                                 <div className="text-[11px] text-zinc-500 mt-0.5">{item.desc}</div>
                                             </div>
                                             {isLoadingSettings ? (
-                                                <span className="text-[11px] text-zinc-600">Loading...</span>
+                                                <Skeleton className="h-5 w-12 rounded-full" />
                                             ) : (
                                                 <Toggle
                                                     checked={settings[item.id as keyof typeof settings]}
@@ -284,7 +285,11 @@ const SettingsPage = () => {
                                             </span>
                                             <span className="truncate">{row.label}</span>
                                         </span>
-                                        <span className="text-[11px] font-medium text-white text-right">{row.value}</span>
+                                        {isLoadingSettings ? (
+                                            <Skeleton className="h-3.5 w-20" />
+                                        ) : (
+                                            <span className="text-[11px] font-medium text-white text-right">{row.value}</span>
+                                        )}
                                     </div>
                                 ))}
                             </div>

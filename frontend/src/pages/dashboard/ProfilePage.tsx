@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { useAuthStore } from '@/store/authStore';
 import { useToastStore } from '@/store/toastStore';
 import { authApi, type UserExportData } from '@/lib/api';
@@ -543,7 +544,7 @@ const ProfilePage = () => {
                                             {stat.label}
                                         </div>
                                         <div className="text-xl font-extrabold text-white mt-2">
-                                            {isLoadingStats ? '...' : stat.value}
+                                            {isLoadingStats ? <Skeleton className="h-6 w-14" /> : stat.value}
                                         </div>
                                     </div>
                                 ))}

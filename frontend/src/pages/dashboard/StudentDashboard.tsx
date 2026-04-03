@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { authApi, documentsApi, type DocumentResponse, type UserExportData, type FacultySummary } from '@/lib/api';
@@ -296,25 +297,38 @@ export default function StudentDashboard() {
                     <span className="text-[10px] font-bold text-zinc-600">{facultyLoading ? 'Syncing...' : `${facultyCards.length} mentors`}</span>
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                    {facultyCards.map((member) => (
-                        <button
-                            key={member.id}
-                            onClick={() => openFaculty(member)}
-                            className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center gap-3 hover:border-cyan-400/35 hover:bg-cyan-400/5 transition-all text-left"
-                        >
-                            <div className="w-10 h-10 rounded-lg border border-cyan-400/25 bg-cyan-400/10 flex items-center justify-center text-[11px] font-bold text-cyan-200 shrink-0">
-                                {member.avatar_url ? (
-                                    <img src={member.avatar_url} alt={member.full_name} className="w-full h-full rounded-lg object-cover" />
-                                ) : (
-                                    initialsFromName(member.full_name)
-                                )}
+                    {facultyLoading
+                        ? Array.from({ length: 4 }).map((_, idx) => (
+                            <div
+                                key={`student-faculty-skeleton-${idx}`}
+                                className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center gap-3"
+                            >
+                                <Skeleton className="w-10 h-10 rounded-lg shrink-0" />
+                                <div className="min-w-0 flex-1 space-y-1.5">
+                                    <Skeleton className="h-3.5 w-28" />
+                                    <Skeleton className="h-3 w-24" />
+                                </div>
                             </div>
-                            <div className="min-w-0">
-                                <p className="text-xs font-semibold text-zinc-200 truncate">{member.full_name}</p>
-                                <p className="text-[10px] text-zinc-500 truncate">{member.subtitle}</p>
-                            </div>
-                        </button>
-                    ))}
+                        ))
+                        : facultyCards.map((member) => (
+                            <button
+                                key={member.id}
+                                onClick={() => openFaculty(member)}
+                                className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 flex items-center gap-3 hover:border-cyan-400/35 hover:bg-cyan-400/5 transition-all text-left"
+                            >
+                                <div className="w-10 h-10 rounded-lg border border-cyan-400/25 bg-cyan-400/10 flex items-center justify-center text-[11px] font-bold text-cyan-200 shrink-0">
+                                    {member.avatar_url ? (
+                                        <img src={member.avatar_url} alt={member.full_name} className="w-full h-full rounded-lg object-cover" />
+                                    ) : (
+                                        initialsFromName(member.full_name)
+                                    )}
+                                </div>
+                                <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-zinc-200 truncate">{member.full_name}</p>
+                                    <p className="text-[10px] text-zinc-500 truncate">{member.subtitle}</p>
+                                </div>
+                            </button>
+                        ))}
                 </div>
                 <div className="flex justify-end mt-4">
                     <Button
