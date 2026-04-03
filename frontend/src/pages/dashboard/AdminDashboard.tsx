@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
@@ -660,7 +661,7 @@ const AdminDashboard = () => {
                                         <ArrowUpRight className="w-3.5 h-3.5 text-zinc-700 opacity-0 group-hover:opacity-100 transition-opacity" />
                                     </div>
                                     <div className="text-2xl font-extrabold text-white tracking-tight">
-                                        {isLoading ? '--' : formatCompact(stat.value)}
+                                        {isLoading ? <Skeleton className="h-7 w-16" /> : formatCompact(stat.value)}
                                     </div>
                                     <div className="text-[11px] text-zinc-500">{stat.label}</div>
                                     <MiniBarChart
@@ -713,7 +714,7 @@ const AdminDashboard = () => {
                         </Link>
                     </div>
                     <div className="rounded-2xl bg-zinc-900/50 border border-white/[0.06] overflow-hidden divide-y divide-white/[0.04]">
-                        {(auditRows.length > 0 ? auditRows.slice(0, 6) : []).map((item, i) => {
+                        {!isLoading && (auditRows.length > 0 ? auditRows.slice(0, 6) : []).map((item, i) => {
                             const type = classifyAuditType(item.action || '');
                             const userLabel =
                                 item.user?.email ||
@@ -744,6 +745,22 @@ const AdminDashboard = () => {
                                 </div>
                             );
                         })}
+                        {isLoading && (
+                            <div className="p-4 space-y-2.5">
+                                {Array.from({ length: 4 }).map((_, idx) => (
+                                    <div key={`admin-audit-skeleton-${idx}`} className="flex items-center justify-between px-1 py-2">
+                                        <div className="flex items-center gap-3">
+                                            <Skeleton className="h-4 w-14 rounded-full" />
+                                            <div className="space-y-1.5">
+                                                <Skeleton className="h-3.5 w-44" />
+                                                <Skeleton className="h-3 w-28" />
+                                            </div>
+                                        </div>
+                                        <Skeleton className="h-3 w-16" />
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                         {!isLoading && auditRows.length === 0 && (
                             <div className="px-5 py-6 text-xs text-zinc-500">
                                 No activity logs found yet.
