@@ -8,10 +8,11 @@ from __future__ import annotations
 import asyncio
 import datetime
 import logging
+from collections import Counter
 from typing import Any, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.middleware.auth import AuthenticatedUser
 from app.middleware.auth import is_academic_email
@@ -46,6 +47,13 @@ class AdminUserUpdateRequest(BaseModel):
     role: Optional[str] = None
     department: Optional[str] = None
     avatar_url: Optional[str] = None
+
+
+class AdminUserReportNoticeRequest(BaseModel):
+    subject: Optional[str] = Field(default=None, max_length=180)
+    message: Optional[str] = Field(default=None, max_length=2000)
+    include_zero_query_users: bool = True
+    max_recipients: int = Field(default=500, ge=1, le=2000)
 
 
 def _require_dean_access(user: AuthenticatedUser) -> None:
@@ -97,6 +105,95 @@ async def _send_appeal_status_email_if_possible(
         )
     except Exception as exc:
         logger.warning("Appeal status email dispatch failed: %s", exc)
+
+
+def _safe_profile_role(value: Any) -> str:
+    lowered = str(value or "").strip().lower()
+    return lowered if lowered in {"student", "faculty", "admin"} else "student"
+
+
+def _build_user_activity_dataset(
+    supabase: Any,
+    recipients_max: int,
+) -> dict[str, Any]:
+    profiles_res = (
+        supabase.table("profiles")
+        .select("id,email,full_name,role,department,created_at")
+        .order("created_at", desc=True)
+        .limit(2000)
+        .execute()
+    )
+    profile_rows = profiles_res.data or []
+    if not profile_rows:
+        raise HTTPException(status_code=400, detail="No users found in profiles table.")
+
+    users_for_report: list[dict[str, Any]] = []
+    seen_emails: set[str] = set()
+    duplicate_rows_skipped = 0
+
+    for row in profile_rows:
+        email = str(row.get("email") or "").strip()
+        if not email:
+            continue
+        email_key = email.lower()
+        if email_key in seen_emails:
+            duplicate_rows_skipped += 1
+            continue
+        seen_emails.add(email_key)
+        users_for_report.append(
+            {
+                "id": str(row.get("id") or ""),
+                "email": email,
+                "full_name": str(row.get("full_name") or "User").strip() or "User",
+                "role": _safe_profile_role(row.get("role")),
+                "department": str(row.get("department") or "").strip() or None,
+                "created_at": row.get("created_at"),
+            }
+        )
+        if len(users_for_report) >= recipients_max:
+            break
+
+    if not users_for_report:
+        raise HTTPException(status_code=400, detail="No users with valid emails found.")
+
+    query_counts: dict[str, int] = {}
+    for profile in users_for_report:
+        uid = profile["id"]
+        if not uid:
+            query_counts[uid] = 0
+            continue
+        try:
+            q_res = (
+                supabase.table("audit_logs")
+                .select("id", count="exact")
+                .eq("action", "agent_query")
+                .eq("user_id", uid)
+                .limit(1)
+                .execute()
+            )
+            query_counts[uid] = int(q_res.count or 0)
+        except Exception:
+            query_counts[uid] = 0
+
+    role_counts = Counter(profile["role"] for profile in users_for_report)
+    total_queries = sum(query_counts.get(profile["id"], 0) for profile in users_for_report)
+    active_users = sum(1 for profile in users_for_report if query_counts.get(profile["id"], 0) > 0)
+
+    top_users = sorted(
+        users_for_report,
+        key=lambda item: query_counts.get(item["id"], 0),
+        reverse=True,
+    )[:5]
+
+    return {
+        "users_for_report": users_for_report,
+        "query_counts": query_counts,
+        "role_counts": role_counts,
+        "total_queries": total_queries,
+        "active_users": active_users,
+        "top_users": top_users,
+        "duplicate_rows_skipped": duplicate_rows_skipped,
+    }
 
 
 @router.get("/admin/metrics")
@@ -364,6 +461,167 @@ async def update_admin_user(
             "academic_verified": is_academic_email(email),
             "identity_provider": None,
         }
+    }
+
+
+@router.post("/admin/reports/user-activity-notice")
+async def generate_user_activity_notice(
+    body: AdminUserReportNoticeRequest,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+) -> dict[str, Any]:
+    supabase = get_supabase_admin()
+
+    recipients_max = min(max(1, int(body.max_recipients)), 2000)
+    dataset = _build_user_activity_dataset(supabase, recipients_max)
+    users_for_report = dataset["users_for_report"]
+    query_counts = dataset["query_counts"]
+    role_counts = dataset["role_counts"]
+    total_queries = dataset["total_queries"]
+    active_users = dataset["active_users"]
+    top_users = dataset["top_users"]
+    duplicate_rows_skipped = dataset["duplicate_rows_skipped"]
+
+    generated_at = iso(utc_now())
+    subject = (body.subject or "").strip() or f"UnivGPT User Activity Report - {generated_at[:10]}"
+    message = (
+        (body.message or "").strip()
+        or "Please review your current activity summary. Maintain responsible and professional usage of UnivGPT."
+    )
+
+    recipients = (
+        users_for_report
+        if body.include_zero_query_users
+        else [profile for profile in users_for_report if query_counts.get(profile["id"], 0) > 0]
+    )
+
+    async def _send(profile: dict[str, Any]) -> bool:
+        return await asyncio.to_thread(
+            EmailService.send_user_activity_notice_email,
+            profile["email"],
+            profile["full_name"],
+            subject,
+            message,
+            query_counts.get(profile["id"], 0),
+            user.full_name or user.email or "Admin",
+            generated_at,
+        )
+
+    sent_count = 0
+    failed_count = 0
+    for profile in recipients:
+        ok = await _send(profile)
+        if ok:
+            sent_count += 1
+        else:
+            failed_count += 1
+
+    payload = {
+        "subject": subject,
+        "message": message,
+        "generated_at": generated_at,
+        "duplicate_rows_skipped": duplicate_rows_skipped,
+        "stats": {
+            "total_users": len(users_for_report),
+            "total_queries": total_queries,
+            "active_users": active_users,
+            "queries_per_user_avg": round(total_queries / max(1, len(users_for_report)), 2),
+            "users_by_role": {
+                "student": int(role_counts.get("student", 0)),
+                "faculty": int(role_counts.get("faculty", 0)),
+                "admin": int(role_counts.get("admin", 0)),
+            },
+        },
+        "top_users": [
+            {
+                "id": item["id"],
+                "full_name": item["full_name"],
+                "email": item["email"],
+                "role": item["role"],
+                "query_count": int(query_counts.get(item["id"], 0)),
+            }
+            for item in top_users
+        ],
+        "recipients_sent": sent_count,
+        "recipients_failed": failed_count,
+    }
+
+    await log_audit_event(
+        user_id=None if user.id.startswith("dummy-id-") else user.id,
+        action="admin_user_report_notice",
+        payload=payload,
+    )
+
+    return {
+        "status": "success",
+        "message": "User activity report notice generated and dispatched.",
+        **payload,
+    }
+
+
+@router.post("/admin/reports/user-activity-notice/preview")
+async def preview_user_activity_notice_recipients(
+    body: AdminUserReportNoticeRequest,
+    user: AuthenticatedUser = Depends(require_roles(UserRole.ADMIN)),
+) -> dict[str, Any]:
+    supabase = get_supabase_admin()
+    recipients_max = min(max(1, int(body.max_recipients)), 2000)
+
+    dataset = _build_user_activity_dataset(supabase, recipients_max)
+    users_for_report = dataset["users_for_report"]
+    query_counts = dataset["query_counts"]
+    role_counts = dataset["role_counts"]
+    total_queries = dataset["total_queries"]
+    active_users = dataset["active_users"]
+    top_users = dataset["top_users"]
+    duplicate_rows_skipped = dataset["duplicate_rows_skipped"]
+
+    recipients = (
+        users_for_report
+        if body.include_zero_query_users
+        else [profile for profile in users_for_report if query_counts.get(profile["id"], 0) > 0]
+    )
+
+    preview_limit = 20
+    preview_recipients = [
+        {
+            "id": profile["id"],
+            "email": profile["email"],
+            "full_name": profile["full_name"],
+            "role": profile["role"],
+            "query_count": int(query_counts.get(profile["id"], 0)),
+        }
+        for profile in recipients[:preview_limit]
+    ]
+
+    return {
+        "status": "success",
+        "message": "Recipient preview generated.",
+        "generated_at": iso(utc_now()),
+        "duplicate_rows_skipped": duplicate_rows_skipped,
+        "recipients_total": len(recipients),
+        "preview_limit": preview_limit,
+        "preview_recipients": preview_recipients,
+        "stats": {
+            "total_users": len(users_for_report),
+            "total_queries": total_queries,
+            "active_users": active_users,
+            "queries_per_user_avg": round(total_queries / max(1, len(users_for_report)), 2),
+            "users_by_role": {
+                "student": int(role_counts.get("student", 0)),
+                "faculty": int(role_counts.get("faculty", 0)),
+                "admin": int(role_counts.get("admin", 0)),
+            },
+        },
+        "top_users": [
+            {
+                "id": item["id"],
+                "full_name": item["full_name"],
+                "email": item["email"],
+                "role": item["role"],
+                "query_count": int(query_counts.get(item["id"], 0)),
+            }
+            for item in top_users
+        ],
     }
 
 
