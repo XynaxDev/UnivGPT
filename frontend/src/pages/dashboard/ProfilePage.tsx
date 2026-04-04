@@ -146,19 +146,19 @@ const ProfilePage = () => {
             if (!token) return;
             const needsExport = !cachedExport;
             const needsDocs = !cachedDocs || suspiciousDocsCache;
+            const shouldSilentRefresh = !needsExport && !needsDocs;
 
-            if (!needsExport && !needsDocs) {
-                setIsLoadingStats(false);
-                return;
-            }
-
-            setIsLoadingStats(true);
+            if (!shouldSilentRefresh) setIsLoadingStats(true);
             try {
                 const [exportResult, docsResult] = await Promise.allSettled([
-                    needsExport ? authApi.exportUserData(token) : Promise.resolve(cachedExport),
+                    (needsExport || shouldSilentRefresh)
+                        ? authApi.exportUserData(token, { force: shouldSilentRefresh })
+                        : Promise.resolve(cachedExport),
                     needsDocs
                         ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: suspiciousDocsCache })
-                        : Promise.resolve(cachedDocs),
+                        : shouldSilentRefresh
+                            ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: true })
+                            : Promise.resolve(cachedDocs),
                 ]);
 
                 const payload = exportResult.status === 'fulfilled' ? exportResult.value : null;
@@ -183,11 +183,11 @@ const ProfilePage = () => {
                 if (payload) setExportData(payload);
             } catch {
                 if (!alive) return;
-                if (needsDocs && !cachedDocs) {
+                if (needsDocs && !cachedDocs && !shouldSilentRefresh) {
                     setLiveDocCount(0);
                     setLiveNoticeCount(0);
                 }
-                if (needsExport && !cachedExport) setExportData(null);
+                if (needsExport && !cachedExport && !shouldSilentRefresh) setExportData(null);
             } finally {
                 if (alive) setIsLoadingStats(false);
             }
