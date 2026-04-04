@@ -280,9 +280,13 @@ export const authApi = {
             invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
             return res;
         }),
-    getFacultyDirectory: (token: string, limit = 20) =>
-        cachedGet(
-            buildCacheKey('user-faculty', token, String(limit)),
+    getFacultyDirectory: (token: string, limit = 20, options?: { force?: boolean }) => {
+        const key = buildCacheKey('user-faculty', token, String(limit));
+        if (options?.force) {
+            invalidateCacheByPrefix(key);
+        }
+        return cachedGet(
+            key,
             CACHE_TTL.userFaculty,
             async () => {
                 const res = await request<FacultyListResponse>(
@@ -297,7 +301,8 @@ export const authApi = {
                     })),
                 };
             },
-        ),
+        );
+    },
     getCourseDirectory: (token: string, limit = 50) =>
         cachedGet(
             buildCacheKey('user-courses', token, String(limit)),
@@ -426,16 +431,21 @@ export const noticesApi = {
             invalidateCacheByPrefix('user-export-data:');
             return res;
         }),
-    listServed: (token: string, limit = 120) =>
-        cachedGet(
-            buildCacheKey('served-notices', token, String(limit)),
+    listServed: (token: string, limit = 120, options?: { force?: boolean }) => {
+        const key = buildCacheKey('served-notices', token, String(limit));
+        if (options?.force) {
+            invalidateCacheByPrefix(key);
+        }
+        return cachedGet(
+            key,
             CACHE_TTL.servedNotices,
             () =>
                 request<NoticeListResponse>(
                     `/admin/notices/served?limit=${encodeURIComponent(String(limit))}`,
                     { token, timeoutMs: 20_000 },
                 ),
-        ),
+        );
+    },
     peekListServed: (token: string, limit = 120) =>
         peekCachedValue<NoticeListResponse>(buildCacheKey('served-notices', token, String(limit))),
 };

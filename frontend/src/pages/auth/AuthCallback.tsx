@@ -21,7 +21,7 @@ const normalizeRole = (value?: string | null): 'student' | 'faculty' | 'admin' |
 
 export default function AuthCallback() {
     const navigate = useNavigate();
-    const { setSession, finishInitializing } = useAuthStore();
+    const { setSession, finishInitializing, user } = useAuthStore();
 
     useEffect(() => {
         const handleCallback = async () => {
@@ -51,11 +51,12 @@ export default function AuthCallback() {
                 navigate('/dashboard');
             } catch (err) {
                 console.warn('Backend sync failed in callback, using session metadata:', err);
+                const existingRole = normalizeRole(user?.role);
                 setSession(session.access_token, {
                     id: session.user.id,
                     email: session.user.email || '',
                     full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Google User',
-                    role: selectedRole || (session.user.user_metadata?.role as any) || 'student',
+                    role: selectedRole || existingRole || normalizeRole(session.user.user_metadata?.role as string) || 'student',
                     academic_verified: isAcademicEmail(session.user.email || ''),
                     identity_provider: session.user.app_metadata?.provider || session.user.app_metadata?.providers?.[0] || 'email',
                 });
@@ -67,7 +68,7 @@ export default function AuthCallback() {
         };
 
         handleCallback();
-    }, [navigate, setSession, finishInitializing]);
+    }, [navigate, setSession, finishInitializing, user?.role]);
 
     return (
         <div className="min-h-screen w-full bg-black flex flex-col items-center justify-center gap-4">

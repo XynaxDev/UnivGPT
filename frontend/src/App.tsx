@@ -39,6 +39,11 @@ const DeanAppealsPage = lazyWithPreload(() => import('@/pages/dashboard/DeanAppe
 
 const academicDomain = (import.meta.env.VITE_ACADEMIC_EMAIL_DOMAIN || '').toLowerCase();
 const isAcademicEmail = (email?: string) => (email || '').trim().toLowerCase().endsWith(`@${academicDomain}`);
+const VALID_ROLES = new Set(['student', 'faculty', 'admin']);
+const normalizeRole = (value?: string | null): 'student' | 'faculty' | 'admin' | null => {
+  const role = String(value || '').trim().toLowerCase();
+  return VALID_ROLES.has(role) ? (role as 'student' | 'faculty' | 'admin') : null;
+};
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { token } = useAuthStore();
@@ -125,9 +130,9 @@ export default function App() {
       } catch (err) {
         console.warn('Session sync failed, using metadata fallback:', err);
         const fallbackRole =
-          (user?.role as any) ||
-          (session.user.user_metadata?.role as any) ||
-          window.localStorage.getItem('unigpt:pending-role') ||
+          normalizeRole(user?.role) ||
+          normalizeRole(session.user.user_metadata?.role as string) ||
+          normalizeRole(window.localStorage.getItem('unigpt:pending-role')) ||
           'student';
         setSession(session.access_token, {
           id: session.user.id,
