@@ -10,6 +10,7 @@ import uuid
 import json
 import datetime
 import httpx
+from urllib.parse import urljoin
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request, Query
 from pydantic import BaseModel
 from typing import Any, Optional
@@ -134,6 +135,82 @@ def is_network_error(exc: Exception) -> bool:
     return isinstance(exc, httpx.ConnectError) or "getaddrinfo failed" in message or "name or service not known" in message
 
 
+def build_storage_path(document_id: str, filename: str) -> str:
+    safe_name = "".join(ch if ch.isalnum() or ch in {".", "-", "_"} else "_" for ch in (filename or "document"))
+    return f"documents/{document_id}/{safe_name}"
+
+
+def upload_document_binary_to_storage(
+    supabase,
+    document_id: str,
+    filename: str,
+    file_bytes: bytes,
+    content_type: str | None,
+) -> tuple[str | None, str | None]:
+    bucket = str(settings.supabase_storage_bucket or "").strip()
+    if not bucket:
+        return None, None
+    storage_path = build_storage_path(document_id, filename)
+    try:
+        supabase.storage.from_(bucket).upload(
+            storage_path,
+            file_bytes,
+            file_options={
+                "content-type": content_type or "application/octet-stream",
+                "upsert": "true",
+            },
+        )
+        return bucket, storage_path
+    except Exception:
+        return None, None
+
+
+def remove_document_binary_from_storage(supabase, metadata: dict[str, Any] | None) -> None:
+    meta = metadata if isinstance(metadata, dict) else {}
+    bucket = str(meta.get("storage_bucket") or settings.supabase_storage_bucket or "").strip()
+    storage_path = str(meta.get("storage_path") or "").strip()
+    if not bucket or not storage_path:
+        return
+    try:
+        supabase.storage.from_(bucket).remove([storage_path])
+    except Exception:
+        pass
+
+
+def create_storage_signed_url(supabase, metadata: dict[str, Any] | None) -> str | None:
+    meta = metadata if isinstance(metadata, dict) else {}
+    bucket = str(meta.get("storage_bucket") or settings.supabase_storage_bucket or "").strip()
+    storage_path = str(meta.get("storage_path") or "").strip()
+    if not bucket or not storage_path:
+        return None
+    try:
+        signed = supabase.storage.from_(bucket).create_signed_url(storage_path, 60 * 60)
+        signed_url = None
+        if isinstance(signed, dict):
+            signed_url = signed.get("signedURL") or signed.get("signed_url") or signed.get("url")
+        else:
+            signed_url = getattr(signed, "signedURL", None) or getattr(signed, "signed_url", None)
+        if not signed_url:
+            public_payload = supabase.storage.from_(bucket).get_public_url(storage_path)
+            if isinstance(public_payload, dict):
+                signed_url = (
+                    public_payload.get("publicURL")
+                    or public_payload.get("public_url")
+                    or public_payload.get("url")
+                )
+            else:
+                signed_url = (
+                    getattr(public_payload, "publicURL", None)
+                    or getattr(public_payload, "public_url", None)
+                    or getattr(public_payload, "url", None)
+                )
+        if not signed_url:
+            return None
+        return signed_url if str(signed_url).startswith("http") else urljoin(f"{settings.supabase_url}/", str(signed_url).lstrip("/"))
+    except Exception:
+        return None
+
+
 def ensure_supabase_available() -> None:
     if settings.supabase_offline_mode:
         raise HTTPException(
@@ -180,7 +257,7 @@ async def preview_document(
     try:
         res = (
             supabase.table("documents")
-            .select("id,filename,doc_type,department,course,tags,uploaded_at,updated_at,metadata")
+            .select("id,filename,doc_type,department,course,tags,uploaded_at,updated_at,metadata,mime_type,file_size")
             .eq("id", document_id)
             .limit(1)
             .execute()
@@ -206,6 +283,8 @@ async def preview_document(
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     uploaded_at = row.get("uploaded_at") or row.get("updated_at")
     parsed_uploaded = parse_document_timestamp(uploaded_at)
+    mime_type = str(row.get("mime_type") or metadata.get("mime_type") or "").strip() or None
+    file_url = create_storage_signed_url(supabase, metadata)
     preview_limit = 8
     chunk_count = int(metadata.get("chunk_count") or 0)
 
@@ -256,6 +335,9 @@ async def preview_document(
         "course": row.get("course"),
         "tags": row.get("tags") or [],
         "uploaded_at": parsed_uploaded.isoformat() if parsed_uploaded else (str(uploaded_at) if uploaded_at else None),
+        "mime_type": mime_type,
+        "file_url": file_url,
+        "file_size": row.get("file_size"),
         "chunk_count": chunk_count,
         "chunks": snippet_chunks,
         "has_preview": len(snippet_chunks) > 0,
@@ -556,9 +638,23 @@ async def upload_document(
         "tags": derived_tags,
         "visibility": True,
     }
+    storage_bucket, storage_path = upload_document_binary_to_storage(
+        supabase,
+        document_id=document_id,
+        filename=filename,
+        file_bytes=file_bytes,
+        content_type=file.content_type,
+    )
+
+    storage_metadata = {
+        "storage_bucket": storage_bucket,
+        "storage_path": storage_path,
+        "mime_type": file.content_type or "",
+    }
+
     extended_payload = {
         **base_payload,
-        "metadata": {**parsed_metadata, "route_targets": route_targets},
+        "metadata": {**parsed_metadata, **storage_metadata, "route_targets": route_targets},
         "file_size": len(file_bytes),
         "mime_type": file.content_type or "",
     }
@@ -623,6 +719,7 @@ async def upload_document(
                     "embedding_count": processing_result.get("embedding_count", 0),
                     "text_length": processing_result.get("text_length", 0),
                     "route_targets": processing_result.get("route_targets", route_targets),
+                    **storage_metadata,
                 },
                 "updated_at": utc_now_iso(),
             }
@@ -816,6 +913,7 @@ async def delete_document(
             )
 
     try:
+        remove_document_binary_from_storage(supabase, doc.get("metadata"))
         supabase.table("documents").delete().eq("id", document_id).execute()
     except Exception as exc:
         if is_network_error(exc):
