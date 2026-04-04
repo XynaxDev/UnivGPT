@@ -10,8 +10,10 @@ import uuid
 import json
 import datetime
 import httpx
+from mimetypes import guess_type
 from urllib.parse import urljoin
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File, Form, Request, Query
+from fastapi.responses import Response
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -211,6 +213,40 @@ def create_storage_signed_url(supabase, metadata: dict[str, Any] | None) -> str 
         return None
 
 
+def resolve_document_row_for_user(
+    supabase,
+    document_id: str,
+    user: AuthenticatedUser,
+) -> dict[str, Any]:
+    allowed_types = get_allowed_doc_types(user.role)
+    try:
+        res = (
+            supabase.table("documents")
+            .select("id,filename,doc_type,department,course,tags,uploaded_at,updated_at,metadata,mime_type,file_size")
+            .eq("id", document_id)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        if is_network_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail="Cannot reach Supabase. Check SUPABASE_URL, DNS/VPN, or your internet connection.",
+            )
+        raise
+
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    row = res.data[0]
+    doc_type = str(row.get("doc_type") or "").strip().lower()
+    if doc_type not in {str(t).strip().lower() for t in allowed_types}:
+        raise HTTPException(status_code=403, detail="You are not allowed to preview this document.")
+    if not is_document_relevant_for_user(row, user):
+        raise HTTPException(status_code=403, detail="You are not allowed to preview this document.")
+    return row
+
+
 def ensure_supabase_available() -> None:
     if settings.supabase_offline_mode:
         raise HTTPException(
@@ -238,9 +274,56 @@ def notice_doc_types_for_target(target: str) -> list[str]:
     return [DocType.STUDENT.value, DocType.FACULTY.value]
 
 
+@router.get("/documents/{document_id}/file")
+async def serve_document_file(
+    document_id: str,
+    request: Request,
+    download: bool = Query(False),
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    ensure_supabase_available()
+    try:
+        uuid.UUID(str(document_id))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid document id for preview.")
+
+    supabase = get_supabase_admin()
+    row = resolve_document_row_for_user(supabase, document_id, user)
+    metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
+    source_url = create_storage_signed_url(supabase, metadata)
+    if not source_url:
+        raise HTTPException(status_code=404, detail="Original file is not available for this document.")
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0, follow_redirects=True) as client:
+            file_response = await client.get(source_url)
+            file_response.raise_for_status()
+    except Exception as exc:
+        if is_network_error(exc):
+            raise HTTPException(
+                status_code=503,
+                detail="Cannot reach document storage right now. Please retry in a moment.",
+            )
+        raise HTTPException(status_code=502, detail="Unable to fetch the original document file.")
+
+    filename = str(row.get("filename") or "document")
+    mime_type = str(row.get("mime_type") or metadata.get("mime_type") or "").strip() or None
+    resolved_type = mime_type or guess_type(filename)[0] or "application/octet-stream"
+    disposition = "attachment" if download else "inline"
+    return Response(
+        content=file_response.content,
+        media_type=resolved_type,
+        headers={
+            "Content-Disposition": f'{disposition}; filename="{filename}"',
+            "Cache-Control": "private, max-age=900",
+        },
+    )
+
+
 @router.get("/documents/{document_id}/preview")
 async def preview_document(
     document_id: str,
+    request: Request,
     user: AuthenticatedUser = Depends(get_current_user),
 ):
     ensure_supabase_available()
@@ -251,40 +334,17 @@ async def preview_document(
             status_code=400,
             detail="Invalid document id for preview.",
         )
-    allowed_types = get_allowed_doc_types(user.role)
     supabase = get_supabase_admin()
-
-    try:
-        res = (
-            supabase.table("documents")
-            .select("id,filename,doc_type,department,course,tags,uploaded_at,updated_at,metadata,mime_type,file_size")
-            .eq("id", document_id)
-            .limit(1)
-            .execute()
-        )
-    except Exception as exc:
-        if is_network_error(exc):
-            raise HTTPException(
-                status_code=503,
-                detail="Cannot reach Supabase. Check SUPABASE_URL, DNS/VPN, or your internet connection.",
-            )
-        raise
-
-    if not res.data:
-        raise HTTPException(status_code=404, detail="Document not found")
-
-    row = res.data[0]
+    row = resolve_document_row_for_user(supabase, document_id, user)
     doc_type = str(row.get("doc_type") or "").strip().lower()
-    if doc_type not in {str(t).strip().lower() for t in allowed_types}:
-        raise HTTPException(status_code=403, detail="You are not allowed to preview this document.")
-    if not is_document_relevant_for_user(row, user):
-        raise HTTPException(status_code=403, detail="You are not allowed to preview this document.")
 
     metadata = row.get("metadata") if isinstance(row.get("metadata"), dict) else {}
     uploaded_at = row.get("uploaded_at") or row.get("updated_at")
     parsed_uploaded = parse_document_timestamp(uploaded_at)
     mime_type = str(row.get("mime_type") or metadata.get("mime_type") or "").strip() or None
     file_url = create_storage_signed_url(supabase, metadata)
+    viewer_url = str(request.url_for("serve_document_file", document_id=document_id))
+    download_url = f"{viewer_url}?download=1"
     preview_limit = 8
     chunk_count = int(metadata.get("chunk_count") or 0)
 
@@ -337,6 +397,8 @@ async def preview_document(
         "uploaded_at": parsed_uploaded.isoformat() if parsed_uploaded else (str(uploaded_at) if uploaded_at else None),
         "mime_type": mime_type,
         "file_url": file_url,
+        "viewer_url": viewer_url,
+        "download_url": download_url,
         "file_size": row.get("file_size"),
         "chunk_count": chunk_count,
         "chunks": snippet_chunks,
