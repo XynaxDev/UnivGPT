@@ -557,8 +557,8 @@ class EmailService:
                     .notice {{ background: #0b1220; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin: 16px 0; }}
                     .label {{ color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }}
                     .value {{ color: #f8fafc; font-size: 16px; font-weight: 700; }}
-                    .meta {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }}
-                    .meta-card {{ background: #0f172a; border: 1px solid #263244; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }}
+                    .meta {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; row-gap: 14px; margin-top: 14px; padding-bottom: 2px; }}
+                    .meta-card {{ display: block; box-sizing: border-box; background: #0f172a; border: 1px solid #263244; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }}
                     .attachment {{ margin-top: 14px; border: 1px dashed #fb923c; background: rgba(249,115,22,0.08); border-radius: 12px; padding: 12px 14px; color: #fdba74; }}
                     .button {{ display: inline-block; margin-top: 18px; padding: 12px 18px; border-radius: 12px; background: #f97316; color: #fff !important; text-decoration: none; font-weight: 700; }}
                     .footer {{ padding: 16px 24px; border-top: 1px solid #1f2937; color: #94a3b8; font-size: 12px; }}
