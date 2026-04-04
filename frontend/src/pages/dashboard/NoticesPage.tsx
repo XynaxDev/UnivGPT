@@ -49,7 +49,10 @@ export default function NoticesPage() {
     const [items, setItems] = useState<ServedNoticeItem[]>([]);
     const [attachmentOptions, setAttachmentOptions] = useState<DocumentResponse[]>([]);
     const [previewDoc, setPreviewDoc] = useState<DocumentPreviewResponse | null>(null);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+    const [previewPendingTitle, setPreviewPendingTitle] = useState('');
+    const [previewPendingSubtitle, setPreviewPendingSubtitle] = useState('');
 
     const targetOptions = useMemo(
         () =>
@@ -105,7 +108,6 @@ export default function NoticesPage() {
             });
             setItems(sorted);
             setIsLoading(false);
-            loadNotices(false, true);
             return;
         }
         loadNotices();
@@ -118,6 +120,7 @@ export default function NoticesPage() {
             const cachedDocs = documentsApi.peekList(token, { page: 1, per_page: 120 });
             if (active && cachedDocs?.documents?.length) {
                 setAttachmentOptions((cachedDocs.documents || []).slice(0, 120));
+                return;
             }
             try {
                 const response = await documentsApi.list(token, { page: 1, per_page: 120 });
@@ -134,18 +137,23 @@ export default function NoticesPage() {
         };
     }, [token, canServe]);
 
-    const previewDocument = useCallback(async (documentId: string) => {
+    const previewDocument = useCallback(async (documentId: string, pending?: { title?: string; subtitle?: string }) => {
         if (!token || isPreviewLoading || !isUuidLike(documentId)) {
             if (documentId && !isUuidLike(documentId)) {
                 showToast('This notice is not linked to a previewable document.', 'error');
             }
             return;
         }
+        setPreviewPendingTitle(pending?.title || 'Loading notice...');
+        setPreviewPendingSubtitle(pending?.subtitle || 'Preparing preview...');
+        setPreviewDoc(null);
+        setIsPreviewOpen(true);
         setIsPreviewLoading(true);
         try {
             const res = await documentsApi.preview(token, documentId);
             setPreviewDoc(res);
         } catch (err: any) {
+            setIsPreviewOpen(false);
             showToast(err?.message || 'Preview is not available for this notice yet.', 'error');
         } finally {
             setIsPreviewLoading(false);
@@ -371,7 +379,12 @@ export default function NoticesPage() {
                                             <div className="flex flex-wrap justify-end gap-2">
                                                 <button
                                                     type="button"
-                                                    onClick={() => previewDocument(item.id)}
+                                                    onClick={() =>
+                                                        previewDocument(item.id, {
+                                                            title: item.title,
+                                                            subtitle: `${item.course || 'General'} · ${item.department || 'No department'} · ${item.doc_type}`,
+                                                        })
+                                                    }
                                                     className="h-8 px-3 rounded-lg border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.07] text-[11px] font-semibold text-orange-300 hover:text-orange-200 transition-colors inline-flex items-center gap-1.5"
                                                 >
                                                     <Eye className="w-3.5 h-3.5" />
@@ -380,7 +393,12 @@ export default function NoticesPage() {
                                                 {item.attachment_document_id && (
                                                     <button
                                                         type="button"
-                                                        onClick={() => previewDocument(item.attachment_document_id as string)}
+                                                        onClick={() =>
+                                                            previewDocument(item.attachment_document_id as string, {
+                                                                title: item.attachment_filename || 'Attachment',
+                                                                subtitle: `${item.course || 'General'} · ${item.department || 'No department'} · attachment`,
+                                                            })
+                                                        }
                                                         className="h-8 px-3 rounded-lg border border-cyan-500/30 bg-cyan-500/10 hover:bg-cyan-500/15 text-[11px] font-semibold text-cyan-200 transition-colors"
                                                     >
                                                         View Attachment
@@ -396,9 +414,17 @@ export default function NoticesPage() {
                 </div>
 
                 <DocumentPreviewModal
+                    isOpen={isPreviewOpen}
                     previewDoc={previewDoc}
                     isLoading={isPreviewLoading}
-                    onClose={() => setPreviewDoc(null)}
+                    pendingTitle={previewPendingTitle}
+                    pendingSubtitle={previewPendingSubtitle}
+                    onClose={() => {
+                        setIsPreviewOpen(false);
+                        setPreviewDoc(null);
+                        setPreviewPendingTitle('');
+                        setPreviewPendingSubtitle('');
+                    }}
                     onOpenAttachment={
                         previewDoc?.attachment_document_id
                             ? () => previewDocument(previewDoc.attachment_document_id as string)

@@ -48,8 +48,11 @@ export default function NotificationsPage() {
     const [isPaginating, setIsPaginating] = useState(false);
     const [focusedNotificationId, setFocusedNotificationId] = useState<string | null>(null);
     const [previewDoc, setPreviewDoc] = useState<DocumentPreviewResponse | null>(null);
+    const [isPreviewOpen, setIsPreviewOpen] = useState(false);
     const [isPreviewLoading, setIsPreviewLoading] = useState(false);
     const [isAttachmentLoading, setIsAttachmentLoading] = useState(false);
+    const [previewPendingTitle, setPreviewPendingTitle] = useState('');
+    const [previewPendingSubtitle, setPreviewPendingSubtitle] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
     const hasLoadedOnceRef = useRef(false);
     const ITEMS_PER_PAGE = 8;
@@ -87,6 +90,10 @@ export default function NotificationsPage() {
     }, [token, showToast, user?.role]);
 
     useEffect(() => {
+        if (cachedNotifications) {
+            hasLoadedOnceRef.current = true;
+            return;
+        }
         loadNotifications();
     }, [loadNotifications]);
 
@@ -169,12 +176,16 @@ export default function NotificationsPage() {
             openNotificationInChat(item);
             return;
         }
+        setPreviewPendingTitle(item.title);
+        setPreviewPendingSubtitle(`${item.course || 'General'} · ${item.department || 'No department'} · notification`);
+        setIsPreviewOpen(true);
         setPreviewDoc(null);
         setIsPreviewLoading(true);
         try {
             const doc = await documentsApi.preview(token, item.id);
             setPreviewDoc(doc);
         } catch {
+            setIsPreviewOpen(false);
             openNotificationInChat(item);
         } finally {
             setIsPreviewLoading(false);
@@ -311,9 +322,17 @@ export default function NotificationsPage() {
                 )}
 
                 <DocumentPreviewModal
+                    isOpen={isPreviewOpen}
                     previewDoc={previewDoc}
                     isLoading={isPreviewLoading}
-                    onClose={() => setPreviewDoc(null)}
+                    pendingTitle={previewPendingTitle}
+                    pendingSubtitle={previewPendingSubtitle}
+                    onClose={() => {
+                        setIsPreviewOpen(false);
+                        setPreviewDoc(null);
+                        setPreviewPendingTitle('');
+                        setPreviewPendingSubtitle('');
+                    }}
                     isAttachmentLoading={isAttachmentLoading}
                     onOpenAttachment={
                         previewDoc?.attachment_document_id
