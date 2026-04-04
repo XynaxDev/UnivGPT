@@ -4,6 +4,7 @@
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from app.config import settings
 import logging
 import html
@@ -14,6 +15,18 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
+    @staticmethod
+    def _build_attachment_part(
+        attachment_bytes: bytes | None,
+        attachment_filename: str | None,
+        mime_type: str | None = None,
+    ) -> MIMEApplication | None:
+        if not attachment_bytes or not attachment_filename:
+            return None
+        part = MIMEApplication(attachment_bytes, _subtype=(mime_type or "application/octet-stream").split("/")[-1])
+        part.add_header("Content-Disposition", "attachment", filename=attachment_filename)
+        return part
+
     @staticmethod
     def _format_datetime_human(raw: Optional[str], fallback: str = "Not available") -> str:
         if not raw:
@@ -417,13 +430,14 @@ class EmailService:
                     .content {{ padding: 24px; color: #e5e7eb; line-height: 1.6; }}
                     .message {{ background: linear-gradient(135deg, #0b1220, #131e33); border: 1px solid #334155; border-radius: 10px; padding: 14px; margin: 14px 0 18px; }}
                     .stats {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }}
-                    .stat {{ background: #0b1220; border: 1px solid #334155; border-radius: 10px; padding: 12px 14px; box-sizing: border-box; min-height: 84px; }}
+                    .stat {{ background: #0b1220; border: 1px solid #334155; border-radius: 10px; padding: 12px 14px; box-sizing: border-box; min-height: 84px; margin-bottom: 12px; }}
                     .label {{ color: #94a3b8; font-size: 12px; line-height: 1.25; margin-bottom: 6px; }}
                     .value {{ color: #f8fafc; font-size: 18px; font-weight: 700; line-height: 1.25; margin-top: 0; }}
                     .value-sm {{ color: #f8fafc; font-size: 13px; font-weight: 600; line-height: 1.4; margin-top: 0; word-break: break-word; }}
                     .footer {{ padding: 14px 24px; color: #94a3b8; font-size: 12px; border-top: 1px solid #1f2937; }}
                     @media (max-width: 560px) {{
                         .stats {{ grid-template-columns: 1fr; }}
+                        .stat {{ margin-bottom: 12px; }}
                     }}
                 </style>
             </head>
@@ -476,6 +490,147 @@ class EmailService:
             return True
         except Exception as exc:
             logger.error("Failed to send user activity notice email to %s: %s", receiver_email, exc)
+            return False
+
+    @staticmethod
+    def send_served_notice_email(
+        receiver_email: str,
+        user_name: str,
+        subject: str,
+        message: str,
+        served_by: str,
+        served_at: str | None = None,
+        course: str | None = None,
+        department: str | None = None,
+        attachment_filename: str | None = None,
+        attachment_bytes: bytes | None = None,
+        attachment_mime_type: str | None = None,
+        app_link: str | None = None,
+    ) -> bool:
+        """Send a served notice email and optionally include the selected attachment."""
+        try:
+            sender_email, smtp_password = EmailService._resolve_sender()
+            safe_name = html.escape(user_name or "User")
+            safe_subject = html.escape(subject or "New Notice")
+            safe_message = html.escape((message or "").strip() or "A new notice was shared with you.")
+            safe_sender = html.escape(served_by or "UnivGPT Administration")
+            safe_course = html.escape((course or "").strip())
+            safe_department = html.escape((department or "").strip())
+            served_at_label = EmailService._format_datetime_human(served_at, fallback="Now")
+            safe_app_link = html.escape(app_link or "")
+            safe_attachment_name = html.escape(attachment_filename or "")
+
+            scope_line = "General notice"
+            if safe_course and safe_department:
+                scope_line = f"{safe_course} / {safe_department}"
+            elif safe_course:
+                scope_line = safe_course
+            elif safe_department:
+                scope_line = safe_department
+
+            text_content = (
+                f"Hello {user_name},\n\n"
+                f"You have a new notice from UnivGPT.\n\n"
+                f"Title: {subject}\n"
+                f"Message: {message}\n"
+                f"Scope: {scope_line}\n"
+                f"Sent by: {served_by}\n"
+                f"Sent at: {served_at_label}\n"
+            )
+            if attachment_filename:
+                text_content += f"Attachment: {attachment_filename}\n"
+            if app_link:
+                text_content += f"\nOpen in app: {app_link}\n"
+            text_content += "\nRegards,\nUnivGPT"
+
+            html_content = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <style>
+                    body {{ font-family: 'Segoe UI', Tahoma, sans-serif; background-color: #0b0b0c; margin: 0; padding: 0; }}
+                    .container {{ max-width: 680px; margin: 24px auto; background: #111827; border: 1px solid #1f2937; border-radius: 14px; overflow: hidden; }}
+                    .header {{ background: linear-gradient(135deg, #1f1107, #15111c 55%, #0b1220); color: #ffffff; padding: 24px; }}
+                    .eyebrow {{ display: inline-block; font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: #fdba74; font-weight: 700; margin-bottom: 10px; }}
+                    .title {{ font-size: 28px; font-weight: 800; margin: 0; }}
+                    .content {{ padding: 24px; color: #e5e7eb; line-height: 1.65; }}
+                    .notice {{ background: #0b1220; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin: 16px 0; }}
+                    .label {{ color: #94a3b8; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; }}
+                    .value {{ color: #f8fafc; font-size: 16px; font-weight: 700; }}
+                    .meta {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }}
+                    .meta-card {{ background: #0f172a; border: 1px solid #263244; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }}
+                    .attachment {{ margin-top: 14px; border: 1px dashed #fb923c; background: rgba(249,115,22,0.08); border-radius: 12px; padding: 12px 14px; color: #fdba74; }}
+                    .button {{ display: inline-block; margin-top: 18px; padding: 12px 18px; border-radius: 12px; background: #f97316; color: #fff !important; text-decoration: none; font-weight: 700; }}
+                    .footer {{ padding: 16px 24px; border-top: 1px solid #1f2937; color: #94a3b8; font-size: 12px; }}
+                    @media (max-width: 560px) {{
+                        .meta {{ grid-template-columns: 1fr; }}
+                        .meta-card {{ margin-bottom: 12px; }}
+                    }}
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="header">
+                        <div class="eyebrow">Notice Update</div>
+                        <h1 class="title">{safe_subject}</h1>
+                    </div>
+                    <div class="content">
+                        <p>Hello {safe_name},</p>
+                        <p>A new notice was shared with your UnivGPT workspace.</p>
+                        <div class="notice">{safe_message}</div>
+                        <div class="meta">
+                            <div class="meta-card">
+                                <div class="label">Scope</div>
+                                <div class="value">{html.escape(scope_line)}</div>
+                            </div>
+                            <div class="meta-card">
+                                <div class="label">Sent By</div>
+                                <div class="value">{safe_sender}</div>
+                            </div>
+                            <div class="meta-card">
+                                <div class="label">Sent At</div>
+                                <div class="value">{html.escape(served_at_label)}</div>
+                            </div>
+                            <div class="meta-card">
+                                <div class="label">Delivery</div>
+                                <div class="value">Email + App Notice</div>
+                            </div>
+                        </div>
+                        {f'<div class="attachment"><strong>Attachment:</strong> {safe_attachment_name}</div>' if attachment_filename else ''}
+                        {f'<a class="button" href="{safe_app_link}">Open Notices In UnivGPT</a>' if app_link else ''}
+                    </div>
+                    <div class="footer">
+                        You are receiving this because the notice matches your role, department, or course scope.
+                    </div>
+                </div>
+            </body>
+            </html>
+            """
+
+            msg = MIMEMultipart("mixed")
+            msg["Subject"] = subject or "New UnivGPT Notice"
+            msg["From"] = f"{settings.smtp_from_name} <{sender_email}>"
+            msg["To"] = receiver_email
+            msg["Reply-To"] = sender_email
+
+            alternative = MIMEMultipart("alternative")
+            alternative.attach(MIMEText(text_content, "plain"))
+            alternative.attach(MIMEText(html_content, "html"))
+            msg.attach(alternative)
+
+            attachment_part = EmailService._build_attachment_part(
+                attachment_bytes=attachment_bytes,
+                attachment_filename=attachment_filename,
+                mime_type=attachment_mime_type,
+            )
+            if attachment_part is not None:
+                msg.attach(attachment_part)
+
+            EmailService._deliver_message(msg, smtp_password)
+            logger.info("Served notice email sent to %s", receiver_email)
+            return True
+        except Exception as exc:
+            logger.error("Failed to send served notice email to %s: %s", receiver_email, exc)
             return False
 
 
