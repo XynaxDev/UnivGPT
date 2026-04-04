@@ -4,9 +4,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileText, X, Paperclip, Loader2, ExternalLink, Download, Share2 } from 'lucide-react';
+import { FileText, X, Paperclip, ExternalLink, Download, Share2 } from 'lucide-react';
 import { type DocumentPreviewResponse } from '@/lib/api';
-import { Skeleton } from '@/components/ui/skeleton';
 
 function buildDocumentBody(previewDoc: DocumentPreviewResponse) {
     if (previewDoc.notice_message?.trim()) {
@@ -42,8 +41,11 @@ export function DocumentPreviewModal({
     pendingTitle?: string;
     pendingSubtitle?: string;
 }) {
-    const [isFrameLoading, setIsFrameLoading] = useState(false);
+    const [isViewerLoading, setIsViewerLoading] = useState(false);
     const [shareState, setShareState] = useState<'idle' | 'copied' | 'shared'>('idle');
+
+    const viewerUrl = previewDoc?.viewer_url || previewDoc?.file_url || null;
+    const downloadUrl = previewDoc?.download_url || previewDoc?.file_url || null;
 
     const title = previewDoc?.notice_title || previewDoc?.filename || pendingTitle || 'Loading document...';
     const subtitle = previewDoc
@@ -53,30 +55,41 @@ export function DocumentPreviewModal({
     const isPdfLike = useMemo(() => {
         const mime = String(previewDoc?.mime_type || '').toLowerCase();
         const filename = String(previewDoc?.filename || '').toLowerCase();
-        return Boolean(previewDoc?.file_url) && (mime.includes('pdf') || filename.endsWith('.pdf'));
-    }, [previewDoc?.file_url, previewDoc?.mime_type, previewDoc?.filename]);
+        return Boolean(viewerUrl) && (mime.includes('pdf') || filename.endsWith('.pdf'));
+    }, [viewerUrl, previewDoc?.mime_type, previewDoc?.filename]);
+
+    const isImageLike = useMemo(() => {
+        const mime = String(previewDoc?.mime_type || '').toLowerCase();
+        const filename = String(previewDoc?.filename || '').toLowerCase();
+        return Boolean(viewerUrl) && (
+            mime.startsWith('image/') ||
+            ['.png', '.jpg', '.jpeg', '.webp', '.gif'].some((ext) => filename.endsWith(ext))
+        );
+    }, [viewerUrl, previewDoc?.mime_type, previewDoc?.filename]);
+
+    const supportsEmbeddedViewer = Boolean(viewerUrl) && !isImageLike;
 
     useEffect(() => {
         if (!isOpen) {
-            setIsFrameLoading(false);
+            setIsViewerLoading(false);
             setShareState('idle');
             return;
         }
-        setIsFrameLoading(Boolean(previewDoc?.file_url));
-    }, [isOpen, previewDoc?.file_url]);
+        setIsViewerLoading(Boolean(viewerUrl));
+    }, [isOpen, viewerUrl]);
 
     const handleShare = async () => {
-        if (!previewDoc?.file_url) return;
+        if (!viewerUrl) return;
         try {
             if (navigator.share) {
                 await navigator.share({
                     title,
                     text: subtitle,
-                    url: previewDoc.file_url,
+                    url: viewerUrl,
                 });
                 setShareState('shared');
             } else if (navigator.clipboard?.writeText) {
-                await navigator.clipboard.writeText(previewDoc.file_url);
+                await navigator.clipboard.writeText(viewerUrl);
                 setShareState('copied');
             }
             window.setTimeout(() => setShareState('idle'), 1800);
@@ -94,9 +107,9 @@ export function DocumentPreviewModal({
         .filter(Boolean);
 
     const modalContent = (
-        <div className="fixed inset-0 z-[180] bg-black/92 backdrop-blur-xl flex items-start sm:items-center justify-center p-3 sm:p-6 overflow-y-auto">
-            <div className="w-full max-w-6xl my-auto max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-3rem)] rounded-[28px] border border-white/[0.12] bg-[#0b0c10] shadow-[0_24px_80px_rgba(0,0,0,0.7)] overflow-hidden flex flex-col">
-                <div className="px-5 py-4 border-b border-white/[0.08] flex items-start justify-between gap-3">
+        <div className="fixed inset-0 z-[180] bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-5 overflow-hidden">
+            <div className="w-full max-w-6xl max-h-[calc(100vh-1.5rem)] sm:max-h-[calc(100vh-2.5rem)] rounded-[28px] border border-white/[0.12] bg-[#0b0c10] shadow-[0_24px_80px_rgba(0,0,0,0.7)] overflow-hidden flex flex-col">
+                <div className="px-5 py-4 border-b border-white/[0.08] flex items-start justify-between gap-3 sticky top-0 z-20 bg-[#0b0c10]/95 backdrop-blur-xl">
                     <div className="min-w-0">
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.08] bg-white/[0.03] px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-400 mb-2">
                             <FileText className="w-3.5 h-3.5 text-orange-400" />
@@ -117,61 +130,46 @@ export function DocumentPreviewModal({
 
                 <div className="px-4 py-4 bg-[#090a0d] overflow-y-auto">
                     {isLoading ? (
-                        <div className="rounded-[22px] border border-white/[0.08] bg-[#111214] min-h-[72vh] flex flex-col items-center justify-center gap-5">
-                            <div className="relative w-20 h-20">
+                        <div className="rounded-[22px] border border-white/[0.08] bg-[#111214] min-h-[72vh] flex flex-col items-center justify-center gap-3">
+                            <div className="relative w-9 h-9">
                                 <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-                                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-emerald-400 border-r-cyan-400 animate-spin" />
-                                <div className="absolute inset-[9px] rounded-full border border-cyan-400/15 bg-cyan-500/5" />
-                                <div className="absolute inset-[18px] rounded-full border border-emerald-400/20 bg-emerald-500/10 flex items-center justify-center">
-                                    <Loader2 className="w-6 h-6 animate-spin text-emerald-300" />
-                                </div>
+                                <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-orange-400 animate-spin" />
                             </div>
-                            <div className="text-center">
-                                <p className="text-sm font-semibold text-white">Loading document preview...</p>
-                                <p className="text-xs text-zinc-500 mt-1">Preparing viewer, metadata, and original file stream.</p>
-                            </div>
-                            <div className="w-full max-w-3xl space-y-3 px-4">
-                                <Skeleton className="h-12 w-full rounded-2xl" />
-                                <Skeleton className="h-[54vh] w-full rounded-[22px]" />
-                            </div>
+                            <p className="text-sm font-semibold text-white">Loading document preview...</p>
                         </div>
-                    ) : isPdfLike && previewDoc?.file_url ? (
+                    ) : supportsEmbeddedViewer && viewerUrl ? (
                         <div className="relative rounded-[22px] border border-white/[0.08] bg-[#111214] p-3">
-                            {isFrameLoading && (
-                                <div className="absolute inset-3 z-10 rounded-[18px] bg-[#0f1116]/92 backdrop-blur-sm flex flex-col items-center justify-center gap-4">
-                                    <div className="relative w-16 h-16">
+                            {isViewerLoading && (
+                                <div className="absolute inset-3 z-10 rounded-[18px] bg-[#0f1116]/92 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                                    <div className="relative w-9 h-9">
                                         <div className="absolute inset-0 rounded-full border-2 border-white/10" />
-                                        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-orange-400 border-r-emerald-400 animate-spin" />
-                                        <div className="absolute inset-[14px] rounded-full border border-emerald-500/20 bg-emerald-500/10 flex items-center justify-center">
-                                            <Loader2 className="w-5 h-5 animate-spin text-emerald-400" />
-                                        </div>
+                                        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-orange-400 animate-spin" />
                                     </div>
-                                    <div className="text-center">
-                                        <p className="text-sm font-semibold text-white">Opening PDF viewer...</p>
-                                        <p className="text-xs text-zinc-500 mt-1">Rendering the original uploaded document.</p>
-                                    </div>
+                                    <p className="text-sm font-semibold text-white">
+                                        {isPdfLike ? 'Opening PDF viewer...' : 'Opening document viewer...'}
+                                    </p>
                                 </div>
                             )}
                             <div className="flex flex-wrap items-center justify-end gap-2 pb-3">
                                 <button
                                     type="button"
                                     onClick={handleShare}
-                                    disabled={!previewDoc.file_url}
+                                    disabled={!viewerUrl}
                                     className="h-9 px-3 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.08] disabled:opacity-40 text-xs text-white inline-flex items-center gap-1.5"
                                 >
                                     <Share2 className="w-3.5 h-3.5" />
                                     {shareState === 'copied' ? 'Link Copied' : shareState === 'shared' ? 'Shared' : 'Share'}
                                 </button>
                                 <a
-                                    href={previewDoc.file_url}
-                                    download={previewDoc.filename || 'document'}
+                                    href={downloadUrl || viewerUrl || '#'}
+                                    download={previewDoc?.filename || 'document'}
                                     className="h-9 px-3 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.08] text-xs text-white inline-flex items-center gap-1.5"
                                 >
                                     <Download className="w-3.5 h-3.5" />
                                     Download
                                 </a>
                                 <a
-                                    href={previewDoc.file_url}
+                                    href={viewerUrl}
                                     target="_blank"
                                     rel="noreferrer"
                                     className="h-9 px-3 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.08] text-xs text-white inline-flex items-center gap-1.5"
@@ -181,12 +179,56 @@ export function DocumentPreviewModal({
                                 </a>
                             </div>
                             <iframe
-                                key={previewDoc.file_url}
-                                src={`${previewDoc.file_url}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`}
+                                key={viewerUrl}
+                                src={`${viewerUrl}#toolbar=1&navpanes=1&scrollbar=1&view=FitH`}
                                 title={title}
-                                onLoad={() => setIsFrameLoading(false)}
-                                className="w-full h-[72vh] rounded-[18px] bg-white"
+                                onLoad={() => setIsViewerLoading(false)}
+                                className="w-full h-[78vh] rounded-[18px] bg-white"
                             />
+                            {!isPdfLike && (
+                                <div className="pt-3 text-[11px] text-zinc-500">
+                                    If your browser cannot render this file inline, use Download or Open In New Tab.
+                                </div>
+                            )}
+                        </div>
+                    ) : isImageLike && viewerUrl ? (
+                        <div className="relative rounded-[22px] border border-white/[0.08] bg-[#111214] p-3">
+                            {isViewerLoading && (
+                                <div className="absolute inset-3 z-10 rounded-[18px] bg-[#0f1116]/92 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                                    <div className="relative w-9 h-9">
+                                        <div className="absolute inset-0 rounded-full border-2 border-white/10" />
+                                        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-orange-400 animate-spin" />
+                                    </div>
+                                    <p className="text-sm font-semibold text-white">Loading document asset...</p>
+                                </div>
+                            )}
+                            <div className="flex flex-wrap items-center justify-end gap-2 pb-3">
+                                <button
+                                    type="button"
+                                    onClick={handleShare}
+                                    disabled={!viewerUrl}
+                                    className="h-9 px-3 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.08] disabled:opacity-40 text-xs text-white inline-flex items-center gap-1.5"
+                                >
+                                    <Share2 className="w-3.5 h-3.5" />
+                                    {shareState === 'copied' ? 'Link Copied' : shareState === 'shared' ? 'Shared' : 'Share'}
+                                </button>
+                                <a
+                                    href={downloadUrl || viewerUrl || '#'}
+                                    download={previewDoc?.filename || 'document'}
+                                    className="h-9 px-3 rounded-xl border border-white/[0.12] bg-white/[0.03] hover:bg-white/[0.08] text-xs text-white inline-flex items-center gap-1.5"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
+                                    Download
+                                </a>
+                            </div>
+                            <div className="rounded-[18px] overflow-hidden bg-black/50 min-h-[60vh] flex items-center justify-center">
+                                <img
+                                    src={viewerUrl}
+                                    alt={title}
+                                    className="max-h-[72vh] w-auto object-contain"
+                                    onLoad={() => setIsViewerLoading(false)}
+                                />
+                            </div>
                         </div>
                     ) : (
                         <div className="max-h-[78vh] overflow-y-auto rounded-[22px] border border-white/[0.08] bg-[#111214] p-4">
@@ -214,7 +256,7 @@ export function DocumentPreviewModal({
                                     </div>
                                 )}
 
-                                {previewDoc?.file_url && (
+                                {viewerUrl && (
                                     <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
                                         <button
                                             type="button"
@@ -225,15 +267,15 @@ export function DocumentPreviewModal({
                                             {shareState === 'copied' ? 'Link Copied' : shareState === 'shared' ? 'Shared' : 'Share'}
                                         </button>
                                         <a
-                                            href={previewDoc.file_url}
-                                            download={previewDoc.filename || 'document'}
+                                            href={downloadUrl || viewerUrl || '#'}
+                                            download={previewDoc?.filename || 'document'}
                                             className="h-9 px-3 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-xs text-zinc-900 inline-flex items-center gap-1.5"
                                         >
                                             <Download className="w-3.5 h-3.5" />
                                             Download
                                         </a>
                                         <a
-                                            href={previewDoc.file_url}
+                                            href={viewerUrl}
                                             target="_blank"
                                             rel="noreferrer"
                                             className="h-9 px-3 rounded-xl border border-zinc-300 bg-white hover:bg-zinc-50 text-xs text-zinc-900 inline-flex items-center gap-1.5"
