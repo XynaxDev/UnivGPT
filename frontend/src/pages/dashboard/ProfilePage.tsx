@@ -105,12 +105,13 @@ function ProviderBadge({ provider }: { provider?: string | null }) {
 const ProfilePage = () => {
     const { user, token, updateUser } = useAuthStore();
     const { showToast } = useToastStore();
-    const role = user?.role || 'student';
+    const cachedExport = token ? authApi.peekExportUserData(token) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 120 }) : null;
+    const suspiciousDocsCache = Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
+    const role = user?.role || cachedExport?.profile?.role || 'student';
     const isStudent = role === 'student';
     const isFaculty = role === 'faculty';
     const isAdmin = role === 'admin';
-    const cachedExport = token ? authApi.peekExportUserData(token) : null;
-    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 120 }) : null;
 
     const [isEditing, setIsEditing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -144,7 +145,7 @@ const ProfilePage = () => {
         const loadStats = async () => {
             if (!token) return;
             const needsExport = !cachedExport;
-            const needsDocs = !cachedDocs;
+            const needsDocs = !cachedDocs || suspiciousDocsCache;
 
             if (!needsExport && !needsDocs) {
                 setIsLoadingStats(false);
@@ -155,7 +156,9 @@ const ProfilePage = () => {
             try {
                 const [exportResult, docsResult] = await Promise.allSettled([
                     needsExport ? authApi.exportUserData(token) : Promise.resolve(cachedExport),
-                    needsDocs ? documentsApi.list(token, { page: 1, per_page: 120 }) : Promise.resolve(cachedDocs),
+                    needsDocs
+                        ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: suspiciousDocsCache })
+                        : Promise.resolve(cachedDocs),
                 ]);
 
                 const payload = exportResult.status === 'fulfilled' ? exportResult.value : null;
@@ -180,11 +183,11 @@ const ProfilePage = () => {
                 if (payload) setExportData(payload);
             } catch {
                 if (!alive) return;
-                if (needsDocs) {
+                if (needsDocs && !cachedDocs) {
                     setLiveDocCount(0);
                     setLiveNoticeCount(0);
                 }
-                if (needsExport) setExportData(null);
+                if (needsExport && !cachedExport) setExportData(null);
             } finally {
                 if (alive) setIsLoadingStats(false);
             }
@@ -261,7 +264,7 @@ const ProfilePage = () => {
 
     const profileRows = [
         { icon: Mail, label: 'Email', value: user?.email || 'Not set' },
-        { icon: Shield, label: 'Role', value: (user?.role || 'student').toUpperCase() },
+        { icon: Shield, label: 'Role', value: role.toUpperCase() },
         {
             icon: Calendar,
             label: 'Member Since',
@@ -315,100 +318,117 @@ const ProfilePage = () => {
                 <motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="relative rounded-3xl border border-white/[0.08] bg-gradient-to-r from-slate-900/95 via-zinc-900 to-slate-950 overflow-hidden shadow-[0_24px_60px_-30px_rgba(56,189,248,0.35)]"
+                    className="relative rounded-3xl border border-white/[0.08] bg-[linear-gradient(118deg,rgba(18,18,22,0.98),rgba(28,22,18,0.97),rgba(42,28,18,0.95))] overflow-hidden shadow-[0_24px_80px_-48px_rgba(0,0,0,0.9)]"
                 >
-                    <div className="absolute -top-20 left-8 w-64 h-64 bg-cyan-400/10 blur-[90px] rounded-full pointer-events-none" />
-                    <div className="absolute -bottom-24 right-8 w-72 h-72 bg-indigo-400/10 blur-[100px] rounded-full pointer-events-none" />
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.10),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(245,158,11,0.08),transparent_34%)] pointer-events-none" />
+                    <div className="absolute inset-x-16 top-0 h-px bg-gradient-to-r from-transparent via-orange-400/30 to-transparent pointer-events-none" />
 
-                    <div className="relative z-10 px-5 sm:px-7 py-6 flex flex-col md:flex-row md:items-end gap-4">
-                        <div className="relative group">
-                            <div className="w-24 h-24 rounded-2xl p-1 bg-gradient-to-br from-cyan-400 to-blue-500 shadow-xl">
-                                <div className="w-full h-full rounded-[14px] bg-zinc-950 border border-white/[0.08] overflow-hidden flex items-center justify-center">
-                                    {profileImage ? (
-                                        <img src={profileImage} alt="Profile" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <span className="text-3xl font-black text-cyan-300">
-                                            {user?.full_name?.charAt(0) || 'U'}
-                                        </span>
-                                    )}
+                    <div className="relative z-10 px-5 sm:px-7 py-6 flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+                        <div className="flex flex-col sm:flex-row sm:items-center gap-4 flex-1 min-w-0">
+                            <div className="relative group shrink-0">
+                                <div className="w-24 h-24 rounded-full overflow-hidden border border-white/10 bg-zinc-950 shadow-[0_18px_38px_-24px_rgba(0,0,0,0.95)]">
+                                    <div className="w-full h-full rounded-full overflow-hidden flex items-center justify-center bg-[linear-gradient(145deg,rgba(28,29,35,0.98),rgba(12,12,16,0.98))]">
+                                        {profileImage ? (
+                                            <img src={profileImage} alt="Profile" className="w-full h-full object-cover object-center scale-[1.28]" />
+                                        ) : (
+                                            <span className="text-3xl font-black text-orange-200">
+                                                {user?.full_name?.charAt(0) || 'U'}
+                                            </span>
+                                        )}
+                                    </div>
                                 </div>
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={handleImageUpload}
+                                />
                             </div>
 
-                            {isEditing && (
-                                <>
-                                    <button
-                                        onClick={() => fileInputRef.current?.click()}
-                                        className="absolute inset-0 rounded-2xl bg-black/50 border border-white/20 flex items-center justify-center text-white"
-                                    >
-                                        <Camera className="w-5 h-5" />
-                                    </button>
-                                    <input
-                                        ref={fileInputRef}
-                                        type="file"
-                                        accept="image/*"
-                                        className="hidden"
-                                        onChange={handleImageUpload}
-                                    />
-                                    {profileImage && (
-                                        <button
-                                            onClick={async () => {
-                                                updateUser({ profileImage: null, avatar_url: null } as any);
-                                                if (token) {
-                                                    try {
-                                                        await authApi.updateProfile(token, { avatar_url: null });
-                                                    } catch {
-                                                        // Keep local reset even if backend write fails.
-                                                    }
-                                                }
-                                                showToast('Profile image removed.', 'success');
-                                            }}
-                                            className="absolute -top-2 -right-2 w-7 h-7 rounded-full bg-red-500 text-white flex items-center justify-center border-2 border-zinc-950"
-                                        >
-                                            <X className="w-4 h-4" />
-                                        </button>
-                                    )}
-                                </>
-                            )}
-                        </div>
+                            <div className="flex-1 min-w-0 space-y-3">
+                                <div className="min-w-0">
+                                    <h1 className="text-xl md:text-2xl font-extrabold text-white truncate">
+                                        {user?.full_name || 'User'}
+                                    </h1>
+                                    <p className="text-xs text-zinc-500 truncate mt-1">{user?.email || 'No email'}</p>
+                                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                                        <Badge className={`text-[10px] border px-2.5 py-1 capitalize ${roleBadgeStyles[role]}`}>
+                                            {role}
+                                        </Badge>
+                                        {user?.academic_verified && (
+                                            <Badge className="text-[10px] border px-2.5 py-1 bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
+                                                Academic Verified
+                                            </Badge>
+                                        )}
+                                    </div>
+                                </div>
 
-                        <div className="flex-1 min-w-0">
-                            <h1 className="text-xl md:text-2xl font-extrabold text-white truncate">
-                                {user?.full_name || 'User'}
-                            </h1>
-                            <p className="text-xs text-zinc-500 truncate mt-1">{user?.email || 'No email'}</p>
-                            <div className="mt-3 flex flex-wrap items-center gap-2">
-                                <Badge className={`text-[10px] border px-2.5 py-1 capitalize ${roleBadgeStyles[user?.role || 'student']}`}>
-                                    {user?.role || 'student'}
-                                </Badge>
-                                {user?.academic_verified && (
-                                    <Badge className="text-[10px] border px-2.5 py-1 bg-emerald-500/15 text-emerald-300 border-emerald-500/30">
-                                        Academic Verified
-                                    </Badge>
+                                {isEditing && (
+                                    <div className="flex flex-wrap items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="h-10 px-4 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] border border-white/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                                        >
+                                            <Camera className="w-4 h-4 mr-2" />
+                                            Change Picture
+                                        </Button>
+                                        {profileImage && (
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                onClick={async () => {
+                                                    updateUser({ profileImage: null, avatar_url: null } as any);
+                                                    if (token) {
+                                                        try {
+                                                            await authApi.updateProfile(token, { avatar_url: null });
+                                                        } catch {
+                                                            // Keep local reset even if backend write fails.
+                                                        }
+                                                    }
+                                                    showToast('Profile image removed.', 'success');
+                                                }}
+                                                className="h-10 px-4 rounded-xl border-white/12 bg-white/[0.03] text-zinc-100 hover:border-white/20 hover:bg-white/[0.06]"
+                                            >
+                                                <X className="w-4 h-4 mr-2" />
+                                                Remove Picture
+                                            </Button>
+                                        )}
+                                    </div>
                                 )}
                             </div>
                         </div>
 
-                        <div className="w-full md:w-auto">
+                        <div
+                            className={`w-full lg:w-auto shrink-0 ${
+                                isEditing
+                                    ? 'lg:self-stretch lg:min-h-[8.5rem] lg:flex lg:flex-col lg:justify-end'
+                                    : 'lg:self-center'
+                            }`}
+                        >
                             {!isEditing ? (
-                                <Button
-                                    onClick={() => setIsEditing(true)}
-                                    className="h-10 px-5 rounded-xl bg-white/[0.06] hover:bg-white/[0.1] border border-white/10 text-white"
-                                >
-                                    <Edit2 className="w-4 h-4 mr-2" /> Edit Profile
-                                </Button>
+                                <div className="flex justify-start lg:justify-end items-center">
+                                    <Button
+                                        onClick={() => setIsEditing(true)}
+                                        className="h-10 px-4 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] border border-white/12 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                                    >
+                                        <Edit2 className="w-4 h-4 mr-2" /> Edit Profile
+                                    </Button>
+                                </div>
                             ) : (
-                                <div className="flex gap-2">
+                                <div className="flex flex-wrap justify-start lg:justify-end items-center gap-2">
                                     <Button
                                         onClick={handleCancel}
                                         variant="outline"
-                                        className="h-10 px-4 rounded-xl text-white border-white/20 hover:border-white/30"
+                                        className="h-10 px-4 rounded-xl text-white border-white/12 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"
                                     >
                                         Cancel
                                     </Button>
                                     <Button
                                         onClick={handleSave}
                                         disabled={isSaving}
-                                        className="h-10 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white"
+                                        className="h-10 px-4 rounded-xl bg-orange-600 hover:bg-orange-500 disabled:opacity-60 text-white shadow-[0_10px_28px_-18px_rgba(249,115,22,0.85)]"
                                     >
                                         <Save className="w-4 h-4 mr-1.5" /> {isSaving ? 'Saving...' : 'Save'}
                                     </Button>
@@ -417,13 +437,12 @@ const ProfilePage = () => {
                         </div>
                     </div>
                 </motion.div>
-
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-stretch">
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.05 }}
-                        className="space-y-5 lg:col-span-7"
+                        className="space-y-5 lg:col-span-7 h-full"
                     >
                         <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
                             <h2 className="text-sm font-semibold text-white mb-4">Personal Information</h2>
@@ -548,138 +567,15 @@ const ProfilePage = () => {
                                 ))}
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
-                            <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
-                                <h2 className="text-sm font-semibold text-white mb-4">Role Snapshot</h2>
-                                <div className="grid grid-cols-1 gap-3">
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Workspace</div>
-                                        <div className="text-sm font-semibold text-white mt-1.5 capitalize">
-                                            {isAdmin ? 'Admin Operations' : isFaculty ? 'Faculty Operations' : 'Student Workspace'}
-                                        </div>
-                                    </div>
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Primary Scope</div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {user?.department || user?.program || 'Not specified'}
-                                        </div>
-                                    </div>
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Role Status</div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {user?.academic_verified
-                                                ? 'Account verified and active.'
-                                                : 'Verification pending. Limited actions may apply.'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
-                                <h2 className="text-sm font-semibold text-white mb-4">Account Presence</h2>
-                                <div className="grid grid-cols-1 gap-3">
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Member Since']}`}>
-                                                <Calendar className="w-3 h-3" />
-                                            </span>
-                                            Joined
-                                        </div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {user?.created_at
-                                                ? new Date(user.created_at).toLocaleDateString('en-US', {
-                                                    year: 'numeric',
-                                                    month: 'short',
-                                                    day: 'numeric',
-                                                })
-                                                : 'Not available'}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Academic Verification']}`}>
-                                                <CheckCircle2 className="w-3 h-3" />
-                                            </span>
-                                            Verification
-                                        </div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {user?.academic_verified ? 'Verified' : 'Pending'}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Recent Notices']}`}>
-                                                <Bell className="w-3 h-3" />
-                                            </span>
-                                            Last Snapshot Refresh
-                                        </div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {exportData?.exportDate
-                                                ? new Date(exportData.exportDate).toLocaleString('en-US', {
-                                                    year: 'numeric',
-                                                    month: 'short',
-                                                    day: 'numeric',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit',
-                                                })
-                                                : 'Waiting for latest sync'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
-                                <h2 className="text-sm font-semibold text-white mb-4">Access Summary</h2>
-                                <div className="grid grid-cols-1 gap-3">
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Accessible Docs']}`}>
-                                                <FileText className="w-3 h-3" />
-                                            </span>
-                                            Documents In Scope
-                                        </div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {isLoadingStats ? <Skeleton className="h-5 w-14" /> : liveDocCount}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Recent Notices']}`}>
-                                                <Bell className="w-3 h-3" />
-                                            </span>
-                                            Notice Reach
-                                        </div>
-                                        <div className="text-sm font-semibold text-white mt-1.5">
-                                            {isLoadingStats ? <Skeleton className="h-5 w-14" /> : liveNoticeCount}
-                                        </div>
-                                    </div>
-
-                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
-                                            <span className="w-5 h-5 rounded-md border border-cyan-500/30 text-cyan-300 bg-cyan-500/15 flex items-center justify-center">
-                                                <Building className="w-3 h-3" />
-                                            </span>
-                                            Identity Mode
-                                        </div>
-                                        <div className="text-sm font-semibold text-white mt-1.5 capitalize">
-                                            {user?.identity_provider || 'email'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
                     </motion.div>
 
                     <motion.div
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: 0.1 }}
-                        className="space-y-5 lg:col-span-5"
+                        className="space-y-5 lg:col-span-5 h-full flex flex-col"
                     >
-                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
+                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5 flex-1">
                             <h2 className="text-sm font-semibold text-white mb-4">{detailPanelTitle}</h2>
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 {academicRows.map((row) => (
@@ -719,13 +615,13 @@ const ProfilePage = () => {
                                         key={stat.label}
                                         className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3"
                                     >
-                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <div className="min-h-[32px] flex items-start gap-2 text-[11px] text-zinc-500">
                                             <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel[stat.label] || 'text-zinc-300 bg-white/10 border-white/15'}`}>
                                                 <stat.icon className="w-3 h-3" />
                                             </span>
                                             {stat.label}
                                         </div>
-                                        <div className="text-xl font-extrabold text-white mt-2">
+                                        <div className="mt-3 h-8 flex items-end pb-0.5 text-[22px] leading-none font-bold tracking-tight tabular-nums text-white">
                                             {isLoadingStats ? <Skeleton className="h-6 w-14" /> : stat.value}
                                         </div>
                                     </div>
@@ -733,6 +629,116 @@ const ProfilePage = () => {
                             </div>
                         </div>
 
+                    </motion.div>
+
+                    <motion.div
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.14 }}
+                        className="lg:col-span-12 grid grid-cols-1 xl:grid-cols-[0.9fr_1.1fr] gap-5 items-stretch"
+                    >
+                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5 h-full">
+                            <h2 className="text-sm font-semibold text-white mb-4">Account Presence</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Member Since']}`}>
+                                            <Calendar className="w-3 h-3" />
+                                        </span>
+                                        Joined
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5">
+                                        {user?.created_at
+                                            ? new Date(user.created_at).toLocaleDateString('en-US', {
+                                                year: 'numeric',
+                                                month: 'short',
+                                                day: 'numeric',
+                                            })
+                                            : 'Not available'}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Academic Verification']}`}>
+                                            <CheckCircle2 className="w-3 h-3" />
+                                        </span>
+                                        Verification
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5">
+                                        {user?.academic_verified ? 'Verified' : 'Pending'}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3 sm:col-span-2">
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Recent Notices']}`}>
+                                            <Bell className="w-3 h-3" />
+                                        </span>
+                                        Last Snapshot Refresh
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5">
+                                        {exportData?.exportDate
+                                            ? new Date(exportData.exportDate).toLocaleString('en-US', {
+                                                year: 'numeric',
+                                                month: 'short',
+                                                day: 'numeric',
+                                                hour: '2-digit',
+                                                minute: '2-digit',
+                                            })
+                                            : 'Waiting for latest sync'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5 h-full">
+                            <h2 className="text-sm font-semibold text-white mb-4">Access Summary</h2>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 h-full content-start">
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Accessible Docs']}`}>
+                                            <FileText className="w-3 h-3" />
+                                        </span>
+                                        Documents In Scope
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5">
+                                        {isLoadingStats ? <Skeleton className="h-5 w-14" /> : liveDocCount}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Recent Notices']}`}>
+                                            <Bell className="w-3 h-3" />
+                                        </span>
+                                        Notice Reach
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5">
+                                        {isLoadingStats ? <Skeleton className="h-5 w-14" /> : liveNoticeCount}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                    <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                        <span className="w-5 h-5 rounded-md border border-orange-500/30 text-orange-300 bg-orange-500/15 flex items-center justify-center">
+                                            <Building className="w-3 h-3" />
+                                        </span>
+                                        Identity Mode
+                                    </div>
+                                    <div className="text-sm font-semibold text-white mt-1.5 capitalize">
+                                        {user?.identity_provider || 'email'}
+                                    </div>
+                                </div>
+
+                                <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                    <div className="text-[11px] text-zinc-500 uppercase tracking-wider">Primary Scope</div>
+                                    <div className="text-sm font-semibold text-white mt-1.5">
+                                        {user?.department || user?.program || 'Not specified'}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </motion.div>
                 </div>
             </div>
