@@ -98,7 +98,9 @@ export const DesktopSidebar = ({
     children,
     ...props
 }: React.ComponentProps<typeof motion.div>) => {
-    const { animate, hovered, setHovered } = useSidebar();
+    const { hovered, setHovered, animate, isDesktop } = useSidebar();
+    const collapsedWidth = 80;
+    const expandedWidth = 204;
     return (
         <motion.div
             className={cn(
@@ -106,11 +108,14 @@ export const DesktopSidebar = ({
                 className,
             )}
             animate={{
-                width: animate ? (hovered ? "188px" : "72px") : "72px",
+                width: animate ? (hovered && isDesktop ? expandedWidth : collapsedWidth) : expandedWidth,
+            }}
+            transition={{
+                duration: 0.2,
+                ease: [0.23, 1, 0.32, 1],
             }}
             onMouseEnter={() => setHovered(true)}
             onMouseLeave={() => setHovered(false)}
-            transition={{ duration: 0.2, ease: [0.2, 0.95, 0.2, 0.95] }}
             {...props}
         >
             {children}
@@ -140,7 +145,7 @@ export const MobileSidebar = ({
                         exit={{ x: "-100%" }}
                         transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
                         className={cn(
-                            "fixed h-full w-[80px] inset-y-0 left-0 bg-black border-r border-white/[0.05] p-4 z-[100] flex flex-col items-center",
+                            "fixed h-full w-[84px] inset-y-0 left-0 bg-black border-r border-white/[0.05] p-4 z-[110] flex flex-col items-center overflow-hidden",
                             className,
                         )}
                     >
@@ -222,7 +227,7 @@ export const SidebarLink = ({
                 {...props}
             >
                 {active && (
-                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-orange-500 rounded-r-full hidden md:block" />
+                    <div className="absolute left-0 top-2 bottom-2 w-[3px] bg-orange-500 rounded-r-full hidden md:block" />
                 )}
                 {link.icon}
                 <motion.span

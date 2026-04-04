@@ -315,7 +315,7 @@ export default function DashboardLayout() {
                                             initial={{ opacity: 0, y: 8, scale: 0.96 }}
                                             animate={{ opacity: 1, y: 0, scale: 1 }}
                                             exit={{ opacity: 0, y: 8, scale: 0.96 }}
-                                            className="fixed sm:absolute left-0 right-0 sm:left-auto sm:right-0 top-20 sm:top-[calc(100%+0.5rem)] sm:w-80 bg-zinc-900 border-y border-white/10 sm:border sm:rounded-2xl shadow-2xl overflow-hidden z-[120] origin-top-right"
+                                            className="fixed sm:absolute left-2 right-2 sm:left-auto sm:right-0 top-[4.75rem] sm:top-[calc(100%+0.5rem)] sm:w-80 bg-zinc-900 border border-white/10 rounded-2xl shadow-2xl overflow-hidden z-[120] origin-top-right"
                                             data-lenis-prevent
                                         >
                                             <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
@@ -323,7 +323,7 @@ export default function DashboardLayout() {
                                                 <span className="text-[10px] text-orange-400 font-semibold">{unreadCount} new</span>
                                             </div>
                                             <div
-                                                className="max-h-64 overflow-y-auto overflow-x-hidden overscroll-contain"
+                                                className="max-h-[min(65vh,18rem)] overflow-y-auto overflow-x-hidden overscroll-contain"
                                                 data-lenis-prevent
                                             >
                                                 {isLoadingNotifications && (

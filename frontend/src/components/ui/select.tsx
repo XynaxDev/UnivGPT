@@ -41,7 +41,7 @@ const SelectContent = React.forwardRef<
             position={position}
             sideOffset={8}
             className={cn(
-                "z-[260] w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl border border-white/[0.12] bg-zinc-950/95 text-zinc-200 backdrop-blur-xl",
+                "z-[260] min-w-[var(--radix-select-trigger-width)] w-[var(--radix-select-trigger-width)] overflow-hidden rounded-xl border border-white/[0.12] bg-zinc-950/95 text-zinc-200 backdrop-blur-xl",
                 "shadow-[0_18px_60px_rgba(0,0,0,0.65)]",
                 className,
             )}
