@@ -11,7 +11,7 @@ from typing import Optional
 from enum import Enum
 
 
-# â”€â”€â”€ Enums â”€â”€â”€
+# --- Enums ---
 
 
 class UserRole(str, Enum):
@@ -24,10 +24,9 @@ class DocType(str, Enum):
     STUDENT = "student"
     FACULTY = "faculty"
     ADMIN = "admin"
-    PUBLIC = "public"
 
 
-# â”€â”€â”€ Auth Models â”€â”€â”€
+# --- Auth Models ---
 
 
 class InitiateSignupRequest(BaseModel):
@@ -192,7 +191,7 @@ class UserExportDataResponse(BaseModel):
     notices: int = 0
 
 
-# â”€â”€â”€ Document Models â”€â”€â”€
+# --- Document Models ---
 
 
 class DocumentUploadMeta(BaseModel):
@@ -220,7 +219,7 @@ class DocumentListResponse(BaseModel):
     per_page: int = 20
 
 
-# â”€â”€â”€ Agent / Chat Models â”€â”€â”€
+# --- Agent / Chat Models ---
 
 
 class AgentQueryRequest(BaseModel):
@@ -274,7 +273,7 @@ class ConversationListResponse(BaseModel):
     total: int
 
 
-# â”€â”€â”€ Audit Models â”€â”€â”€
+# --- Audit Models ---
 
 
 class AuditLogEntry(BaseModel):
@@ -292,7 +291,7 @@ class AuditLogListResponse(BaseModel):
     per_page: int = 50
 
 
-# â”€â”€â”€ Health â”€â”€â”€
+# --- Health ---
 
 
 class HealthResponse(BaseModel):

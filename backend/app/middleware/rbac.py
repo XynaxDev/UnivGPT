@@ -45,16 +45,16 @@ def require_roles(*allowed_roles: UserRole):
 def get_allowed_doc_types(role: str) -> list[str]:
     """
     Returns the document types a user role is allowed to access.
-    Students get student + public docs.
-    Faculty get faculty + public docs.
+    Students get student docs.
+    Faculty get faculty + student docs.
     Admins get everything.
     """
     role_permissions = {
-        "student": ["student", "public"],
-        "faculty": ["faculty", "public"],
-        "admin": ["student", "faculty", "admin", "public"],
+        "student": ["student"],
+        "faculty": ["faculty", "student"],
+        "admin": ["student", "faculty", "admin"],
     }
-    return role_permissions.get(role, ["public"])
+    return role_permissions.get(role, ["student"])
 
 
 def is_sensitive_query(query: str) -> bool:

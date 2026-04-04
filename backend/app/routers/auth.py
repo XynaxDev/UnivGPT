@@ -52,11 +52,12 @@ from app.services.demo_directory_seed import (
 router = APIRouter(tags=["Authentication"])
 
 # Runtime schema capability flags and short-lived response caches to reduce repeated DB probes.
-# Most current Supabase docs schemas in this project use uploaded_at and may not expose created_at.
-_DOCUMENTS_HAS_CREATED_AT: bool | None = False
+# Most current Supabase docs schemas use uploaded_at/updated_at and may not expose created_at.
 _DOCUMENTS_HAS_UPLOADER_ID: bool | None = None
 _DOCUMENTS_HAS_METADATA: bool | None = None
 _DOCUMENTS_ORDER_COLUMN: str = "uploaded_at"
+_DOCUMENTS_HAS_UPLOADED_AT: bool | None = True
+_DOCUMENTS_HAS_UPDATED_AT: bool | None = True
 _USER_NOTIFICATIONS_CACHE: dict[tuple[str, int], tuple[float, UserNotificationListResponse]] = {}
 _USER_FACULTY_CACHE: dict[tuple[str, int], tuple[float, FacultyListResponse]] = {}
 _USER_COURSES_CACHE: dict[tuple[str, int], tuple[float, CourseDirectoryResponse]] = {}
@@ -378,27 +379,39 @@ def is_document_relevant_for_user(doc: dict[str, Any], user: AuthenticatedUser) 
     if role == UserRole.ADMIN.value:
         allowed = True
     elif role == UserRole.FACULTY.value:
-        allowed = doc_type in {UserRole.FACULTY.value, UserRole.STUDENT.value, "public"}
+        allowed = doc_type in {UserRole.FACULTY.value, UserRole.STUDENT.value}
     else:
-        allowed = doc_type in {UserRole.STUDENT.value, "public"}
+        allowed = doc_type in {UserRole.STUDENT.value}
     if not allowed:
         return False
 
-    user_dept = (user.department or "").strip().lower()
-    user_program = (user.program or "").strip().lower()
-    doc_dept = str(doc.get("department") or "").strip().lower()
-    doc_course = str(doc.get("course") or "").strip().lower()
+    def _normalize_scope_value(raw: Any) -> str:
+        text = str(raw or "").strip().lower()
+        if not text:
+            return ""
+        normalized = "".join(ch if ch.isalnum() else " " for ch in text)
+        return " ".join(normalized.split())
+
+    user_dept = _normalize_scope_value(user.department)
+    user_program = _normalize_scope_value(user.program)
+    doc_dept = _normalize_scope_value(doc.get("department"))
+    doc_course = _normalize_scope_value(doc.get("course"))
 
     if role == UserRole.ADMIN.value:
+        return True
+
+    # Faculty-scoped documents should remain visible to faculty even when
+    # department/course metadata is missing or not normalized.
+    if role == UserRole.FACULTY.value and doc_type == UserRole.FACULTY.value:
         return True
 
     # If document is globally visible without tags, allow.
     if not doc_dept and not doc_course:
         return True
 
-    if user_dept and doc_dept and user_dept == doc_dept:
+    if user_dept and doc_dept and (user_dept == doc_dept or user_dept in doc_dept or doc_dept in user_dept):
         return True
-    if user_program and doc_course and user_program in doc_course:
+    if user_program and doc_course and (user_program in doc_course or doc_course in user_program):
         return True
     return False
 
@@ -564,12 +577,15 @@ def fetch_user_appeal_decision_feed(admin: Any, user: AuthenticatedUser, limit: 
 
 
 def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
-    global _DOCUMENTS_HAS_CREATED_AT, _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_HAS_METADATA, _DOCUMENTS_ORDER_COLUMN
+    global _DOCUMENTS_HAS_UPLOADER_ID, _DOCUMENTS_HAS_METADATA, _DOCUMENTS_ORDER_COLUMN
+    global _DOCUMENTS_HAS_UPLOADED_AT, _DOCUMENTS_HAS_UPDATED_AT
 
     def build_select_columns() -> str:
-        cols = ["id", "filename", "doc_type", "department", "course", "tags", "uploaded_at"]
-        if _DOCUMENTS_HAS_CREATED_AT is not False:
-            cols.append("created_at")
+        cols = ["id", "filename", "doc_type", "department", "course", "tags"]
+        if _DOCUMENTS_HAS_UPLOADED_AT is not False:
+            cols.append("uploaded_at")
+        if _DOCUMENTS_HAS_UPDATED_AT is not False:
+            cols.append("updated_at")
         if _DOCUMENTS_HAS_UPLOADER_ID is not False:
             cols.append("uploader_id")
         if _DOCUMENTS_HAS_METADATA is not False:
@@ -588,7 +604,8 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
     cache_key = (
         int(limit),
         str(_DOCUMENTS_ORDER_COLUMN),
-        str(_DOCUMENTS_HAS_CREATED_AT),
+        str(_DOCUMENTS_HAS_UPLOADED_AT),
+        str(_DOCUMENTS_HAS_UPDATED_AT),
         str(_DOCUMENTS_HAS_UPLOADER_ID),
         str(_DOCUMENTS_HAS_METADATA),
     )
@@ -606,11 +623,12 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
             msg = str(exc).lower()
             updated = False
 
-            if "created_at" in msg and _DOCUMENTS_HAS_CREATED_AT is not False:
-                _DOCUMENTS_HAS_CREATED_AT = False
+            if "uploaded_at" in msg and _DOCUMENTS_HAS_UPLOADED_AT is not False:
+                _DOCUMENTS_HAS_UPLOADED_AT = False
                 updated = True
-            elif "created_at" in msg and _DOCUMENTS_ORDER_COLUMN == "created_at":
-                _DOCUMENTS_ORDER_COLUMN = "uploaded_at"
+
+            if "updated_at" in msg and _DOCUMENTS_HAS_UPDATED_AT is not False:
+                _DOCUMENTS_HAS_UPDATED_AT = False
                 updated = True
 
             if "uploader_id" in msg and _DOCUMENTS_HAS_UPLOADER_ID is not False:
@@ -621,11 +639,12 @@ def fetch_documents_feed(admin: Any, limit: int) -> list[dict[str, Any]]:
                 _DOCUMENTS_HAS_METADATA = False
                 updated = True
 
-            if "uploaded_at" in msg and _DOCUMENTS_ORDER_COLUMN != "created_at":
-                _DOCUMENTS_ORDER_COLUMN = "created_at"
+            if "uploaded_at" in msg and _DOCUMENTS_ORDER_COLUMN == "uploaded_at":
+                _DOCUMENTS_ORDER_COLUMN = "updated_at"
                 updated = True
-            elif "uploaded_at" in msg and _DOCUMENTS_ORDER_COLUMN == "uploaded_at":
-                _DOCUMENTS_ORDER_COLUMN = "created_at"
+
+            if "updated_at" in msg and _DOCUMENTS_ORDER_COLUMN == "updated_at":
+                _DOCUMENTS_ORDER_COLUMN = "uploaded_at"
                 updated = True
 
             if not updated:
