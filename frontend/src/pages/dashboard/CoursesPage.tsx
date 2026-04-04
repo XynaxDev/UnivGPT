@@ -142,7 +142,20 @@ export default function CoursesPage() {
         let active = true;
         const load = async () => {
             if (!token) return;
-            setIsLoading(true);
+            const cachedCourses = authApi.peekCourseDirectory(token, 60);
+            const cachedFaculty = authApi.peekFacultyDirectory(token, 80);
+
+            if (active && cachedCourses?.courses?.length) {
+                setCourses(cachedCourses.courses);
+                setIsLoading(false);
+            } else {
+                setIsLoading(true);
+            }
+
+            if (active && cachedFaculty?.faculty?.length) {
+                setFaculty(cachedFaculty.faculty);
+            }
+
             setIsHydratingFaculty(false);
             try {
                 const courseRes = await authApi.getCourseDirectory(token, 60);
@@ -186,9 +199,11 @@ export default function CoursesPage() {
                 }
             } catch (err: any) {
                 if (!active) return;
-                useToastStore.getState().showToast(err?.message || 'Failed to load course directory.', 'error');
-                setCourses([]);
-                setFaculty([]);
+                if (!cachedCourses?.courses?.length) {
+                    useToastStore.getState().showToast(err?.message || 'Failed to load course directory.', 'error');
+                    setCourses([]);
+                    setFaculty([]);
+                }
                 setIsLoading(false);
                 setIsHydratingFaculty(false);
             }

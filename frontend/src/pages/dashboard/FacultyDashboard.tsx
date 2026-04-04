@@ -83,16 +83,19 @@ export default function FacultyDashboard() {
     const { user, token } = useAuthStore();
     const navigate = useNavigate();
     const displayName = normalizeDisplayName(user?.full_name);
+    const cachedExport = token ? authApi.peekExportUserData(token) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 60 }) : null;
 
-    const [isLoading, setIsLoading] = useState(false);
-    const [exportData, setExportData] = useState<UserExportData | null>(null);
-    const [documents, setDocuments] = useState<DocumentResponse[]>([]);
+    const [isLoading, setIsLoading] = useState(!(cachedExport || cachedDocs));
+    const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
+    const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
 
     useEffect(() => {
         let alive = true;
         const loadData = async () => {
             if (!token) return;
-            setIsLoading(true);
+            const shouldShowLoading = !(cachedExport || cachedDocs);
+            if (shouldShowLoading) setIsLoading(true);
             try {
                 const [exportPayload, docsPayload] = await Promise.all([
                     authApi.exportUserData(token),

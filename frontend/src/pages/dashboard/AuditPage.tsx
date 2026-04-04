@@ -86,10 +86,10 @@ const AuditPage = () => {
         system: 'bg-red-400',
     };
 
-    const loadAuditLogs = async (page = currentPage) => {
+    const loadAuditLogs = async (page = currentPage, silent = false) => {
         if (!token) return;
         const startedAt = Date.now();
-        setIsLoading(true);
+        if (!silent) setIsLoading(true);
         try {
             const response = await adminApi.getAuditLogs(token, page, ITEMS_PER_PAGE);
             const mapped: AuditLog[] = (response.logs || []).map((row: AuditLogEntry) => {
@@ -120,12 +120,39 @@ const AuditPage = () => {
         } finally {
             const elapsed = Date.now() - startedAt;
             const remaining = Math.max(0, 220 - elapsed);
-            window.setTimeout(() => setIsLoading(false), remaining);
+            if (!silent) {
+                window.setTimeout(() => setIsLoading(false), remaining);
+            }
         }
     };
 
     useEffect(() => {
-        loadAuditLogs(currentPage);
+        const cachedLogs = token ? adminApi.peekAuditLogs(token, currentPage, ITEMS_PER_PAGE) : null;
+        if (cachedLogs?.logs?.length) {
+            const mapped: AuditLog[] = (cachedLogs.logs || []).map((row: AuditLogEntry) => {
+                const action = row.action || '';
+                const mappedType = actionToType(action);
+                const mappedStatus = actionToStatus(action);
+                const userEmail = row.user?.email || '';
+                const userName = row.user?.full_name || '';
+                const roleValue = row.user?.role || 'unknown';
+                return {
+                    id: row.id || `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                    event: actionLabel(action),
+                    user: userEmail || userName || row.user_id || 'system',
+                    role: roleValue,
+                    timestamp: row.timestamp || row.created_at || new Date().toISOString(),
+                    ip: String(row.ip_address || 'Unknown'),
+                    type: mappedType,
+                    status: mappedStatus,
+                    details: payloadToDetails(row.payload),
+                };
+            });
+            setLogs(mapped);
+            setTotalLogs(Number(cachedLogs.total || 0));
+            setIsLoading(false);
+        }
+        loadAuditLogs(currentPage, Boolean(cachedLogs?.logs?.length));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, currentPage]);
 

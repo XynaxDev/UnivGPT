@@ -71,10 +71,10 @@ const UsersPage = () => {
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 10;
 
-    const loadUsers = async () => {
+    const loadUsers = async (silent = false) => {
         if (!token) return;
         if ((user?.role || '').toLowerCase() !== 'admin') return;
-        setIsLoading(true);
+        if (!silent) setIsLoading(true);
         try {
             const res = await adminApi.getUsers(token, 1, 100);
             setUsers(res.users || []);
@@ -82,7 +82,7 @@ const UsersPage = () => {
             showToast(err?.message || 'Failed to load users from database.', 'error');
             setUsers([]);
         } finally {
-            setIsLoading(false);
+            if (!silent) setIsLoading(false);
         }
     };
 
@@ -92,7 +92,12 @@ const UsersPage = () => {
             return;
         }
         if ((user?.role || '').toLowerCase() !== 'admin') return;
-        loadUsers();
+        const cachedUsers = token ? adminApi.peekUsers(token, 1, 100) : null;
+        if (cachedUsers?.users?.length) {
+            setUsers(cachedUsers.users);
+            setIsLoading(false);
+        }
+        loadUsers(Boolean(cachedUsers?.users?.length));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, user?.role, navigate]);
 
@@ -255,7 +260,7 @@ const UsersPage = () => {
                         />
                     </div>
                     <Button
-                        onClick={loadUsers}
+                        onClick={() => loadUsers()}
                         className="h-10 rounded-xl bg-orange-600 hover:bg-orange-500 text-xs font-bold px-5 transition-all hover:shadow-lg hover:shadow-orange-500/20 active:scale-95 text-white"
                         disabled={isLoading}
                         title="Reload users from database."

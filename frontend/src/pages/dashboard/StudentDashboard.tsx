@@ -15,7 +15,6 @@ import {
     Info,
     ChevronRight,
     BookOpen,
-    Layers,
     FileText,
     Activity,
     GraduationCap,
@@ -121,17 +120,21 @@ export default function StudentDashboard() {
     const { user, token } = useAuthStore();
     const navigate = useNavigate();
     const displayName = normalizeDisplayName(user?.full_name);
+    const cachedExport = token ? authApi.peekExportUserData(token) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 24 }) : null;
+    const cachedFaculty = token ? authApi.peekFacultyDirectory(token, 12) : null;
 
-    const [exportData, setExportData] = useState<UserExportData | null>(null);
-    const [documents, setDocuments] = useState<DocumentResponse[]>([]);
-    const [facultyMembers, setFacultyMembers] = useState<FacultySummary[]>([]);
-    const [facultyLoading, setFacultyLoading] = useState(false);
+    const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
+    const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
+    const [facultyMembers, setFacultyMembers] = useState<FacultySummary[]>(cachedFaculty?.faculty || []);
+    const [facultyLoading, setFacultyLoading] = useState(!cachedFaculty);
 
     useEffect(() => {
         let alive = true;
         const loadData = async () => {
             if (!token) return;
-            setFacultyLoading(true);
+            const shouldShowLoading = !(cachedExport || cachedDocs || cachedFaculty);
+            if (shouldShowLoading) setFacultyLoading(true);
             try {
                 const [exportPayload, docsPayload] = await Promise.all([
                     authApi.exportUserData(token),
@@ -214,13 +217,6 @@ export default function StudentDashboard() {
 
     const metrics = [
         {
-            label: 'Attendance Target',
-            value: '75%',
-            hint: 'Minimum policy threshold',
-            icon: CheckCircle2,
-            color: 'text-emerald-400',
-        },
-        {
             label: 'Query Count',
             value: exportData ? String(exportData.queries) : '0',
             hint: 'From your account history',
@@ -242,11 +238,11 @@ export default function StudentDashboard() {
             color: 'text-violet-400',
         },
         {
-            label: 'Profile Semester',
-            value: user?.semester || 'Not set',
+            label: 'Department',
+            value: user?.department || 'Not set',
             hint: user?.program || 'Program not set',
-            icon: Layers,
-            color: 'text-violet-400',
+            icon: CheckCircle2,
+            color: 'text-emerald-400',
         },
     ];
 

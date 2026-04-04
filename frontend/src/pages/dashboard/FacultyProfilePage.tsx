@@ -53,7 +53,18 @@ export default function FacultyProfilePage() {
         let active = true;
         const load = async () => {
             if (!token) return;
-            setLoading(true);
+            const cachedFaculty = authApi.peekFacultyDirectory(token, 30);
+            const cachedCourses = authApi.peekCourseDirectory(token, 45);
+
+            if (active && cachedFaculty?.faculty?.length) {
+                const found = (cachedFaculty.faculty || []).find((f) => f.id === id) || null;
+                setFaculty(found);
+                if (found && cachedCourses?.courses?.length) {
+                    setCourses((cachedCourses.courses || []).filter((course) => (course.faculty_ids || []).includes(found.id)));
+                }
+            }
+
+            setLoading(!(cachedFaculty?.faculty?.length || cachedCourses?.courses?.length));
             try {
                 const [res, courseRes] = await Promise.all([
                     authApi.getFacultyDirectory(token, 30),

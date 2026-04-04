@@ -59,6 +59,11 @@ const SettingsPage = () => {
                 setIsLoadingSettings(false);
                 return;
             }
+            const cachedSettings = authApi.peekSettings(token);
+            if (active && cachedSettings?.settings) {
+                setSettings(cachedSettings.settings);
+                setIsLoadingSettings(false);
+            }
             try {
                 const res = await authApi.getSettings(token);
                 if (!active) return;

@@ -10,6 +10,8 @@
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://localhost:8000').replace(/\/+$/, '');
 const responseCache = new Map<string, { expiresAt: number; data: unknown }>();
 const inflightCache = new Map<string, Promise<unknown>>();
+const API_CACHE_STORAGE_KEY = 'unigpt-api-response-cache-v1';
+let persistedCacheHydrated = false;
 
 interface RequestOptions {
     method?: string;
@@ -66,33 +68,65 @@ function buildCacheKey(namespace: string, token?: string, params?: string) {
     return `${namespace}:${tokenSuffix(token)}:${params || ''}`;
 }
 
+function canUseSessionStorage() {
+    return typeof window !== 'undefined' && typeof window.sessionStorage !== 'undefined';
+}
+
+function hydratePersistedCache() {
+    if (persistedCacheHydrated || !canUseSessionStorage()) return;
+    persistedCacheHydrated = true;
+    try {
+        const raw = window.sessionStorage.getItem(API_CACHE_STORAGE_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw) as Record<string, { expiresAt: number; data: unknown }>;
+        const now = Date.now();
+        Object.entries(parsed || {}).forEach(([key, value]) => {
+            if (value && typeof value.expiresAt === 'number' && value.expiresAt > now) {
+                responseCache.set(key, value);
+            }
+        });
+    } catch {
+        // Ignore broken persisted cache payloads.
+    }
+}
+
+function persistResponseCache() {
+    if (!canUseSessionStorage()) return;
+    try {
+        const now = Date.now();
+        const payload = Object.fromEntries(
+            Array.from(responseCache.entries()).filter(([, value]) => value.expiresAt > now),
+        );
+        window.sessionStorage.setItem(API_CACHE_STORAGE_KEY, JSON.stringify(payload));
+    } catch {
+        // Ignore persistence failures.
+    }
+}
+
+function peekCachedValue<T>(key: string): T | undefined {
+    hydratePersistedCache();
+    const cached = responseCache.get(key);
+    if (!cached) return undefined;
+    if (cached.expiresAt <= Date.now()) {
+        responseCache.delete(key);
+        persistResponseCache();
+        return undefined;
+    }
+    return cached.data as T;
+}
+
 async function cachedGet<T>(
     key: string,
     ttlMs: number,
     loader: () => Promise<T>,
 ): Promise<T> {
+    hydratePersistedCache();
     const now = Date.now();
     const cached = responseCache.get(key);
     if (cached) {
         if (cached.expiresAt > now) {
             return cached.data as T;
         }
-        // Stale-while-revalidate: return stale data immediately for faster UX
-        // and refresh cache in the background.
-        const inflightStaleRefresh = inflightCache.get(key);
-        if (!inflightStaleRefresh) {
-            const refreshPromise = loader()
-                .then((data) => {
-                    responseCache.set(key, { expiresAt: Date.now() + ttlMs, data });
-                    return data;
-                })
-                .catch(() => cached.data as T)
-                .finally(() => {
-                    inflightCache.delete(key);
-                });
-            inflightCache.set(key, refreshPromise);
-        }
-        return cached.data as T;
     }
 
     const inflight = inflightCache.get(key);
@@ -103,6 +137,7 @@ async function cachedGet<T>(
     const promise = loader()
         .then((data) => {
             responseCache.set(key, { expiresAt: Date.now() + ttlMs, data });
+            persistResponseCache();
             return data;
         })
         .catch((err) => {
@@ -120,11 +155,13 @@ async function cachedGet<T>(
 }
 
 function invalidateCacheByPrefix(prefix: string) {
+    hydratePersistedCache();
     for (const key of responseCache.keys()) {
         if (key.startsWith(prefix)) {
             responseCache.delete(key);
         }
     }
+    persistResponseCache();
 }
 
 function resolveAvatar(user: any): string | null {
@@ -180,17 +217,28 @@ export const authApi = {
     updateProfile: async (
         token: string,
         data: Partial<Pick<UserProfile, 'full_name' | 'department' | 'program' | 'semester' | 'section' | 'roll_number' | 'avatar_url'>>
-    ) =>
-        normalizeUserProfile(await request<UserProfile>('/user/profile', { method: 'PATCH', token, body: data })),
+    ) => request<UserProfile>('/user/profile', { method: 'PATCH', token, body: data }).then((res) => {
+        const suffix = tokenSuffix(token);
+        invalidateCacheByPrefix(`user-me:${suffix}`);
+        invalidateCacheByPrefix(`user-export-data:${suffix}`);
+        invalidateCacheByPrefix(`user-faculty:${suffix}`);
+        invalidateCacheByPrefix(`user-courses:${suffix}`);
+        invalidateCacheByPrefix(`admin-users:${suffix}`);
+        persistResponseCache();
+        return normalizeUserProfile(res);
+    }),
     getSettings: (token: string) =>
         cachedGet(
             buildCacheKey('user-settings', token),
             30_000,
             () => request<UserSettingsResponse>('/user/settings', { token }),
         ),
+    peekSettings: (token: string) =>
+        peekCachedValue<UserSettingsResponse>(buildCacheKey('user-settings', token)),
     saveSettings: (token: string, settings: UserSettingsPayload) =>
         request<UserSettingsResponse>('/user/settings', { method: 'PUT', token, body: settings }).then((res) => {
             invalidateCacheByPrefix(`user-settings:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
             return res;
         }),
     getNotifications: (token: string, limit = 20, options?: { force?: boolean }) => {
@@ -239,9 +287,34 @@ export const authApi = {
                 ),
         ),
     setRole: async (token: string, role: UserProfile['role']) =>
-        normalizeUserProfile(await request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } })),
-    exportUserData: (token: string) =>
-        request<UserExportData>('/user/export-data', { token, timeoutMs: 20_000 }),
+        request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } }).then((res) => {
+            const suffix = tokenSuffix(token);
+            invalidateCacheByPrefix(`user-me:${suffix}`);
+            invalidateCacheByPrefix(`user-export-data:${suffix}`);
+            invalidateCacheByPrefix(`user-faculty:${suffix}`);
+            invalidateCacheByPrefix(`user-courses:${suffix}`);
+            return normalizeUserProfile(res);
+        }),
+    exportUserData: (token: string, options?: { force?: boolean }) => {
+        if (options?.force) {
+            invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
+        }
+        return cachedGet(
+            buildCacheKey('user-export-data', token),
+            45_000,
+            () => request<UserExportData>('/user/export-data', { token, timeoutMs: 20_000 }),
+        );
+    },
+    peekExportUserData: (token: string) =>
+        peekCachedValue<UserExportData>(buildCacheKey('user-export-data', token)),
+    peekNotifications: (token: string, limit = 20) =>
+        peekCachedValue<UserNotificationListResponse>(
+            buildCacheKey('user-notifications', token, String(limit)),
+        ),
+    peekFacultyDirectory: (token: string, limit = 20) =>
+        peekCachedValue<FacultyListResponse>(buildCacheKey('user-faculty', token, String(limit))),
+    peekCourseDirectory: (token: string, limit = 50) =>
+        peekCachedValue<CourseDirectoryResponse>(buildCacheKey('user-courses', token, String(limit))),
     listUsers: async (token: string) =>
         (await request<UserProfile[]>('/auth/users', { token })).map(normalizeUserProfile),
     inviteUser: (token: string, data: { email: string; full_name: string; role: string }) =>
@@ -257,15 +330,23 @@ export const documentsApi = {
         const endpoint = `/documents?${query.toString()}`;
         return cachedGet(
             buildCacheKey('documents-list', token, endpoint),
-            60_000,
+            25_000,
             () => request<DocumentListResponse>(endpoint, { token, timeoutMs: 25_000 }),
         );
     },
+    peekList: (token: string, params?: { page?: number; per_page?: number; doc_type?: string }) => {
+        const query = new URLSearchParams();
+        if (params?.page) query.set('page', String(params.page));
+        if (params?.per_page) query.set('per_page', String(params.per_page));
+        if (params?.doc_type) query.set('doc_type', params.doc_type);
+        const endpoint = `/documents?${query.toString()}`;
+        return peekCachedValue<DocumentListResponse>(buildCacheKey('documents-list', token, endpoint));
+    },
     upload: (token: string, formData: FormData) =>
         request<DocumentResponse>('/admin/documents', { method: 'POST', body: formData, token, isFormData: true, timeoutMs: 180_000 }).then((res) => {
-            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix('documents-list:');
+            invalidateCacheByPrefix('user-notifications:');
+            invalidateCacheByPrefix('user-export-data:');
             return res;
         }),
     update: (
@@ -274,16 +355,19 @@ export const documentsApi = {
         data: Partial<Pick<DocumentResponse, 'doc_type' | 'department' | 'course' | 'tags' | 'visibility'>> & { metadata?: Record<string, unknown> }
     ) =>
         request<DocumentResponse>(`/admin/documents/${id}`, { method: 'PATCH', body: data, token }).then((res) => {
-            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix('documents-list:');
+            invalidateCacheByPrefix('user-notifications:');
+            invalidateCacheByPrefix('user-export-data:');
             return res;
         }),
     delete: (token: string, id: string) =>
         request<void>(`/admin/documents/${id}`, { method: 'DELETE', token }).then((res) => {
-            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix('documents-list:');
+            invalidateCacheByPrefix('served-notices:');
+            invalidateCacheByPrefix('admin-metrics:');
+            invalidateCacheByPrefix('admin-audit:');
+            invalidateCacheByPrefix('user-notifications:');
+            invalidateCacheByPrefix('user-export-data:');
             return res;
         }),
     preview: (token: string, id: string) =>
@@ -307,10 +391,10 @@ export const noticesApi = {
             '/admin/notices/serve',
             { method: 'POST', token, body, timeoutMs: 45_000 },
         ).then((res) => {
-            invalidateCacheByPrefix(`documents-list:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-notifications:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`served-notices:${tokenSuffix(token)}`);
-            invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
+            invalidateCacheByPrefix('documents-list:');
+            invalidateCacheByPrefix('user-notifications:');
+            invalidateCacheByPrefix('served-notices:');
+            invalidateCacheByPrefix('user-export-data:');
             return res;
         }),
     listServed: (token: string, limit = 120) =>
@@ -323,6 +407,8 @@ export const noticesApi = {
                     { token, timeoutMs: 20_000 },
                 ),
         ),
+    peekListServed: (token: string, limit = 120) =>
+        peekCachedValue<NoticeListResponse>(buildCacheKey('served-notices', token, String(limit))),
 };
 
 export const agentApi = {
@@ -354,6 +440,10 @@ export const adminApi = {
                 };
             },
         ),
+    peekUsers: (token: string, page = 1, perPage = 100) =>
+        peekCachedValue<{ users: UserProfile[]; total: number; page: number; per_page: number }>(
+            buildCacheKey('admin-users', token, `${page}:${perPage}`),
+        ),
     updateUser: (
         token: string,
         userId: string,
@@ -379,6 +469,10 @@ export const adminApi = {
                 { token, timeoutMs: 25_000 },
             ),
         ),
+    peekAuditLogs: (token: string, page = 1, perPage = 20) =>
+        peekCachedValue<AuditLogListResponse>(
+            buildCacheKey('admin-audit', token, `${page}:${perPage}`),
+        ),
     getDeanAppeals: (token: string, status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending', limit = 100) =>
         cachedGet(
             buildCacheKey('admin-dean-appeals', token, `${status}:${limit}`),
@@ -387,6 +481,14 @@ export const adminApi = {
                 `/admin/dean/appeals?status=${encodeURIComponent(status)}&limit=${encodeURIComponent(String(limit))}`,
                 { token, timeoutMs: 25_000 },
             ),
+        ),
+    peekDeanAppeals: (
+        token: string,
+        status: 'pending' | 'approved' | 'rejected' | 'all' = 'pending',
+        limit = 100,
+    ) =>
+        peekCachedValue<{ appeals: DeanAppealItem[]; total: number; status: string }>(
+            buildCacheKey('admin-dean-appeals', token, `${status}:${limit}`),
         ),
     approveDeanAppeal: (token: string, userId: string, note?: string) =>
         request<{ status: string; message: string; moderation?: ModerationMeta }>(
@@ -452,7 +554,9 @@ export const systemApi = {
             buildCacheKey('admin-metrics', token),
             30_000,
             () => request<MetricsResponse>('/admin/metrics', { token, timeoutMs: 25_000 }),
-        )
+        ),
+    peekMetrics: (token: string) =>
+        peekCachedValue<MetricsResponse>(buildCacheKey('admin-metrics', token)),
 };
 
 export interface UserProfile {

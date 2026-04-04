@@ -23,12 +23,12 @@ export default function DeanAppealsPage() {
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 6;
 
-    const loadAppeals = async () => {
+    const loadAppeals = async (silent = false) => {
         if (!token) return;
         if ((user?.role || '').toLowerCase() !== 'admin') return;
         const startedAt = Date.now();
         try {
-            setLoading(true);
+            if (!silent) setLoading(true);
             const res = await adminApi.getDeanAppeals(token, filter, 200);
             setAppeals(res.appeals || []);
         } catch (err) {
@@ -36,13 +36,20 @@ export default function DeanAppealsPage() {
         } finally {
             const elapsed = Date.now() - startedAt;
             const remaining = Math.max(0, 220 - elapsed);
-            window.setTimeout(() => setLoading(false), remaining);
+            if (!silent) {
+                window.setTimeout(() => setLoading(false), remaining);
+            }
         }
     };
 
     useEffect(() => {
         if ((user?.role || '').toLowerCase() !== 'admin') return;
-        loadAppeals();
+        const cachedAppeals = token ? adminApi.peekDeanAppeals(token, filter, 200) : null;
+        if (cachedAppeals?.appeals?.length) {
+            setAppeals(cachedAppeals.appeals);
+            setLoading(false);
+        }
+        loadAppeals(Boolean(cachedAppeals?.appeals?.length));
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token, filter, user?.role]);
 
@@ -125,7 +132,7 @@ export default function DeanAppealsPage() {
                             type="button"
                             variant="outline"
                             className="border-white/15 bg-white/5 hover:bg-white/10 text-white"
-                            onClick={loadAppeals}
+                            onClick={() => loadAppeals()}
                         >
                             <RefreshCw className="w-4 h-4 mr-2" /> Refresh
                         </Button>

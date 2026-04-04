@@ -110,7 +110,17 @@ export default function FacultyDirectoryPage() {
                 if (active) setIsLoading(false);
                 return;
             }
-            setIsLoading(true);
+            const cachedFaculty = authApi.peekFacultyDirectory(token, 80);
+            const cachedCourses = authApi.peekCourseDirectory(token, 120);
+
+            if (active && cachedFaculty?.faculty?.length) {
+                setFacultyRows(cachedFaculty.faculty);
+            }
+            if (active && cachedCourses?.courses?.length) {
+                setCourseRows(cachedCourses.courses);
+            }
+
+            setIsLoading(!(cachedFaculty?.faculty?.length || cachedCourses?.courses?.length));
             setIsDemoMode(false);
             try {
                 const [facultyRes, coursesRes] = await Promise.allSettled([

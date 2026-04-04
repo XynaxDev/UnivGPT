@@ -484,16 +484,19 @@ const AdminDashboard = () => {
     const { user, token } = useAuthStore();
     const firstName = user?.full_name?.split(' ')[0] || 'Admin';
     const [hoveredStat, setHoveredStat] = useState<number | null>(null);
-    const [metrics, setMetrics] = useState<MetricsResponse | null>(null);
-    const [auditRows, setAuditRows] = useState<AuditLogEntry[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
+    const cachedMetrics = token ? systemApi.peekMetrics(token) : null;
+    const cachedAudit = token ? adminApi.peekAuditLogs(token, 1, 30) : null;
+    const [metrics, setMetrics] = useState<MetricsResponse | null>(cachedMetrics ?? null);
+    const [auditRows, setAuditRows] = useState<AuditLogEntry[]>(cachedAudit?.logs || []);
+    const [isLoading, setIsLoading] = useState(!(cachedMetrics || cachedAudit));
     const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
         let alive = true;
         const load = async () => {
             if (!token) return;
-            setIsLoading(true);
+            const shouldShowLoading = !(cachedMetrics || cachedAudit);
+            if (shouldShowLoading) setIsLoading(true);
             setLoadError(null);
             const [metricsResult, auditResult] = await Promise.allSettled([
                 systemApi.metrics(token),
