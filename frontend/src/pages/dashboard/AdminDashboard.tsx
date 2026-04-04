@@ -27,7 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { useChatStore } from '@/store/chatStore';
-import { adminApi, systemApi, type AuditLogEntry, type MetricsResponse } from '@/lib/api';
+import { adminApi, documentsApi, systemApi, type AuditLogEntry, type MetricsResponse } from '@/lib/api';
 import { HoverTooltip } from '@/components/ui/tooltip';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -486,54 +486,75 @@ const AdminDashboard = () => {
     const [hoveredStat, setHoveredStat] = useState<number | null>(null);
     const cachedMetrics = token ? systemApi.peekMetrics(token) : null;
     const cachedAudit = token ? adminApi.peekAuditLogs(token, 1, 30) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 120 }) : null;
     const [metrics, setMetrics] = useState<MetricsResponse | null>(cachedMetrics ?? null);
     const [auditRows, setAuditRows] = useState<AuditLogEntry[]>(cachedAudit?.logs || []);
-    const [isLoading, setIsLoading] = useState(!(cachedMetrics || cachedAudit));
+    const [liveDocCount, setLiveDocCount] = useState(Number(cachedDocs?.total || cachedDocs?.documents?.length || 0));
+    const [isLoading, setIsLoading] = useState(!(cachedMetrics || cachedAudit || cachedDocs));
     const [loadError, setLoadError] = useState<string | null>(null);
+    const suspiciousDocsCache = Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
+    const suspiciousMetricsCache =
+        Number(cachedMetrics?.stats?.total_documents || 0) === 0 && !suspiciousDocsCache;
 
     useEffect(() => {
         let alive = true;
         const load = async () => {
             if (!token) return;
-            const needsMetrics = !cachedMetrics;
+            const needsMetrics = !cachedMetrics || suspiciousMetricsCache;
             const needsAudit = !cachedAudit;
+            const needsDocs = !cachedDocs || suspiciousDocsCache;
 
-            if (!needsMetrics && !needsAudit) {
+            if (!needsMetrics && !needsAudit && !needsDocs) {
                 setIsLoading(false);
                 return;
             }
 
-            setIsLoading(true);
+            if (!cachedMetrics && !cachedAudit && !cachedDocs) {
+                setIsLoading(true);
+            }
             setLoadError(null);
-            const [metricsResult, auditResult] = await Promise.allSettled([
-                needsMetrics ? systemApi.metrics(token) : Promise.resolve(cachedMetrics),
+            const [metricsResult, auditResult, docsResult] = await Promise.allSettled([
+                needsMetrics ? systemApi.metrics(token, { force: suspiciousMetricsCache }) : Promise.resolve(cachedMetrics),
                 needsAudit ? adminApi.getAuditLogs(token, 1, 30) : Promise.resolve(cachedAudit),
+                needsDocs
+                    ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: suspiciousDocsCache })
+                    : Promise.resolve(cachedDocs),
             ]);
             if (!alive) return;
 
             if (metricsResult.status === 'fulfilled' && metricsResult.value) {
                 setMetrics(metricsResult.value);
-            } else if (needsMetrics) {
+            } else if (needsMetrics && !cachedMetrics) {
                 setMetrics(null);
             }
 
             if (auditResult.status === 'fulfilled' && auditResult.value) {
                 setAuditRows(auditResult.value.logs || []);
-            } else if (needsAudit) {
+            } else if (needsAudit && !cachedAudit) {
                 setAuditRows([]);
+            }
+
+            if (docsResult.status === 'fulfilled' && docsResult.value) {
+                setLiveDocCount(Number(docsResult.value.total || docsResult.value.documents?.length || 0));
+            } else if (needsDocs && !cachedDocs) {
+                setLiveDocCount(0);
             }
 
             if (
                 needsMetrics &&
                 needsAudit &&
+                needsDocs &&
                 metricsResult.status === 'rejected' &&
-                auditResult.status === 'rejected'
+                auditResult.status === 'rejected' &&
+                docsResult.status === 'rejected'
             ) {
                 const metricsErr = metricsResult.reason as Error;
                 const auditErr = auditResult.reason as Error;
+                const docsErr = docsResult.reason as Error;
                 setLoadError(
                     metricsErr?.message ||
                         auditErr?.message ||
+                        docsErr?.message ||
                         'Unable to load admin data right now.',
                 );
             } else {
@@ -573,7 +594,7 @@ const AdminDashboard = () => {
         },
         {
             label: 'Documents',
-            value: stats.total_documents,
+            value: Math.max(Number(stats.total_documents || 0), liveDocCount),
             icon: FileText,
             change: buildTrendText('uploads', today?.uploads || 0),
             color: '#f59e0b',

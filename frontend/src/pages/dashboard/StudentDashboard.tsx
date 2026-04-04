@@ -123,6 +123,8 @@ export default function StudentDashboard() {
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 24 }) : null;
     const cachedFaculty = token ? authApi.peekFacultyDirectory(token, 12) : null;
+    const suspiciousDocsCache =
+        Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
 
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
     const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
@@ -134,7 +136,7 @@ export default function StudentDashboard() {
         const loadData = async () => {
             if (!token) return;
             const needsExport = !cachedExport;
-            const needsDocs = !cachedDocs;
+            const needsDocs = !cachedDocs || suspiciousDocsCache;
             const needsFaculty = !cachedFaculty;
 
             if (!needsExport && !needsDocs && !needsFaculty) {
@@ -146,7 +148,9 @@ export default function StudentDashboard() {
             try {
                 const [exportResult, docsResult, facultyResult] = await Promise.allSettled([
                     needsExport ? authApi.exportUserData(token) : Promise.resolve(cachedExport),
-                    needsDocs ? documentsApi.list(token, { page: 1, per_page: 24 }) : Promise.resolve(cachedDocs),
+                    needsDocs
+                        ? documentsApi.list(token, { page: 1, per_page: 24 }, { force: suspiciousDocsCache })
+                        : Promise.resolve(cachedDocs),
                     needsFaculty ? authApi.getFacultyDirectory(token, 12) : Promise.resolve(cachedFaculty),
                 ]);
 
@@ -165,9 +169,9 @@ export default function StudentDashboard() {
                 }
             } catch {
                 if (!alive) return;
-                if (needsExport) setExportData(null);
-                if (needsDocs) setDocuments([]);
-                if (needsFaculty) setFacultyMembers([]);
+                if (needsExport && !cachedExport) setExportData(null);
+                if (needsDocs && !cachedDocs) setDocuments([]);
+                if (needsFaculty && !cachedFaculty) setFacultyMembers([]);
             } finally {
                 if (alive) setFacultyLoading(false);
             }

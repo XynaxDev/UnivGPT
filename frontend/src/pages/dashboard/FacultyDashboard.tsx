@@ -85,6 +85,8 @@ export default function FacultyDashboard() {
     const displayName = normalizeDisplayName(user?.full_name);
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 60 }) : null;
+    const suspiciousDocsCache =
+        Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
 
     const [isLoading, setIsLoading] = useState(!(cachedExport || cachedDocs));
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
@@ -95,18 +97,22 @@ export default function FacultyDashboard() {
         const loadData = async () => {
             if (!token) return;
             const needsExport = !cachedExport;
-            const needsDocs = !cachedDocs;
+            const needsDocs = !cachedDocs || suspiciousDocsCache;
 
             if (!needsExport && !needsDocs) {
                 setIsLoading(false);
                 return;
             }
 
-            setIsLoading(true);
+            if (!cachedExport && !cachedDocs) {
+                setIsLoading(true);
+            }
             try {
                 const [exportResult, docsResult] = await Promise.allSettled([
                     needsExport ? authApi.exportUserData(token) : Promise.resolve(cachedExport),
-                    needsDocs ? documentsApi.list(token, { page: 1, per_page: 60 }) : Promise.resolve(cachedDocs),
+                    needsDocs
+                        ? documentsApi.list(token, { page: 1, per_page: 60 }, { force: suspiciousDocsCache })
+                        : Promise.resolve(cachedDocs),
                 ]);
                 if (!alive) return;
 
@@ -118,8 +124,8 @@ export default function FacultyDashboard() {
                 }
             } catch {
                 if (!alive) return;
-                if (needsExport) setExportData(null);
-                if (needsDocs) setDocuments([]);
+                if (needsExport && !cachedExport) setExportData(null);
+                if (needsDocs && !cachedDocs) setDocuments([]);
             } finally {
                 if (alive) setIsLoading(false);
             }
