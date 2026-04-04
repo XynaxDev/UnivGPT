@@ -15,6 +15,7 @@ interface Links {
     label: string;
     href: string;
     icon: React.JSX.Element | React.ReactNode;
+    prefetch?: () => void;
 }
 
 const SidebarContext = createContext<{
@@ -199,6 +200,8 @@ export const SidebarLink = ({
             <HoverTooltip content={tooltipLabel} side="right" align="center">
                 <button
                     onClick={handleClick}
+                    onMouseEnter={() => link.prefetch?.()}
+                    onFocus={() => link.prefetch?.()}
                     className={cn(baseClasses, active ? activeClasses : inactiveClasses, className)}
                 >
                     {link.icon}
@@ -223,6 +226,8 @@ export const SidebarLink = ({
             <NavLink
                 to={link.href}
                 onClick={handleClick}
+                onMouseEnter={() => link.prefetch?.()}
+                onFocus={() => link.prefetch?.()}
                 className={cn(baseClasses, active ? activeClasses : inactiveClasses, className)}
                 {...props}
             >

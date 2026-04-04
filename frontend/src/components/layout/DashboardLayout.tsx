@@ -18,13 +18,16 @@ import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/s
 import { useToastStore } from '@/store/toastStore';
 import { authApi, type UserNotificationItem } from '@/lib/api';
 import { HoverTooltip } from '@/components/ui/tooltip';
+import { preloadRoute } from '@/lib/routePrefetch';
 
 export default function DashboardLayout() {
+    const { user, logout, token } = useAuthStore();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
-    const [notifications, setNotifications] = useState<UserNotificationItem[]>([]);
+    const [notifications, setNotifications] = useState<UserNotificationItem[]>(
+        () => (token ? authApi.peekNotifications(token, 6)?.notifications || [] : []),
+    );
     const [isLoadingNotifications, setIsLoadingNotifications] = useState(false);
-    const { user, logout, token } = useAuthStore();
     const { showToast } = useToastStore();
     const location = useLocation();
     const navigate = useNavigate();
@@ -39,34 +42,41 @@ export default function DashboardLayout() {
     };
     const firstName = normalizeDisplayName(user?.full_name);
 
-    const navigation: Record<string, { label: string; href: string; icon: React.ReactNode }[]> = {
+    type DashboardNavItem = {
+        label: string;
+        href: string;
+        icon: React.ReactNode;
+        prefetch?: () => void;
+    };
+
+    const navigation: Record<string, DashboardNavItem[]> = {
         student: [
-            { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" /> },
-            { label: 'Student AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" /> },
-            { label: 'My Courses', href: '/dashboard/courses', icon: <BookOpen className="w-5 h-5 shrink-0" /> },
-            { label: 'Faculty', href: '/dashboard/faculty', icon: <GraduationCap className="w-5 h-5 shrink-0" /> },
-            { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" /> },
-            { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" /> },
+            { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard') },
+            { label: 'Student AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/chat') },
+            { label: 'My Courses', href: '/dashboard/courses', icon: <BookOpen className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/courses') },
+            { label: 'Faculty', href: '/dashboard/faculty', icon: <GraduationCap className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/faculty') },
+            { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/notifications') },
+            { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/settings') },
         ],
         faculty: [
-            { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" /> },
-            { label: 'Faculty AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" /> },
-            { label: 'Timetable', href: '/dashboard/timetable', icon: <CalendarDays className="w-5 h-5 shrink-0" /> },
-            { label: 'Documents', href: '/dashboard/documents', icon: <FileText className="w-5 h-5 shrink-0" /> },
-            { label: 'Notices', href: '/dashboard/notices', icon: <Megaphone className="w-5 h-5 shrink-0" /> },
-            { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" /> },
-            { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" /> },
+            { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard') },
+            { label: 'Faculty AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/chat') },
+            { label: 'Timetable', href: '/dashboard/timetable', icon: <CalendarDays className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/timetable') },
+            { label: 'Documents', href: '/dashboard/documents', icon: <FileText className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/documents') },
+            { label: 'Notices', href: '/dashboard/notices', icon: <Megaphone className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/notices') },
+            { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/notifications') },
+            { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/settings') },
         ],
         admin: [
-            { label: 'Overview', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" /> },
-            { label: 'Admin AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" /> },
-            { label: 'Users', href: '/dashboard/users', icon: <Users className="w-5 h-5 shrink-0" /> },
-            { label: 'Documents', href: '/dashboard/documents', icon: <FileText className="w-5 h-5 shrink-0" /> },
-            { label: 'Notices', href: '/dashboard/notices', icon: <Megaphone className="w-5 h-5 shrink-0" /> },
-            { label: 'Audit Logs', href: '/dashboard/audit', icon: <Shield className="w-5 h-5 shrink-0" /> },
-            { label: 'Dean Desk', href: '/dashboard/dean', icon: <ShieldAlert className="w-5 h-5 shrink-0" /> },
-            { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" /> },
-            { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" /> },
+            { label: 'Overview', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard') },
+            { label: 'Admin AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/chat') },
+            { label: 'Users', href: '/dashboard/users', icon: <Users className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/users') },
+            { label: 'Documents', href: '/dashboard/documents', icon: <FileText className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/documents') },
+            { label: 'Notices', href: '/dashboard/notices', icon: <Megaphone className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/notices') },
+            { label: 'Audit Logs', href: '/dashboard/audit', icon: <Shield className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/audit') },
+            { label: 'Dean Desk', href: '/dashboard/dean', icon: <ShieldAlert className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/dean') },
+            { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/notifications') },
+            { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/settings') },
         ],
     };
 
@@ -137,7 +147,7 @@ export default function DashboardLayout() {
                 const isAdmin = String(role).toLowerCase() === 'admin';
                 const filtered = (notificationRes.notifications || []).filter((item) => {
                     if (isAdmin) return true;
-                    return !(item.id.startsWith('report:') || item.id.startsWith('appeal:'));
+                    return !(item.id.startsWith('report:') || item.id.startsWith('appeal'));
                 });
                 setNotifications(filtered);
             } catch {
@@ -149,7 +159,7 @@ export default function DashboardLayout() {
         return () => {
             active = false;
         };
-    }, [token]);
+    }, [token, role]);
 
     useEffect(() => {
         if (!showNotifications || !token || unreadCount <= 0) return;
@@ -235,6 +245,7 @@ export default function DashboardLayout() {
                                     label: 'Profile',
                                     href: '/dashboard/profile',
                                     icon: <ProfileAvatar size="md" />,
+                                    prefetch: () => preloadRoute('/dashboard/profile'),
                                 }}
                                 active={location.pathname === '/dashboard/profile'}
                             />

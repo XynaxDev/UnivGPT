@@ -4,36 +4,38 @@
 
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
-import Landing from '@/pages/Landing';
-import Login from '@/pages/auth/Login';
-import Signup from '@/pages/auth/Signup';
-import ForgotPassword from '@/pages/auth/ForgotPassword';
-import VerifyEmail from '@/pages/auth/VerifyEmail';
-import AuthCallback from '@/pages/auth/AuthCallback';
+import { lazyWithPreload } from '@/lib/routePrefetch';
 import DashboardLayout from '@/components/layout/DashboardLayout';
-import StudentDashboard from '@/pages/dashboard/StudentDashboard';
-import FacultyDashboard from '@/pages/dashboard/FacultyDashboard';
-import FacultyTimetablePage from '@/pages/dashboard/FacultyTimetablePage';
-import AdminDashboard from '@/pages/dashboard/AdminDashboard';
-import ChatPage from '@/pages/dashboard/ChatPage';
-import CoursesPage from '@/pages/dashboard/CoursesPage';
-import UsersPage from '@/pages/dashboard/UsersPage';
-import AuditPage from '@/pages/dashboard/AuditPage';
-import SettingsPage from '@/pages/dashboard/SettingsPage';
-import ProfilePage from '@/pages/dashboard/ProfilePage';
-import UploadPage from '@/pages/dashboard/UploadPage';
-import NotificationsPage from '@/pages/dashboard/NotificationsPage';
-import NoticesPage from '@/pages/dashboard/NoticesPage';
-import FacultyProfilePage from '@/pages/dashboard/FacultyProfilePage';
-import FacultyDirectoryPage from '@/pages/dashboard/FacultyDirectoryPage';
-import DeanAppealsPage from '@/pages/dashboard/DeanAppealsPage';
 import AuthLayout from '@/components/layout/AuthLayout';
 import SmoothScroll from '@/components/layout/SmoothScroll';
 import { ToastProvider } from '@/components/ui/ToastProvider';
-import { useEffect, useRef } from 'react';
+import { Suspense, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { authApi } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
+
+const Landing = lazyWithPreload(() => import('@/pages/Landing'));
+const Login = lazyWithPreload(() => import('@/pages/auth/Login'));
+const Signup = lazyWithPreload(() => import('@/pages/auth/Signup'));
+const ForgotPassword = lazyWithPreload(() => import('@/pages/auth/ForgotPassword'));
+const VerifyEmail = lazyWithPreload(() => import('@/pages/auth/VerifyEmail'));
+const AuthCallback = lazyWithPreload(() => import('@/pages/auth/AuthCallback'));
+const StudentDashboard = lazyWithPreload(() => import('@/pages/dashboard/StudentDashboard'));
+const FacultyDashboard = lazyWithPreload(() => import('@/pages/dashboard/FacultyDashboard'));
+const FacultyTimetablePage = lazyWithPreload(() => import('@/pages/dashboard/FacultyTimetablePage'));
+const AdminDashboard = lazyWithPreload(() => import('@/pages/dashboard/AdminDashboard'));
+const ChatPage = lazyWithPreload(() => import('@/pages/dashboard/ChatPage'));
+const CoursesPage = lazyWithPreload(() => import('@/pages/dashboard/CoursesPage'));
+const UsersPage = lazyWithPreload(() => import('@/pages/dashboard/UsersPage'));
+const AuditPage = lazyWithPreload(() => import('@/pages/dashboard/AuditPage'));
+const SettingsPage = lazyWithPreload(() => import('@/pages/dashboard/SettingsPage'));
+const ProfilePage = lazyWithPreload(() => import('@/pages/dashboard/ProfilePage'));
+const UploadPage = lazyWithPreload(() => import('@/pages/dashboard/UploadPage'));
+const NotificationsPage = lazyWithPreload(() => import('@/pages/dashboard/NotificationsPage'));
+const NoticesPage = lazyWithPreload(() => import('@/pages/dashboard/NoticesPage'));
+const FacultyProfilePage = lazyWithPreload(() => import('@/pages/dashboard/FacultyProfilePage'));
+const FacultyDirectoryPage = lazyWithPreload(() => import('@/pages/dashboard/FacultyDirectoryPage'));
+const DeanAppealsPage = lazyWithPreload(() => import('@/pages/dashboard/DeanAppealsPage'));
 
 const academicDomain = (import.meta.env.VITE_ACADEMIC_EMAIL_DOMAIN || '').toLowerCase();
 const isAcademicEmail = (email?: string) => (email || '').trim().toLowerCase().endsWith(`@${academicDomain}`);
@@ -68,6 +70,23 @@ function DashboardHome() {
     case 'faculty': return <FacultyDashboard />;
     default: return <StudentDashboard />;
   }
+}
+
+function RouteSuspense({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-[40vh] w-full flex items-center justify-center">
+          <div className="flex items-center gap-3 text-zinc-400">
+            <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
+            <span className="text-sm">Loading page...</span>
+          </div>
+        </div>
+      }
+    >
+      {children}
+    </Suspense>
+  );
 }
 
 export default function App() {
@@ -165,17 +184,17 @@ export default function App() {
         <div className="dark">
           <Routes>
             {/* Public */}
-            <Route path="/" element={<Landing />} />
+            <Route path="/" element={<RouteSuspense><Landing /></RouteSuspense>} />
 
             <Route element={<AuthLayout><Outlet /></AuthLayout>}>
-              <Route path="/auth/login" element={<Login />} />
-              <Route path="/auth/signup" element={<Signup />} />
-              <Route path="/auth/forgot-password" element={<ForgotPassword />} />
-              <Route path="/auth/verify-email" element={<VerifyEmail />} />
+              <Route path="/auth/login" element={<RouteSuspense><Login /></RouteSuspense>} />
+              <Route path="/auth/signup" element={<RouteSuspense><Signup /></RouteSuspense>} />
+              <Route path="/auth/forgot-password" element={<RouteSuspense><ForgotPassword /></RouteSuspense>} />
+              <Route path="/auth/verify-email" element={<RouteSuspense><VerifyEmail /></RouteSuspense>} />
             </Route>
 
             {/* OAuth Callback */}
-            <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/auth/callback" element={<RouteSuspense><AuthCallback /></RouteSuspense>} />
 
             {/* Protected Dashboard */}
             <Route
@@ -186,13 +205,13 @@ export default function App() {
                 </ProtectedRoute>
               }
             >
-              <Route index element={<DashboardHome />} />
-              <Route path="chat" element={<ChatPage />} />
+              <Route index element={<RouteSuspense><DashboardHome /></RouteSuspense>} />
+              <Route path="chat" element={<RouteSuspense><ChatPage /></RouteSuspense>} />
               <Route
                 path="courses"
                 element={
                   <RoleRoute allowedRoles={['student', 'admin']}>
-                    <CoursesPage />
+                    <RouteSuspense><CoursesPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -200,7 +219,7 @@ export default function App() {
                 path="documents"
                 element={
                   <RoleRoute allowedRoles={['admin', 'faculty']}>
-                    <UploadPage />
+                    <RouteSuspense><UploadPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -208,7 +227,7 @@ export default function App() {
                 path="upload"
                 element={
                   <RoleRoute allowedRoles={['admin', 'faculty']}>
-                    <UploadPage />
+                    <RouteSuspense><UploadPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -216,7 +235,7 @@ export default function App() {
                 path="notices"
                 element={
                   <RoleRoute allowedRoles={['admin', 'faculty']}>
-                    <NoticesPage />
+                    <RouteSuspense><NoticesPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -224,7 +243,7 @@ export default function App() {
                 path="timetable"
                 element={
                   <RoleRoute allowedRoles={['faculty']}>
-                    <FacultyTimetablePage />
+                    <RouteSuspense><FacultyTimetablePage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -232,7 +251,7 @@ export default function App() {
                 path="users"
                 element={
                   <RoleRoute allowedRoles={['admin']}>
-                    <UsersPage />
+                    <RouteSuspense><UsersPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -240,18 +259,18 @@ export default function App() {
                 path="audit"
                 element={
                   <RoleRoute allowedRoles={['admin']}>
-                    <AuditPage />
+                    <RouteSuspense><AuditPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
-              <Route path="settings" element={<SettingsPage />} />
-              <Route path="profile" element={<ProfilePage />} />
-              <Route path="notifications" element={<NotificationsPage />} />
+              <Route path="settings" element={<RouteSuspense><SettingsPage /></RouteSuspense>} />
+              <Route path="profile" element={<RouteSuspense><ProfilePage /></RouteSuspense>} />
+              <Route path="notifications" element={<RouteSuspense><NotificationsPage /></RouteSuspense>} />
               <Route
                 path="faculty"
                 element={
                   <RoleRoute allowedRoles={['student']}>
-                    <FacultyDirectoryPage />
+                    <RouteSuspense><FacultyDirectoryPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -259,7 +278,7 @@ export default function App() {
                 path="faculty/:id"
                 element={
                   <RoleRoute allowedRoles={['student']}>
-                    <FacultyProfilePage />
+                    <RouteSuspense><FacultyProfilePage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
@@ -267,7 +286,7 @@ export default function App() {
                 path="dean"
                 element={
                   <RoleRoute allowedRoles={['admin']}>
-                    <DeanAppealsPage />
+                    <RouteSuspense><DeanAppealsPage /></RouteSuspense>
                   </RoleRoute>
                 }
               />
