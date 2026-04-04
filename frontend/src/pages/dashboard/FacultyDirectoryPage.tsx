@@ -85,7 +85,7 @@ const ensureAtLeastThree = <T extends { id: string }>(rows: T[], demoRows: T[]) 
 };
 
 export default function FacultyDirectoryPage() {
-    const { token } = useAuthStore();
+    const { token, user } = useAuthStore();
     const { showToast } = useToastStore();
     const navigate = useNavigate();
     const location = useLocation();
@@ -95,6 +95,13 @@ export default function FacultyDirectoryPage() {
     const [isDemoMode, setIsDemoMode] = useState(false);
 
     const focusName = (location.state as { focusFaculty?: string } | null)?.focusFaculty?.toLowerCase() || '';
+
+    useEffect(() => {
+        const role = String(user?.role || '').toLowerCase();
+        if (role === 'faculty') {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [user?.role, navigate]);
 
     useEffect(() => {
         let active = true;

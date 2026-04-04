@@ -31,7 +31,7 @@ const formatDate = (raw?: string | null) => {
 export default function FacultyProfilePage() {
     const { id } = useParams<{ id: string }>();
     const navigate = useNavigate();
-    const { token } = useAuthStore();
+    const { token, user } = useAuthStore();
     const { showToast } = useToastStore();
     const [faculty, setFaculty] = useState<FacultySummary | null>(null);
     const [courses, setCourses] = useState<CourseDirectoryItem[]>([]);
@@ -41,6 +41,13 @@ export default function FacultyProfilePage() {
         () => courses.reduce((sum, item) => sum + Number(item.notice_count || 0), 0),
         [courses]
     );
+
+    useEffect(() => {
+        const role = String(user?.role || '').toLowerCase();
+        if (role === 'faculty') {
+            navigate('/dashboard', { replace: true });
+        }
+    }, [user?.role, navigate]);
 
     useEffect(() => {
         let active = true;
