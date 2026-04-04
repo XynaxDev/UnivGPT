@@ -90,7 +90,7 @@ function RouteSuspense({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { setSession, clearSession, token, isInitializing, finishInitializing } = useAuthStore();
+  const { setSession, clearSession, token, user, isInitializing, finishInitializing } = useAuthStore();
   const lastSyncedTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -99,7 +99,7 @@ export default function App() {
 
     const hardSyncProfile = async () => {
       try {
-        const user = await authApi.getMe(token);
+        const user = await authApi.refreshMe(token);
         if (cancelled) return;
         setSession(token, user);
       } catch {
@@ -120,15 +120,20 @@ export default function App() {
       if (lastSyncedTokenRef.current === session.access_token) return;
 
       try {
-        const user = await authApi.getMe(session.access_token);
+        const user = await authApi.refreshMe(session.access_token);
         setSession(session.access_token, user);
       } catch (err) {
         console.warn('Session sync failed, using metadata fallback:', err);
+        const fallbackRole =
+          (user?.role as any) ||
+          (session.user.user_metadata?.role as any) ||
+          window.localStorage.getItem('unigpt:pending-role') ||
+          'student';
         setSession(session.access_token, {
           id: session.user.id,
           email: session.user.email || '',
           full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || fallbackName,
-          role: (session.user.user_metadata?.role as any) || 'student',
+          role: fallbackRole,
           academic_verified: isAcademicEmail(session.user.email || ''),
           identity_provider: session.user.app_metadata?.provider || session.user.app_metadata?.providers?.[0] || 'email',
         });
@@ -161,7 +166,7 @@ export default function App() {
     });
 
     return () => subscription.unsubscribe();
-  }, [setSession, clearSession, finishInitializing]);
+  }, [setSession, clearSession, finishInitializing, user?.role]);
 
   if (isInitializing) {
     return (

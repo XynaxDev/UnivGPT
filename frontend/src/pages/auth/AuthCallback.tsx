@@ -46,7 +46,7 @@ export default function AuthCallback() {
                     }
                 }
                 // Sync with backend
-                const user = await authApi.getMe(session.access_token);
+                const user = await authApi.refreshMe(session.access_token);
                 setSession(session.access_token, user);
                 navigate('/dashboard');
             } catch (err) {
@@ -55,7 +55,7 @@ export default function AuthCallback() {
                     id: session.user.id,
                     email: session.user.email || '',
                     full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Google User',
-                    role: (session.user.user_metadata?.role as any) || 'student',
+                    role: selectedRole || (session.user.user_metadata?.role as any) || 'student',
                     academic_verified: isAcademicEmail(session.user.email || ''),
                     identity_provider: session.user.app_metadata?.provider || session.user.app_metadata?.providers?.[0] || 'email',
                 });

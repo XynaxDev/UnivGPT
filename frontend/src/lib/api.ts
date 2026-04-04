@@ -122,11 +122,6 @@ function peekCachedValue<T>(key: string): T | undefined {
     hydratePersistedCache();
     const cached = responseCache.get(key);
     if (!cached) return undefined;
-    if (cached.expiresAt <= Date.now()) {
-        responseCache.delete(key);
-        persistResponseCache();
-        return undefined;
-    }
     return cached.data as T;
 }
 
@@ -190,13 +185,18 @@ function resolveAvatar(user: any): string | null {
     );
 }
 
-function normalizeUserProfile(user: UserProfile): UserProfile {
+function normalizeUserProfile(
+    user: Partial<UserProfile>,
+    fallback?: Partial<UserProfile>,
+): UserProfile {
     const avatar = resolveAvatar(user as Partial<UserProfile> & Record<string, unknown>);
     return {
+        ...(fallback || {}),
         ...user,
+        role: (user.role || fallback?.role || 'student') as UserProfile['role'],
         avatar_url: avatar,
         profileImage: avatar,
-    };
+    } as UserProfile;
 }
 
 export const authApi = {
@@ -229,6 +229,13 @@ export const authApi = {
             CACHE_TTL.userMe,
             () => request<UserProfile>('/user/me', { token, timeoutMs: 20_000 }),
         )),
+    refreshMe: async (token: string) => {
+        const key = buildCacheKey('user-me', token);
+        invalidateCacheByPrefix(key);
+        return normalizeUserProfile(
+            await request<UserProfile>('/user/me', { token, timeoutMs: 20_000 }),
+        );
+    },
     updateProfile: async (
         token: string,
         data: Partial<Pick<UserProfile, 'full_name' | 'department' | 'program' | 'semester' | 'section' | 'roll_number' | 'avatar_url'>>
@@ -331,18 +338,25 @@ export const authApi = {
     peekCourseDirectory: (token: string, limit = 50) =>
         peekCachedValue<CourseDirectoryResponse>(buildCacheKey('user-courses', token, String(limit))),
     listUsers: async (token: string) =>
-        (await request<UserProfile[]>('/auth/users', { token })).map(normalizeUserProfile),
+        (await request<UserProfile[]>('/auth/users', { token })).map((user) => normalizeUserProfile(user)),
     inviteUser: (token: string, data: { email: string; full_name: string; role: string }) =>
         request<void>('/auth/invite', { method: 'POST', body: data, token }),
 };
 
 export const documentsApi = {
-    list: (token: string, params?: { page?: number; per_page?: number; doc_type?: string }) => {
+    list: (
+        token: string,
+        params?: { page?: number; per_page?: number; doc_type?: string },
+        options?: { force?: boolean },
+    ) => {
         const query = new URLSearchParams();
         if (params?.page) query.set('page', String(params.page));
         if (params?.per_page) query.set('per_page', String(params.per_page));
         if (params?.doc_type) query.set('doc_type', params.doc_type);
         const endpoint = `/documents?${query.toString()}`;
+        if (options?.force) {
+            invalidateCacheByPrefix(buildCacheKey('documents-list', token, endpoint));
+        }
         return cachedGet(
             buildCacheKey('documents-list', token, endpoint),
             CACHE_TTL.documentsList,
@@ -451,7 +465,7 @@ export const adminApi = {
                 );
                 return {
                     ...res,
-                    users: (res.users || []).map(normalizeUserProfile),
+                    users: (res.users || []).map((user) => normalizeUserProfile(user)),
                 };
             },
         ),
@@ -564,12 +578,17 @@ export const adminApi = {
 };
 
 export const systemApi = {
-    metrics: (token: string) =>
-        cachedGet(
-            buildCacheKey('admin-metrics', token),
+    metrics: (token: string, options?: { force?: boolean }) => {
+        const key = buildCacheKey('admin-metrics', token);
+        if (options?.force) {
+            invalidateCacheByPrefix(key);
+        }
+        return cachedGet(
+            key,
             CACHE_TTL.adminMetrics,
             () => request<MetricsResponse>('/admin/metrics', { token, timeoutMs: 25_000 }),
-        ),
+        );
+    },
     peekMetrics: (token: string) =>
         peekCachedValue<MetricsResponse>(buildCacheKey('admin-metrics', token)),
 };
@@ -703,6 +722,8 @@ export interface DocumentPreviewResponse {
     uploaded_at?: string | null;
     mime_type?: string | null;
     file_url?: string | null;
+    viewer_url?: string | null;
+    download_url?: string | null;
     file_size?: number | null;
     chunk_count: number;
     chunks: DocumentPreviewChunk[];
