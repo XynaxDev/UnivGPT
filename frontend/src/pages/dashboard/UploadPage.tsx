@@ -467,24 +467,30 @@ const UploadPage = () => {
         <div className="h-full overflow-y-auto p-6 sm:p-8 md:p-10 w-full">
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto w-full space-y-6">
                 <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-r from-[#201108] via-[#161117] to-[#0b1226] p-5">
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
                             <div className="inline-flex items-center rounded-full border border-orange-400/30 bg-orange-500/10 px-3 py-1 text-[10px] tracking-[0.18em] uppercase font-bold text-orange-300 mb-2">
                                 Document Control Hub
                             </div>
-                            <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2 mb-2">
-                                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                            <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-tight text-white flex items-center gap-3 mb-2">
+                                <div className="w-10 h-10 shrink-0 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
                                     <Upload className="w-4 h-4 text-orange-400" />
                                 </div>
-                                Document Upload Console
+                                <span className="min-w-0">Document Upload Console</span>
                             </h1>
                             <p className="text-sm text-zinc-300 max-w-2xl">
                                 Upload with role routing metadata and embed documents for RAG. Supported formats: {ACCEPTED_EXTENSIONS.join(', ')}.
                             </p>
                         </div>
-                        <div className="text-right text-xs text-zinc-400">
-                            <div className="font-semibold text-zinc-200">{documents.length} total docs</div>
-                            <div>{queueStats.total} files in queue</div>
+                        <div className="grid grid-cols-2 gap-2 sm:min-w-[180px]">
+                            <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Docs</div>
+                                <div className="text-base font-bold text-zinc-100">{documents.length}</div>
+                            </div>
+                            <div className="rounded-xl border border-white/10 bg-black/25 px-3 py-2 text-center">
+                                <div className="text-[10px] uppercase tracking-[0.16em] text-zinc-500">Queue</div>
+                                <div className="text-base font-bold text-zinc-100">{queueStats.total}</div>
+                            </div>
                         </div>
                     </div>
                 </div>

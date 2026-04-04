@@ -54,6 +54,8 @@ export default function NoticesPage() {
     const [previewPendingTitle, setPreviewPendingTitle] = useState('');
     const [previewPendingSubtitle, setPreviewPendingSubtitle] = useState('');
     const [previewMode, setPreviewMode] = useState<'notice' | 'document'>('document');
+    const [noticesPage, setNoticesPage] = useState(1);
+    const NOTICES_PER_PAGE = 5;
 
     const targetOptions = useMemo(
         () =>
@@ -134,13 +136,27 @@ export default function NoticesPage() {
             if (!token || !canServe) return;
             const cachedDocs = documentsApi.peekList(token, { page: 1, per_page: 120 });
             if (active && cachedDocs?.documents?.length) {
-                setAttachmentOptions((cachedDocs.documents || []).slice(0, 120));
+                setAttachmentOptions(
+                    (cachedDocs.documents || [])
+                        .filter((doc) => {
+                            const filename = String(doc.filename || '').trim();
+                            return !filename.startsWith('NOTICE_');
+                        })
+                        .slice(0, 120),
+                );
                 return;
             }
             try {
                 const response = await documentsApi.list(token, { page: 1, per_page: 120 });
                 if (!active) return;
-                setAttachmentOptions((response.documents || []).slice(0, 120));
+                setAttachmentOptions(
+                    (response.documents || [])
+                        .filter((doc) => {
+                            const filename = String(doc.filename || '').trim();
+                            return !filename.startsWith('NOTICE_');
+                        })
+                        .slice(0, 120),
+                );
             } catch {
                 if (!active) return;
                 setAttachmentOptions([]);
@@ -151,6 +167,10 @@ export default function NoticesPage() {
             active = false;
         };
     }, [token, canServe]);
+
+    useEffect(() => {
+        setNoticesPage(1);
+    }, [items.length]);
 
     const previewDocument = useCallback(async (
         documentId: string,
@@ -217,6 +237,26 @@ export default function NoticesPage() {
             setCourse('');
             setTagsInput('');
             setAttachmentDocumentId('__none__');
+            const optimisticItems = (res.created || []).map((created) => ({
+                id: created.id,
+                title: created.title || title.trim(),
+                message: message.trim(),
+                doc_type: created.doc_type,
+                department: created.department || department.trim() || null,
+                course: created.course || course.trim() || null,
+                uploaded_at: new Date().toISOString(),
+                attachment_document_id: attachmentDocumentId === '__none__' ? null : attachmentDocumentId,
+                attachment_filename:
+                    attachmentDocumentId === '__none__'
+                        ? null
+                        : attachmentOptions.find((doc) => doc.id === attachmentDocumentId)?.filename || null,
+            }));
+            if (optimisticItems.length) {
+                setItems((prev) => {
+                    const seen = new Set(prev.map((item) => item.id));
+                    return [...optimisticItems.filter((item) => !seen.has(item.id)), ...prev];
+                });
+            }
             await loadNotices(true);
         } catch (err: any) {
             showToast(err?.message || 'Failed to send notice.', 'error');
@@ -235,20 +275,26 @@ export default function NoticesPage() {
         );
     }
 
+    const totalNoticePages = Math.max(1, Math.ceil(items.length / NOTICES_PER_PAGE));
+    const paginatedItems = useMemo(() => {
+        const start = (noticesPage - 1) * NOTICES_PER_PAGE;
+        return items.slice(start, start + NOTICES_PER_PAGE);
+    }, [items, noticesPage]);
+
     return (
         <div className="h-full overflow-y-auto p-6 sm:p-8 md:p-10 w-full">
             <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="max-w-6xl mx-auto w-full space-y-6">
                 <div className="rounded-2xl border border-orange-500/20 bg-gradient-to-r from-[#201108] via-[#161117] to-[#0b1226] p-5">
-                    <div className="flex items-start justify-between gap-4">
-                        <div>
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
                             <div className="inline-flex items-center rounded-full border border-orange-400/30 bg-orange-500/10 px-3 py-1 text-[10px] tracking-[0.18em] uppercase font-bold text-orange-300 mb-2">
                                 Notice Delivery
                             </div>
-                            <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-2 mb-2">
-                                <div className="w-8 h-8 rounded-lg bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
+                            <h1 className="text-[1.75rem] leading-tight font-extrabold tracking-tight text-white flex items-center gap-3 mb-2">
+                                <div className="w-10 h-10 shrink-0 rounded-xl bg-orange-500/10 border border-orange-500/20 flex items-center justify-center">
                                     <Megaphone className="w-4 h-4 text-orange-400" />
                                 </div>
-                                Notice Serving Console
+                                <span className="min-w-0">Notice Serving Console</span>
                             </h1>
                             <p className="text-sm text-zinc-300 max-w-2xl">
                                 Send structured notices to role-targeted audiences. Admin can send to students/faculty; faculty can send to students.
@@ -382,7 +428,7 @@ export default function NoticesPage() {
                         <div className="text-xs text-zinc-500">No notices served yet.</div>
                     ) : (
                         <div className="space-y-2">
-                            {items.map((item) => (
+                            {paginatedItems.map((item) => (
                                 <div key={item.id} className="rounded-xl border border-white/[0.06] bg-black/40 p-3">
                                     <div className="flex items-start justify-between gap-3">
                                         <div className="min-w-0">
@@ -434,6 +480,38 @@ export default function NoticesPage() {
                                     </div>
                                 </div>
                             ))}
+                            {totalNoticePages > 1 && (
+                                <div className="flex items-center justify-between gap-3 pt-2">
+                                    <div className="text-[11px] text-zinc-500">
+                                        Showing {(noticesPage - 1) * NOTICES_PER_PAGE + 1}-{Math.min(noticesPage * NOTICES_PER_PAGE, items.length)} of {items.length} notices
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setNoticesPage((prev) => Math.max(1, prev - 1))}
+                                            disabled={noticesPage === 1}
+                                            className="h-8 px-3 text-xs"
+                                        >
+                                            Prev
+                                        </Button>
+                                        <div className="min-w-12 text-center text-[11px] text-zinc-400">
+                                            {noticesPage} / {totalNoticePages}
+                                        </div>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            onClick={() => setNoticesPage((prev) => Math.min(totalNoticePages, prev + 1))}
+                                            disabled={noticesPage === totalNoticePages}
+                                            className="h-8 px-3 text-xs"
+                                        >
+                                            Next
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>
