@@ -548,7 +548,7 @@ const ProfilePage = () => {
                                 ))}
                             </div>
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                        <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
                             <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
                                 <h2 className="text-sm font-semibold text-white mb-4">Role Snapshot</h2>
                                 <div className="grid grid-cols-1 gap-3">
@@ -625,6 +625,47 @@ const ProfilePage = () => {
                                                     minute: '2-digit',
                                                 })
                                                 : 'Waiting for latest sync'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-white/[0.08] bg-zinc-900/50 p-5">
+                                <h2 className="text-sm font-semibold text-white mb-4">Access Summary</h2>
+                                <div className="grid grid-cols-1 gap-3">
+                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Accessible Docs']}`}>
+                                                <FileText className="w-3 h-3" />
+                                            </span>
+                                            Documents In Scope
+                                        </div>
+                                        <div className="text-sm font-semibold text-white mt-1.5">
+                                            {isLoadingStats ? <Skeleton className="h-5 w-14" /> : liveDocCount}
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                            <span className={`w-5 h-5 rounded-md border flex items-center justify-center ${iconToneByLabel['Recent Notices']}`}>
+                                                <Bell className="w-3 h-3" />
+                                            </span>
+                                            Notice Reach
+                                        </div>
+                                        <div className="text-sm font-semibold text-white mt-1.5">
+                                            {isLoadingStats ? <Skeleton className="h-5 w-14" /> : liveNoticeCount}
+                                        </div>
+                                    </div>
+
+                                    <div className="rounded-xl border border-white/[0.08] bg-white/[0.03] p-3">
+                                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                                            <span className="w-5 h-5 rounded-md border border-cyan-500/30 text-cyan-300 bg-cyan-500/15 flex items-center justify-center">
+                                                <Building className="w-3 h-3" />
+                                            </span>
+                                            Identity Mode
+                                        </div>
+                                        <div className="text-sm font-semibold text-white mt-1.5 capitalize">
+                                            {user?.identity_provider || 'email'}
                                         </div>
                                     </div>
                                 </div>
