@@ -5,12 +5,12 @@
 "use client";
 
 import * as React from "react";
-import { useState, useId, useEffect } from "react";
+import { useState, useId, useEffect, useRef } from "react";
 import { Slot } from "@radix-ui/react-slot";
 import * as LabelPrimitive from "@radix-ui/react-label";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { cva, type VariantProps } from "class-variance-authority";
-import { Check, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { Check, ChevronDown, Eye, EyeOff, X as XIcon } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { Link } from "react-router-dom";
@@ -235,6 +235,147 @@ const Select = React.forwardRef<HTMLButtonElement, SelectProps>(
     }
 );
 Select.displayName = "Select";
+
+interface MultiSelectProps {
+    id?: string;
+    value: string[];
+    onValueChange?: (value: string[]) => void;
+    placeholder?: string;
+    options: SelectOption[];
+    disabled?: boolean;
+    className?: string;
+}
+
+export const MultiSelect = React.forwardRef<HTMLButtonElement, MultiSelectProps>(
+    (
+        {
+            id,
+            value,
+            onValueChange,
+            placeholder = "Select options",
+            options,
+            disabled = false,
+            className,
+        },
+        ref
+    ) => {
+        const [open, setOpen] = useState(false);
+        const rootRef = useRef<HTMLDivElement | null>(null);
+
+        useEffect(() => {
+            if (!open) return;
+            const onPointerDown = (event: MouseEvent) => {
+                if (!rootRef.current?.contains(event.target as Node)) {
+                    setOpen(false);
+                }
+            };
+            const onEscape = (event: KeyboardEvent) => {
+                if (event.key === 'Escape') setOpen(false);
+            };
+            document.addEventListener('mousedown', onPointerDown);
+            document.addEventListener('keydown', onEscape);
+            return () => {
+                document.removeEventListener('mousedown', onPointerDown);
+                document.removeEventListener('keydown', onEscape);
+            };
+        }, [open]);
+
+        const selectedOptions = options.filter((option) => value.includes(option.value));
+        const toggleValue = (nextValue: string) => {
+            const exists = value.includes(nextValue);
+            const updated = exists
+                ? value.filter((entry) => entry !== nextValue)
+                : [...value, nextValue];
+            onValueChange?.(updated);
+        };
+
+        return (
+            <div ref={rootRef} className="relative w-full">
+                <button
+                    ref={ref}
+                    id={id}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => !disabled && setOpen((prev) => !prev)}
+                    className={cn(
+                        "flex h-12 w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-left text-sm text-white shadow-sm ring-offset-black transition-all hover:border-white/15 hover:bg-white/[0.075] focus-visible:border-orange-400/40 focus-visible:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500/15 disabled:cursor-not-allowed disabled:opacity-50",
+                        open && "border-orange-400/30 bg-white/[0.07]",
+                        className
+                    )}
+                >
+                    <span className="min-w-0 flex-1 overflow-hidden pr-3">
+                        {selectedOptions.length ? (
+                            <span className="flex h-full items-center gap-1.5 overflow-x-auto overflow-y-hidden whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                                {selectedOptions.map((option) => (
+                                    <span
+                                        key={option.value}
+                                        className="inline-flex shrink-0 items-center rounded-full border border-orange-500/20 bg-gradient-to-r from-orange-500/16 to-orange-400/8 px-2.5 py-1 text-[11px] font-medium leading-none text-orange-100 shadow-[inset_0_0_0_1px_rgba(249,115,22,0.08)]"
+                                    >
+                                        <span className="truncate">{option.label}</span>
+                                    </span>
+                                ))}
+                            </span>
+                        ) : (
+                            <span className="truncate text-zinc-500">{placeholder}</span>
+                        )}
+                    </span>
+                    <ChevronDown className={cn("h-4 w-4 shrink-0 text-zinc-500 transition-transform duration-200", open && "rotate-180 text-orange-300")} />
+                </button>
+
+                {open && (
+                    <div className="absolute z-[120] mt-2 w-full overflow-hidden rounded-xl border border-white/10 bg-zinc-950/95 backdrop-blur-xl shadow-[0_18px_60px_rgba(0,0,0,0.65)]">
+                        <div className="max-h-64 overflow-y-auto p-2 space-y-1.5">
+                            {options.map((option) => {
+                                const selected = value.includes(option.value);
+                                return (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        disabled={option.disabled}
+                                        onClick={() => !option.disabled && toggleValue(option.value)}
+                                        className={cn(
+                                            "relative flex min-h-11 w-full items-center justify-between rounded-xl border border-transparent px-3 py-2 text-sm text-zinc-200 outline-none transition-all",
+                                            option.disabled
+                                                ? "pointer-events-none opacity-40"
+                                                : "hover:border-white/10 hover:bg-white/[0.06] hover:text-white",
+                                            selected && "border-orange-500/20 bg-gradient-to-r from-orange-500/18 to-orange-400/10 text-white shadow-[inset_0_0_0_1px_rgba(249,115,22,0.12)]"
+                                        )}
+                                    >
+                                        <span className="truncate">{option.label}</span>
+                                        <span
+                                            className={cn(
+                                                "inline-flex h-5 w-5 items-center justify-center rounded-full border border-transparent transition-all",
+                                                selected
+                                                    ? "border-orange-400/30 bg-orange-500/15 text-orange-300"
+                                                    : "text-transparent"
+                                            )}
+                                        >
+                                            <Check className="h-3.5 w-3.5" />
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {selectedOptions.length > 0 && (
+                            <div className="border-t border-white/10 p-2 flex items-center justify-between gap-2">
+                                <span className="text-[11px] text-zinc-500">{selectedOptions.length} selected</span>
+                                <button
+                                    type="button"
+                                    onClick={() => onValueChange?.([])}
+                                    className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-medium text-zinc-400 hover:bg-white/5 hover:text-white"
+                                >
+                                    <XIcon className="h-3.5 w-3.5" />
+                                    Clear
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    }
+);
+MultiSelect.displayName = "MultiSelect";
 
 export interface PasswordInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
     label?: string;

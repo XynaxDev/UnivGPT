@@ -24,6 +24,7 @@ function buildDocumentBody(previewDoc: DocumentPreviewResponse) {
 
 export function DocumentPreviewModal({
     isOpen,
+    token,
     previewDoc,
     isLoading,
     onClose,
@@ -33,6 +34,7 @@ export function DocumentPreviewModal({
     pendingSubtitle,
 }: {
     isOpen: boolean;
+    token?: string | null;
     previewDoc: DocumentPreviewResponse | null;
     isLoading?: boolean;
     onClose: () => void;
@@ -43,9 +45,12 @@ export function DocumentPreviewModal({
 }) {
     const [isViewerLoading, setIsViewerLoading] = useState(false);
     const [shareState, setShareState] = useState<'idle' | 'copied' | 'shared'>('idle');
+    const [resolvedViewerUrl, setResolvedViewerUrl] = useState<string | null>(null);
+    const [resolvedDownloadUrl, setResolvedDownloadUrl] = useState<string | null>(null);
+    const [objectUrl, setObjectUrl] = useState<string | null>(null);
 
-    const viewerUrl = previewDoc?.viewer_url || previewDoc?.file_url || null;
-    const downloadUrl = previewDoc?.download_url || previewDoc?.file_url || null;
+    const viewerUrl = resolvedViewerUrl || previewDoc?.file_url || previewDoc?.viewer_url || null;
+    const downloadUrl = resolvedDownloadUrl || previewDoc?.download_url || previewDoc?.file_url || previewDoc?.viewer_url || null;
 
     const title = previewDoc?.notice_title || previewDoc?.filename || pendingTitle || 'Loading document...';
     const subtitle = previewDoc
@@ -73,10 +78,78 @@ export function DocumentPreviewModal({
         if (!isOpen) {
             setIsViewerLoading(false);
             setShareState('idle');
+            setResolvedViewerUrl(null);
+            setResolvedDownloadUrl(null);
             return;
         }
-        setIsViewerLoading(Boolean(viewerUrl));
-    }, [isOpen, viewerUrl]);
+        setIsViewerLoading(Boolean(previewDoc));
+    }, [isOpen, previewDoc]);
+
+    useEffect(() => {
+        if (!objectUrl) return;
+        return () => URL.revokeObjectURL(objectUrl);
+    }, [objectUrl]);
+
+    useEffect(() => {
+        let active = true;
+        let nextObjectUrl: string | null = null;
+
+        const resolveViewer = async () => {
+            if (!isOpen || !previewDoc) return;
+            setIsViewerLoading(true);
+            setResolvedViewerUrl(null);
+            setResolvedDownloadUrl(null);
+
+            if (previewDoc.file_url) {
+                setResolvedViewerUrl(previewDoc.file_url);
+                setResolvedDownloadUrl(previewDoc.file_url);
+                setIsViewerLoading(false);
+                return;
+            }
+
+            if (!previewDoc.viewer_url || !token) {
+                setIsViewerLoading(false);
+                return;
+            }
+
+            try {
+                const response = await fetch(previewDoc.viewer_url, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (!response.ok) throw new Error('Failed to open document.');
+                const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+                const blob = await response.blob();
+                if (contentType.includes('application/json')) {
+                    throw new Error('Protected document stream is not directly viewable.');
+                }
+                nextObjectUrl = URL.createObjectURL(blob);
+                if (!active) {
+                    URL.revokeObjectURL(nextObjectUrl);
+                    return;
+                }
+                setObjectUrl((prev) => {
+                    if (prev) URL.revokeObjectURL(prev);
+                    return nextObjectUrl;
+                });
+                setResolvedViewerUrl(nextObjectUrl);
+                setResolvedDownloadUrl(nextObjectUrl);
+            } catch {
+                if (!active) return;
+                setResolvedViewerUrl(null);
+                setResolvedDownloadUrl(previewDoc.download_url || previewDoc.file_url || null);
+            } finally {
+                if (active) setIsViewerLoading(false);
+            }
+        };
+
+        resolveViewer();
+        return () => {
+            active = false;
+            if (nextObjectUrl && nextObjectUrl !== objectUrl) {
+                URL.revokeObjectURL(nextObjectUrl);
+            }
+        };
+    }, [isOpen, previewDoc, token]);
 
     const handleShare = async () => {
         if (!viewerUrl) return;
