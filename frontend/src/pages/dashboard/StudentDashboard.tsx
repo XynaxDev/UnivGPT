@@ -133,33 +133,41 @@ export default function StudentDashboard() {
         let alive = true;
         const loadData = async () => {
             if (!token) return;
-            const shouldShowLoading = !(cachedExport || cachedDocs || cachedFaculty);
-            if (shouldShowLoading) setFacultyLoading(true);
-            try {
-                const [exportPayload, docsPayload] = await Promise.all([
-                    authApi.exportUserData(token),
-                    documentsApi.list(token, { page: 1, per_page: 24 }),
-                ]);
-                if (!alive) return;
-                setExportData(exportPayload);
-                setDocuments(docsPayload.documents || []);
+            const needsExport = !cachedExport;
+            const needsDocs = !cachedDocs;
+            const needsFaculty = !cachedFaculty;
 
-                // Hydrate faculty in the background so dashboard metrics/notices render faster.
-                authApi
-                    .getFacultyDirectory(token, 12)
-                    .then((facultyPayload) => {
-                        if (!alive) return;
-                        setFacultyMembers(facultyPayload.faculty || []);
-                    })
-                    .catch(() => {
-                        if (!alive) return;
-                        setFacultyMembers([]);
-                    });
+            if (!needsExport && !needsDocs && !needsFaculty) {
+                setFacultyLoading(false);
+                return;
+            }
+
+            if (needsFaculty) setFacultyLoading(true);
+            try {
+                const [exportResult, docsResult, facultyResult] = await Promise.allSettled([
+                    needsExport ? authApi.exportUserData(token) : Promise.resolve(cachedExport),
+                    needsDocs ? documentsApi.list(token, { page: 1, per_page: 24 }) : Promise.resolve(cachedDocs),
+                    needsFaculty ? authApi.getFacultyDirectory(token, 12) : Promise.resolve(cachedFaculty),
+                ]);
+
+                if (!alive) return;
+
+                if (exportResult.status === 'fulfilled' && exportResult.value) {
+                    setExportData(exportResult.value);
+                }
+                if (docsResult.status === 'fulfilled' && docsResult.value) {
+                    setDocuments(docsResult.value.documents || []);
+                }
+                if (facultyResult.status === 'fulfilled' && facultyResult.value) {
+                    setFacultyMembers(facultyResult.value.faculty || []);
+                } else if (needsFaculty) {
+                    setFacultyMembers([]);
+                }
             } catch {
                 if (!alive) return;
-                setExportData(null);
-                setDocuments([]);
-                setFacultyMembers([]);
+                if (needsExport) setExportData(null);
+                if (needsDocs) setDocuments([]);
+                if (needsFaculty) setFacultyMembers([]);
             } finally {
                 if (alive) setFacultyLoading(false);
             }

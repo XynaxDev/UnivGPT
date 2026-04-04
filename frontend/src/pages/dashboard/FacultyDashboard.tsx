@@ -94,20 +94,32 @@ export default function FacultyDashboard() {
         let alive = true;
         const loadData = async () => {
             if (!token) return;
-            const shouldShowLoading = !(cachedExport || cachedDocs);
-            if (shouldShowLoading) setIsLoading(true);
+            const needsExport = !cachedExport;
+            const needsDocs = !cachedDocs;
+
+            if (!needsExport && !needsDocs) {
+                setIsLoading(false);
+                return;
+            }
+
+            setIsLoading(true);
             try {
-                const [exportPayload, docsPayload] = await Promise.all([
-                    authApi.exportUserData(token),
-                    documentsApi.list(token, { page: 1, per_page: 60 }),
+                const [exportResult, docsResult] = await Promise.allSettled([
+                    needsExport ? authApi.exportUserData(token) : Promise.resolve(cachedExport),
+                    needsDocs ? documentsApi.list(token, { page: 1, per_page: 60 }) : Promise.resolve(cachedDocs),
                 ]);
                 if (!alive) return;
-                setExportData(exportPayload);
-                setDocuments(docsPayload.documents || []);
+
+                if (exportResult.status === 'fulfilled' && exportResult.value) {
+                    setExportData(exportResult.value);
+                }
+                if (docsResult.status === 'fulfilled' && docsResult.value) {
+                    setDocuments(docsResult.value.documents || []);
+                }
             } catch {
                 if (!alive) return;
-                setExportData(null);
-                setDocuments([]);
+                if (needsExport) setExportData(null);
+                if (needsDocs) setDocuments([]);
             } finally {
                 if (alive) setIsLoading(false);
             }

@@ -495,28 +495,40 @@ const AdminDashboard = () => {
         let alive = true;
         const load = async () => {
             if (!token) return;
-            const shouldShowLoading = !(cachedMetrics || cachedAudit);
-            if (shouldShowLoading) setIsLoading(true);
+            const needsMetrics = !cachedMetrics;
+            const needsAudit = !cachedAudit;
+
+            if (!needsMetrics && !needsAudit) {
+                setIsLoading(false);
+                return;
+            }
+
+            setIsLoading(true);
             setLoadError(null);
             const [metricsResult, auditResult] = await Promise.allSettled([
-                systemApi.metrics(token),
-                adminApi.getAuditLogs(token, 1, 30),
+                needsMetrics ? systemApi.metrics(token) : Promise.resolve(cachedMetrics),
+                needsAudit ? adminApi.getAuditLogs(token, 1, 30) : Promise.resolve(cachedAudit),
             ]);
             if (!alive) return;
 
-            if (metricsResult.status === 'fulfilled') {
+            if (metricsResult.status === 'fulfilled' && metricsResult.value) {
                 setMetrics(metricsResult.value);
-            } else {
+            } else if (needsMetrics) {
                 setMetrics(null);
             }
 
-            if (auditResult.status === 'fulfilled') {
+            if (auditResult.status === 'fulfilled' && auditResult.value) {
                 setAuditRows(auditResult.value.logs || []);
-            } else {
+            } else if (needsAudit) {
                 setAuditRows([]);
             }
 
-            if (metricsResult.status === 'rejected' && auditResult.status === 'rejected') {
+            if (
+                needsMetrics &&
+                needsAudit &&
+                metricsResult.status === 'rejected' &&
+                auditResult.status === 'rejected'
+            ) {
                 const metricsErr = metricsResult.reason as Error;
                 const auditErr = auditResult.reason as Error;
                 setLoadError(
