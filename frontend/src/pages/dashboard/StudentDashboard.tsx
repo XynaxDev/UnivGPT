@@ -239,6 +239,10 @@ export default function StudentDashboard() {
 
     const timetableSummary = useMemo(() => summarizeTimetable(timetableSlots), [timetableSlots]);
     const todayLabel = useMemo(() => getTodayWorkdayLabel(), []);
+    const isWeekendToday = useMemo(
+        () => ['sat', 'sun'].includes(todayLabel.toLowerCase()),
+        [todayLabel],
+    );
     const todaySlots = useMemo(
         () =>
             timetableSlots
@@ -425,8 +429,18 @@ export default function StudentDashboard() {
                 </div>
 
                 {todaySlots.length === 0 ? (
-                    <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] p-5 text-sm text-zinc-500">
-                        No classes are scheduled for today. Open the full timetable to review the rest of the week.
+                    <div className="rounded-2xl border border-dashed border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.08),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02))] p-5">
+                        <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+                            {isWeekendToday ? 'Weekend Snapshot' : 'Open Day Snapshot'}
+                        </div>
+                        <div className="mt-2 text-lg font-black text-white">
+                            {isWeekendToday ? 'No class slots are scheduled today' : 'Your timetable is clear for today'}
+                        </div>
+                        <div className="mt-2 text-sm text-zinc-400">
+                            {isWeekendToday
+                                ? 'Enjoy the off-day rhythm, catch up on reading, and use the full timetable to plan the week ahead.'
+                                : 'Nothing is mapped into today’s class blocks. Check the full timetable to plan your next lecture or lab.'}
+                        </div>
                     </div>
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">

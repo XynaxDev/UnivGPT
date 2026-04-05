@@ -153,6 +153,10 @@ export default function FacultyDashboard() {
     }, [documents]);
 
     const todayLabel = useMemo(() => getTodayWorkdayLabel(), []);
+    const isWeekendToday = useMemo(
+        () => ['sat', 'sun'].includes(todayLabel.toLowerCase()),
+        [todayLabel],
+    );
 
     const timetableSlots = useMemo(
         () =>
@@ -231,11 +235,6 @@ export default function FacultyDashboard() {
                         </p>
                     </div>
                     <div className="flex flex-wrap items-center gap-3">
-                        <Link to="/dashboard/timetable">
-                            <Button variant="outline" className="h-11 rounded-2xl px-5 text-zinc-200 border-white/15 hover:text-white text-sm">
-                                <CalendarDays className="w-4 h-4 mr-2" /> Open Timetable
-                            </Button>
-                        </Link>
                         <Link to="/dashboard/documents">
                             <Button className="bg-white text-black hover:bg-zinc-200 font-semibold px-6 h-11 rounded-2xl shadow-lg text-sm">
                                 <FileText className="w-4 h-4 mr-2" /> Upload Document
@@ -318,8 +317,18 @@ export default function FacultyDashboard() {
                             ))}
                         </div>
                     ) : (
-                        <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] p-5 text-sm text-zinc-500">
-                            No classes are scheduled for today. Open the full timetable to review the rest of the week.
+                        <div className="rounded-2xl border border-dashed border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.08),transparent_35%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02))] p-5">
+                            <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">
+                                {isWeekendToday ? 'Weekend Window' : 'Open Academic Window'}
+                            </div>
+                            <div className="mt-2 text-lg font-black text-white">
+                                {isWeekendToday ? 'No teaching blocks are scheduled today' : 'Today is clear on the teaching board'}
+                            </div>
+                            <div className="mt-2 text-sm text-zinc-400">
+                                {isWeekendToday
+                                    ? 'Use the quieter weekend lane for prep, evaluation, and planning before the next workday starts.'
+                                    : 'No mapped classes land on this date. You can review the full timetable or use the open time for mentoring, planning, and notices.'}
+                            </div>
                         </div>
                     )}
                 </section>

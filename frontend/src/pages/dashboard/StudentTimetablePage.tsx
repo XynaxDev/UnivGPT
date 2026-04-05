@@ -134,7 +134,7 @@ export default function StudentTimetablePage() {
                     <DateTimetableAgenda
                         slots={timetableSlots}
                         title={`Class Timetable for ${displayName}`}
-                        subtitle="Date-based student timetable built from your mapped courses. Monday to Friday follows 9 AM to 4 PM academic blocks, while weekends stay off."
+                        subtitle="Date-based student timetable built from your mapped courses. Monday to Friday follows A to D academic blocks, with lunch held between C and D and weekends kept off."
                         emptyMessage="No student timetable could be derived yet from your current course directory. Once mapped courses are available, your day agenda will appear here."
                         action={
                             <>

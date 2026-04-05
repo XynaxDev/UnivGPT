@@ -134,7 +134,7 @@ export default function FacultyTimetablePage() {
                     <DateTimetableAgenda
                         slots={timetableSlots}
                         title={`Teaching Timetable for ${displayName}`}
-                        subtitle="Date-based faculty agenda built from your mapped courses. Monday to Friday follows 9 AM to 4 PM academic blocks, while weekends stay off."
+                        subtitle="Date-based faculty agenda built from your mapped courses. Monday to Friday follows A to D academic blocks, with lunch held between C and D and weekends kept off."
                         emptyMessage="No faculty timetable could be derived yet from your live course directory. Once mapped courses are available, your daily agenda will appear here."
                         action={
                             <>
