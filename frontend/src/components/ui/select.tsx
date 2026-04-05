@@ -65,6 +65,7 @@ const SelectItem = React.forwardRef<
             "relative flex h-9 w-full cursor-default select-none items-center rounded-lg px-3 text-sm outline-none transition-colors",
             "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
             "data-[highlighted]:bg-fuchsia-500/12 data-[highlighted]:text-white",
+            "data-[state=checked]:bg-fuchsia-500/12 data-[state=checked]:text-white",
             className,
         )}
         {...props}
