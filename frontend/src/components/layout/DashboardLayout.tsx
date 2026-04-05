@@ -54,6 +54,7 @@ export default function DashboardLayout() {
             { label: 'Dashboard', href: '/dashboard', icon: <LayoutDashboard className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard') },
             { label: 'Student AI', href: '/dashboard/chat', icon: <MessageSquare className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/chat') },
             { label: 'My Courses', href: '/dashboard/courses', icon: <BookOpen className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/courses') },
+            { label: 'Timetable', href: '/dashboard/timetable', icon: <CalendarDays className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/timetable') },
             { label: 'Faculty', href: '/dashboard/faculty', icon: <GraduationCap className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/faculty') },
             { label: 'Notifications', href: '/dashboard/notifications', icon: <Bell className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/notifications') },
             { label: 'Settings', href: '/dashboard/settings', icon: <Settings className="w-5 h-5 shrink-0" />, prefetch: () => preloadRoute('/dashboard/settings') },
@@ -103,7 +104,9 @@ export default function DashboardLayout() {
         '/dashboard/documents': 'Upload, route, and manage document access',
         '/dashboard/upload': 'Upload, route, and manage document access',
         '/dashboard/notices': 'Send role-targeted notices to students and faculty',
-        '/dashboard/timetable': 'Weekly teaching schedule and class slots',
+        '/dashboard/timetable': role === 'faculty'
+            ? 'Weekly teaching schedule and class slots'
+            : 'Weekly class timetable and today schedule',
         '/dashboard/users': 'Manage accounts, roles, and status',
         '/dashboard/audit': 'Track platform activity and events',
         '/dashboard/dean': 'Review moderation appeals and restore user chat access',
