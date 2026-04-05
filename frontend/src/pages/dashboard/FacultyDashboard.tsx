@@ -23,7 +23,8 @@ import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
 import { authApi, documentsApi, type CourseDirectoryItem, type DocumentResponse, type UserExportData } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
-import { buildLiveTimetableSlots, formatTimetableTime, getAcademicHoliday, getTodayWorkdayLabel, summarizeTimetable, type TimetableSlot } from '@/lib/timetable';
+import { cn } from '@/lib/utils';
+import { buildLiveTimetableSlots, formatTimetableTime, getAcademicHoliday, getTimetableBlockLabel, getTodayWorkdayLabel, summarizeTimetable, type TimetableSlot } from '@/lib/timetable';
 
 const toRelativeTime = (value?: string) => {
     if (!value) return 'recently';
@@ -172,6 +173,7 @@ export default function FacultyDashboard() {
                 .sort((a, b) => toMinutes(a.start) - toMinutes(b.start)),
         [todayLabel, timetableSlots],
     );
+    const featuredTodaySlot = useMemo(() => todaySlots[0] || null, [todaySlots]);
 
     const nextClass = useMemo(() => {
         const now = new Date();
@@ -193,6 +195,31 @@ export default function FacultyDashboard() {
     }, [timetableSlots]);
 
     const timetableSummary = useMemo(() => summarizeTimetable(timetableSlots), [timetableSlots]);
+    const featuredSlotTone = useMemo(() => {
+        if (!featuredTodaySlot) return null;
+        if (featuredTodaySlot.type === 'lab') {
+            return {
+                shell: 'border-sky-400/20 bg-[linear-gradient(160deg,rgba(7,34,52,0.96),rgba(17,24,39,0.97))]',
+                block: 'border-sky-300/18 bg-sky-400/10 text-sky-100',
+                primaryPill: 'border-sky-300/28 bg-sky-400/16 text-sky-100',
+                secondaryPill: 'border-sky-300/14 bg-white/[0.04] text-sky-50/90',
+            };
+        }
+        if (featuredTodaySlot.type === 'tutorial') {
+            return {
+                shell: 'border-violet-400/20 bg-[linear-gradient(160deg,rgba(47,27,92,0.96),rgba(17,24,39,0.97))]',
+                block: 'border-violet-300/18 bg-violet-400/12 text-violet-100',
+                primaryPill: 'border-violet-300/28 bg-violet-400/16 text-violet-100',
+                secondaryPill: 'border-violet-300/14 bg-white/[0.04] text-violet-50/90',
+            };
+        }
+        return {
+            shell: 'border-orange-400/20 bg-[linear-gradient(160deg,rgba(68,32,10,0.96),rgba(17,24,39,0.97))]',
+            block: 'border-orange-300/18 bg-orange-400/12 text-orange-100',
+            primaryPill: 'border-orange-300/28 bg-orange-400/16 text-orange-100',
+            secondaryPill: 'border-orange-300/14 bg-white/[0.04] text-orange-50/90',
+        };
+    }, [featuredTodaySlot]);
 
     const metrics = [
         {
@@ -291,34 +318,51 @@ export default function FacultyDashboard() {
                                 </div>
                             ))}
                         </div>
-                    ) : todaySlots.length > 0 ? (
-                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                            {todaySlots.map((slot) => (
-                                <div
-                                    key={`${slot.day}-${slot.start}-${slot.course}`}
-                                    className="rounded-2xl border border-orange-400/20 bg-[linear-gradient(180deg,rgba(249,115,22,0.14),rgba(17,24,39,0.62))] p-4"
-                                >
-                                    <div className="flex items-start justify-between gap-3">
-                                        <div className="inline-flex rounded-full border border-orange-400/25 bg-orange-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
-                                            {slot.type}
-                                        </div>
-                                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-300">
-                                            {slot.day}
-                                        </div>
+                    ) : featuredTodaySlot && featuredSlotTone ? (
+                        <div className={cn('rounded-2xl border p-4 sm:p-5', featuredSlotTone.shell)}>
+                            <div className="grid gap-4 lg:grid-cols-[180px_1fr] lg:items-stretch">
+                                <div className={cn('rounded-2xl border p-4 sm:p-5', featuredSlotTone.block)}>
+                                    <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-white/80">
+                                        Block {getTimetableBlockLabel(featuredTodaySlot.start, featuredTodaySlot.end)}
                                     </div>
-                                    <div className="mt-3 text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">{slot.code}</div>
-                                    <div className="mt-1 text-lg font-black leading-tight text-white">{slot.course}</div>
-                                    <div className="mt-4 flex items-center justify-between gap-3 text-xs text-zinc-300">
-                                        <span>{formatTimetableTime(slot.start)} - {formatTimetableTime(slot.end)}</span>
-                                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-400">
-                                            {slot.room}
-                                        </span>
+                                    <div className="mt-5 text-[2rem] font-black leading-none text-white">
+                                        {formatTimetableTime(featuredTodaySlot.start)}
                                     </div>
-                                    {slot.department && (
-                                        <div className="mt-3 text-[11px] text-zinc-500">{slot.department}</div>
-                                    )}
+                                    <div className="mt-2 text-sm font-medium text-white/72">
+                                        to {formatTimetableTime(featuredTodaySlot.end)}
+                                    </div>
                                 </div>
-                            ))}
+
+                                <div className="rounded-2xl border border-white/10 bg-black/10 p-4 sm:p-5">
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]', featuredSlotTone.primaryPill)}>
+                                                {featuredTodaySlot.type}
+                                            </span>
+                                            <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]', featuredSlotTone.secondaryPill)}>
+                                                {featuredTodaySlot.code}
+                                            </span>
+                                        </div>
+                                        <div className="flex flex-wrap items-center justify-end gap-2">
+                                            <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]', featuredSlotTone.secondaryPill)}>
+                                                {featuredTodaySlot.room}
+                                            </span>
+                                            {featuredTodaySlot.department ? (
+                                                <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]', featuredSlotTone.secondaryPill)}>
+                                                    {featuredTodaySlot.department}
+                                                </span>
+                                            ) : null}
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-4 text-xl font-black leading-tight text-white">
+                                        {featuredTodaySlot.course}
+                                    </div>
+                                    <div className="mt-5 text-sm font-medium text-white/80">
+                                        First teaching block for today
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     ) : (
                         <div className="overflow-hidden rounded-2xl border border-fuchsia-400/15 bg-[linear-gradient(135deg,rgba(88,28,135,0.18),rgba(24,25,31,0.98) 42%,rgba(124,58,237,0.12))] p-5">

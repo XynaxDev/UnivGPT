@@ -59,6 +59,15 @@ function normalize(value?: string | null) {
     return String(value || '').trim().toLowerCase();
 }
 
+function cleanDisplayText(value?: string | null) {
+    return String(value || '')
+        .replace(/[_]+/g, ' ')
+        .replace(/[-]{2,}/g, ' ')
+        .replace(/\s*\/\s*/g, ' / ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+}
+
 function hashString(value: string) {
     let hash = 0;
     for (let i = 0; i < value.length; i += 1) {
@@ -74,11 +83,11 @@ function buildRoom(course: CourseDirectoryItem, block: string) {
 }
 
 function compactCourseTitle(course: CourseDirectoryItem) {
-    const cleanTitle = String(course.title || course.code || 'Course').trim();
-    const code = String(course.code || '').trim().toUpperCase();
+    const cleanTitle = cleanDisplayText(course.title || course.code || 'Course');
+    const code = cleanDisplayText(course.code).toUpperCase();
     if (!code) return cleanTitle;
     const titleWithoutCode = cleanTitle.replace(new RegExp(`^${code}\\s*`, 'i'), '').trim();
-    return titleWithoutCode ? `${code} ${titleWithoutCode}` : code;
+    return titleWithoutCode || cleanTitle || code;
 }
 
 function inferType(course: CourseDirectoryItem, fallbackType: TimetableSlotType): TimetableSlotType {
@@ -143,9 +152,9 @@ export function buildLiveTimetableSlots(
             end: blueprint.end,
             type,
             course: compactCourseTitle(course),
-            code: String(course.code || 'COURSE').trim().toUpperCase(),
+            code: cleanDisplayText(course.code || 'COURSE').toUpperCase(),
             room: buildRoom(course, block),
-            department: course.department,
+            department: cleanDisplayText(course.department),
             facultyId: matchedFacultyId,
             facultyName: matchedFacultyName,
         };
@@ -180,6 +189,17 @@ export function getTimetableSlot(
     end: string,
 ) {
     return slots.find((slot) => slot.day === day && slot.start === start && slot.end === end) || null;
+}
+
+export function getTimetableBlockLabel(start: string, end: string) {
+    return (
+        TIME_COLUMNS.find(
+            (column) =>
+                column.kind === 'slot' &&
+                column.start === start &&
+                column.end === end,
+        )?.block || 'A'
+    );
 }
 
 export function getTodayWorkdayLabel(date = new Date()) {

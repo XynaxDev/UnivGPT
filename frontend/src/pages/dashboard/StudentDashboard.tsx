@@ -27,7 +27,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { authApi, documentsApi, type CourseDirectoryItem, type DocumentResponse, type UserExportData, type FacultySummary } from '@/lib/api';
-import { buildLiveTimetableSlots, formatTimetableTime, getAcademicHoliday, getTodayWorkdayLabel, summarizeTimetable } from '@/lib/timetable';
+import { buildLiveTimetableSlots, formatTimetableTime, getAcademicHoliday, getTimetableBlockLabel, getTodayWorkdayLabel, summarizeTimetable } from '@/lib/timetable';
 
 type DashboardNotice = {
     id: string;
@@ -250,6 +250,18 @@ export default function StudentDashboard() {
                 .sort((a, b) => a.start.localeCompare(b.start)),
         [todayLabel, timetableSlots],
     );
+    const nowMinutes = useMemo(() => {
+        const now = new Date();
+        return now.getHours() * 60 + now.getMinutes();
+    }, []);
+    const featuredTodaySlot = useMemo(() => {
+        if (todaySlots.length === 0) return null;
+        const upcoming = todaySlots.find((slot) => {
+            const [hours, minutes] = slot.start.split(':').map(Number);
+            return hours * 60 + minutes >= nowMinutes;
+        });
+        return upcoming || todaySlots[0];
+    }, [nowMinutes, todaySlots]);
 
     const openChatWithPrefill = (prefill: string) => {
         navigate('/dashboard/chat', { state: { prefill } });
@@ -275,6 +287,38 @@ export default function StudentDashboard() {
         }
         navigate('/dashboard/faculty', { state: { focusFaculty: faculty.full_name } });
     };
+
+    const featuredSlotTone = useMemo(() => {
+        if (!featuredTodaySlot) return null;
+        if (featuredTodaySlot.type === 'lab') {
+            return {
+                shell: 'border-sky-400/20 bg-[linear-gradient(160deg,rgba(8,47,73,0.92),rgba(15,23,42,0.95))]',
+                block: 'border-sky-300/18 bg-sky-400/10 text-sky-100',
+                primaryPill: 'border-sky-300/30 bg-sky-400/16 text-sky-100',
+                secondaryPill: 'border-sky-300/14 bg-white/[0.04] text-sky-50/90',
+                facultyChip: 'border-sky-300/18 bg-white/[0.04] text-sky-50',
+                accent: 'from-sky-400/16 via-cyan-300/10 to-transparent',
+            };
+        }
+        if (featuredTodaySlot.type === 'tutorial') {
+            return {
+                shell: 'border-violet-400/20 bg-[linear-gradient(160deg,rgba(56,32,99,0.95),rgba(17,24,39,0.96))]',
+                block: 'border-violet-300/18 bg-violet-400/12 text-violet-100',
+                primaryPill: 'border-violet-300/30 bg-violet-400/16 text-violet-100',
+                secondaryPill: 'border-violet-300/14 bg-white/[0.04] text-violet-50/90',
+                facultyChip: 'border-violet-300/18 bg-white/[0.04] text-violet-50',
+                accent: 'from-violet-400/16 via-fuchsia-300/10 to-transparent',
+            };
+        }
+        return {
+            shell: 'border-amber-400/20 bg-[linear-gradient(160deg,rgba(66,32,6,0.95),rgba(17,24,39,0.95))]',
+            block: 'border-amber-300/18 bg-amber-400/12 text-amber-100',
+            primaryPill: 'border-amber-300/30 bg-amber-400/16 text-amber-100',
+            secondaryPill: 'border-amber-300/14 bg-white/[0.04] text-amber-50/90',
+            facultyChip: 'border-amber-300/18 bg-white/[0.04] text-amber-50',
+            accent: 'from-amber-400/16 via-orange-300/10 to-transparent',
+        };
+    }, [featuredTodaySlot]);
 
     const metrics = [
         {
@@ -467,61 +511,76 @@ export default function StudentDashboard() {
                             </div>
                         </div>
                     </div>
-                ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
-                        {todaySlots.map((slot) => (
-                            <div
-                                key={`${slot.day}-${slot.start}-${slot.course}`}
-                                className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(180deg,rgba(249,115,22,0.08),rgba(17,24,39,0.64))] p-4"
-                            >
-                                <div className="flex flex-wrap items-start justify-between gap-2">
+                ) : featuredTodaySlot && featuredSlotTone ? (
+                    <div className={cn('relative overflow-hidden rounded-2xl border p-4 sm:p-5', featuredSlotTone.shell)}>
+                        <div className={cn('pointer-events-none absolute inset-y-0 right-0 w-56 bg-gradient-to-l blur-2xl', featuredSlotTone.accent)} />
+                        <div className="relative grid gap-4 lg:grid-cols-[180px_1fr] lg:items-stretch">
+                            <div className={cn('rounded-2xl border p-4 sm:p-5', featuredSlotTone.block)}>
+                                <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-white/80">
+                                    Block {getTimetableBlockLabel(featuredTodaySlot.start, featuredTodaySlot.end)}
+                                </div>
+                                <div className="mt-5 text-[2rem] font-black leading-none text-white">
+                                    {formatTimetableTime(featuredTodaySlot.start)}
+                                </div>
+                                <div className="mt-2 text-sm font-medium text-white/72">
+                                    to {formatTimetableTime(featuredTodaySlot.end)}
+                                </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-white/10 bg-black/10 p-4 sm:p-5">
+                                <div className="flex flex-wrap items-start justify-between gap-3">
                                     <div className="flex flex-wrap items-center gap-2">
-                                        <span className="inline-flex rounded-full border border-orange-400/20 bg-orange-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
-                                            {slot.type}
+                                        <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.2em]', featuredSlotTone.primaryPill)}>
+                                            {featuredTodaySlot.type}
                                         </span>
-                                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-300">
-                                            {slot.code}
+                                        <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em]', featuredSlotTone.secondaryPill)}>
+                                            {featuredTodaySlot.code}
                                         </span>
                                     </div>
                                     <div className="flex flex-wrap items-center justify-end gap-2">
-                                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-300">
-                                            {slot.room}
+                                        <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]', featuredSlotTone.secondaryPill)}>
+                                            {featuredTodaySlot.room}
                                         </span>
-                                        {slot.department ? (
-                                            <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-400">
-                                                {slot.department}
+                                        {featuredTodaySlot.department ? (
+                                            <span className={cn('inline-flex rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em]', featuredSlotTone.secondaryPill)}>
+                                                {featuredTodaySlot.department}
                                             </span>
                                         ) : null}
                                     </div>
                                 </div>
-                                <div className="mt-3 text-base font-black leading-tight text-white">{slot.course}</div>
-                                {slot.facultyName ? (
-                                    slot.facultyId ? (
+
+                                <div className="mt-4 text-xl font-black leading-tight text-white">
+                                    {featuredTodaySlot.course}
+                                </div>
+
+                                {featuredTodaySlot.facultyName ? (
+                                    featuredTodaySlot.facultyId ? (
                                         <Link
-                                            to={`/dashboard/faculty/${slot.facultyId}`}
-                                            className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-100 transition hover:text-white hover:underline"
+                                            to={`/dashboard/faculty/${featuredTodaySlot.facultyId}`}
+                                            className="mt-4 inline-flex items-center gap-3 text-sm font-semibold text-white/95 transition hover:text-white hover:underline"
                                         >
-                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[11px] font-bold uppercase text-white/85">
-                                                {slot.facultyName.slice(0, 1)}
+                                            <span className={cn('inline-flex h-9 w-9 items-center justify-center rounded-full border text-[12px] font-bold uppercase', featuredSlotTone.facultyChip)}>
+                                                {featuredTodaySlot.facultyName.slice(0, 1)}
                                             </span>
-                                            {slot.facultyName}
+                                            {featuredTodaySlot.facultyName}
                                         </Link>
                                     ) : (
-                                        <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-100">
-                                            <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[11px] font-bold uppercase text-white/85">
-                                                {slot.facultyName.slice(0, 1)}
+                                        <div className="mt-4 inline-flex items-center gap-3 text-sm font-semibold text-white/95">
+                                            <span className={cn('inline-flex h-9 w-9 items-center justify-center rounded-full border text-[12px] font-bold uppercase', featuredSlotTone.facultyChip)}>
+                                                {featuredTodaySlot.facultyName.slice(0, 1)}
                                             </span>
-                                            {slot.facultyName}
+                                            {featuredTodaySlot.facultyName}
                                         </div>
                                     )
                                 ) : null}
-                                <div className="mt-4 text-xs text-zinc-300">
-                                    {formatTimetableTime(slot.start)} - {formatTimetableTime(slot.end)}
+
+                                <div className="mt-5 text-sm font-medium text-white/80">
+                                    Next live class for today
                                 </div>
                             </div>
-                        ))}
+                        </div>
                     </div>
-                )}
+                ) : null}
             </section>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
