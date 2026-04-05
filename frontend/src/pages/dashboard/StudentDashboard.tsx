@@ -143,29 +143,21 @@ export default function StudentDashboard() {
             const needsDocs = !cachedDocs || suspiciousDocsCache;
             const needsFaculty = !cachedFaculty;
             const needsCourses = !cachedCourses;
-            const shouldSilentRefresh = !needsExport && !needsDocs && !needsFaculty && !needsCourses;
-
-            if (needsFaculty || shouldSilentRefresh) setFacultyLoading(needsFaculty);
+            if (needsFaculty) setFacultyLoading(true);
             try {
                 const [exportResult, docsResult, facultyResult, coursesResult] = await Promise.allSettled([
-                    (needsExport || shouldSilentRefresh)
-                        ? authApi.exportUserData(token, { force: shouldSilentRefresh })
+                    needsExport
+                        ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 24 }, { force: suspiciousDocsCache })
-                        : shouldSilentRefresh
-                            ? documentsApi.list(token, { page: 1, per_page: 24 }, { force: true })
-                            : Promise.resolve(cachedDocs),
+                        ? documentsApi.list(token, { page: 1, per_page: 24 }, suspiciousDocsCache ? { force: true } : undefined)
+                        : Promise.resolve(cachedDocs),
                     needsFaculty
                         ? authApi.getFacultyDirectory(token, 12)
-                        : shouldSilentRefresh
-                            ? authApi.getFacultyDirectory(token, 12, { force: true })
-                            : Promise.resolve(cachedFaculty),
+                        : Promise.resolve(cachedFaculty),
                     needsCourses
                         ? authApi.getCourseDirectory(token, 24)
-                        : shouldSilentRefresh
-                            ? authApi.getCourseDirectory(token, 24, { force: true })
-                            : Promise.resolve(cachedCourses),
+                        : Promise.resolve(cachedCourses),
                 ]);
 
                 if (!alive) return;
@@ -178,20 +170,20 @@ export default function StudentDashboard() {
                 }
                 if (facultyResult.status === 'fulfilled' && facultyResult.value) {
                     setFacultyMembers(facultyResult.value.faculty || []);
-                } else if (needsFaculty && !shouldSilentRefresh) {
+                } else if (needsFaculty) {
                     setFacultyMembers([]);
                 }
                 if (coursesResult.status === 'fulfilled' && coursesResult.value) {
                     setCourses(coursesResult.value.courses || []);
-                } else if (needsCourses && !shouldSilentRefresh) {
+                } else if (needsCourses) {
                     setCourses([]);
                 }
             } catch {
                 if (!alive) return;
-                if (needsExport && !cachedExport && !shouldSilentRefresh) setExportData(null);
-                if (needsDocs && !cachedDocs && !shouldSilentRefresh) setDocuments([]);
-                if (needsFaculty && !cachedFaculty && !shouldSilentRefresh) setFacultyMembers([]);
-                if (needsCourses && !cachedCourses && !shouldSilentRefresh) setCourses([]);
+                if (needsExport && !cachedExport) setExportData(null);
+                if (needsDocs && !cachedDocs) setDocuments([]);
+                if (needsFaculty && !cachedFaculty) setFacultyMembers([]);
+                if (needsCourses && !cachedCourses) setCourses([]);
             } finally {
                 if (alive) setFacultyLoading(false);
             }

@@ -86,23 +86,19 @@ export default function FacultyDashboard() {
             const needsExport = !cachedExport;
             const needsDocs = !cachedDocs || suspiciousDocsCache;
             const needsCourses = !cachedCourses;
-            const shouldSilentRefresh = !needsExport && !needsDocs && !needsCourses;
-
             if (!cachedExport && !cachedDocs) {
                 setIsLoading(true);
             }
             try {
                 const [exportResult, docsResult, coursesResult] = await Promise.allSettled([
-                    (needsExport || shouldSilentRefresh)
-                        ? authApi.exportUserData(token, { force: shouldSilentRefresh })
+                    needsExport
+                        ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 60 }, { force: suspiciousDocsCache })
-                        : shouldSilentRefresh
-                            ? documentsApi.list(token, { page: 1, per_page: 60 }, { force: true })
-                            : Promise.resolve(cachedDocs),
-                    (needsCourses || shouldSilentRefresh)
-                        ? authApi.getCourseDirectory(token, 24, { force: shouldSilentRefresh })
+                        ? documentsApi.list(token, { page: 1, per_page: 60 }, suspiciousDocsCache ? { force: true } : undefined)
+                        : Promise.resolve(cachedDocs),
+                    needsCourses
+                        ? authApi.getCourseDirectory(token, 24)
                         : Promise.resolve(cachedCourses),
                 ]);
                 if (!alive) return;
@@ -118,9 +114,9 @@ export default function FacultyDashboard() {
                 }
             } catch {
                 if (!alive) return;
-                if (needsExport && !cachedExport && !shouldSilentRefresh) setExportData(null);
-                if (needsDocs && !cachedDocs && !shouldSilentRefresh) setDocuments([]);
-                if (needsCourses && !cachedCourses && !shouldSilentRefresh) setCourses([]);
+                if (needsExport && !cachedExport) setExportData(null);
+                if (needsDocs && !cachedDocs) setDocuments([]);
+                if (needsCourses && !cachedCourses) setCourses([]);
             } finally {
                 if (alive) setIsLoading(false);
             }
