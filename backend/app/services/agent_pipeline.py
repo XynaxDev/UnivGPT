@@ -7,7 +7,8 @@ RAG Pipeline using:
 - Pinecone (Vector Search with Intent Extraction)
 - HuggingFace (Local Embeddings)
 - Supabase (Conversation Persistence)
-- OpenRouter (LLM Generation & Intent Extraction)
+- OpenRouter (Intent Extraction)
+- Gemma via Ollama-compatible endpoint (Generation)
 """
 
 import uuid
@@ -17,6 +18,7 @@ import logging
 import datetime
 import re
 import asyncio
+from email.utils import parsedate_to_datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional, Dict, Any
 
@@ -53,9 +55,10 @@ logger = logging.getLogger(__name__)
 
 # Capability flags to avoid repeated failing schema probes on every request.
 _DOCUMENTS_HAS_UPLOADED_AT: Optional[bool] = None
-_OPENROUTER_CLIENT: Optional[httpx.AsyncClient] = None
+_LLM_CLIENTS: dict[str, httpx.AsyncClient] = {}
 _PINECONE_EMBEDDING_DISABLED = False
 _OFFENSE_STATE_CACHE: dict[str, dict[str, Any]] = {}
+_PROVIDER_FAILURE_COOLDOWNS: dict[str, datetime.datetime] = {}
 MAX_MODERATION_WARNINGS = 2
 _ADMIN_ALLOWED_INTENT_TYPES = {
     "count_users",
@@ -91,12 +94,225 @@ _ADMIN_ALLOWED_TARGETS = {
 }
 
 
-def get_openrouter_client() -> httpx.AsyncClient:
-    global _OPENROUTER_CLIENT
-    if _OPENROUTER_CLIENT is None:
+def get_llm_client(provider: str) -> httpx.AsyncClient:
+    client = _LLM_CLIENTS.get(provider)
+    if client is None:
         timeout_seconds = max(5, int(settings.openrouter_timeout_seconds or 20))
-        _OPENROUTER_CLIENT = httpx.AsyncClient(timeout=float(timeout_seconds))
-    return _OPENROUTER_CLIENT
+        client = httpx.AsyncClient(timeout=float(timeout_seconds))
+        _LLM_CLIENTS[provider] = client
+    return client
+
+
+def _provider_config(provider: str, requested_model: Optional[str] = None) -> dict[str, str]:
+    provider_key = (provider or "generation").strip().lower()
+    if provider_key == "intent":
+        return {
+            "provider": "intent",
+            "provider_label": "OpenRouter",
+            "model": (requested_model or settings.openrouter_intent_model or "").strip(),
+            "base_url": (settings.openrouter_base_url or "").strip().rstrip("/"),
+            "auth_token": (settings.openrouter_api_key or "").strip(),
+            "endpoint": "/chat/completions",
+        }
+    if provider_key == "generation_fallback":
+        return {
+            "provider": "generation_fallback",
+            "provider_label": "OpenRouter fallback",
+            "model": (requested_model or "").strip(),
+            "base_url": (settings.openrouter_base_url or "").strip().rstrip("/"),
+            "auth_token": (settings.openrouter_api_key or "").strip(),
+            "endpoint": "/chat/completions",
+        }
+    return {
+        "provider": "generation",
+        "provider_label": "Generation model",
+        "model": (requested_model or settings.ollama_generation_model or "").strip(),
+        "base_url": (settings.ollama_base_url or "").strip().rstrip("/"),
+        "auth_token": (settings.ollama_api_key or "").strip(),
+        "endpoint": "/v1/chat/completions",
+    }
+
+
+def _parse_retry_after_seconds(exc: Exception) -> Optional[int]:
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return None
+
+    response = exc.response
+    if response is None:
+        return None
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    candidate_values = [
+        response.headers.get("retry-after"),
+        response.headers.get("x-ratelimit-reset-after"),
+        response.headers.get("x-ratelimit-reset"),
+    ]
+    for raw in candidate_values:
+        if not raw:
+            continue
+        value = str(raw).strip()
+        if not value:
+            continue
+        try:
+            seconds = int(float(value))
+            if seconds > 10_000_000:
+                reset_at = datetime.datetime.fromtimestamp(seconds, tz=datetime.timezone.utc)
+                delta = int((reset_at - now).total_seconds())
+                if delta > 0:
+                    return delta
+            if seconds > 0:
+                return seconds
+        except ValueError:
+            try:
+                reset_dt = parsedate_to_datetime(value)
+                if reset_dt.tzinfo is None:
+                    reset_dt = reset_dt.replace(tzinfo=datetime.timezone.utc)
+                delta = int((reset_dt - now).total_seconds())
+                if delta > 0:
+                    return delta
+            except Exception:
+                pass
+
+    body = ""
+    try:
+        body = response.text or ""
+    except Exception:
+        body = ""
+    if body:
+        match = re.search(r"(\d+)\s*(seconds?|secs?|minutes?|mins?|hours?|hrs?)", body, re.IGNORECASE)
+        if match:
+            amount = int(match.group(1))
+            unit = match.group(2).lower()
+            if unit.startswith("hour") or unit.startswith("hr"):
+                return amount * 3600
+            if unit.startswith("minute") or unit.startswith("min"):
+                return amount * 60
+            return amount
+    return None
+
+
+def _humanize_retry_window(seconds: Optional[int]) -> Optional[str]:
+    if not seconds or seconds <= 0:
+        return None
+    if seconds < 60:
+        return f"{seconds} seconds"
+    minutes = round(seconds / 60)
+    if minutes < 60:
+        return f"{minutes} minute{'s' if minutes != 1 else ''}"
+    hours = round(seconds / 3600)
+    if hours < 24:
+        return f"{hours} hour{'s' if hours != 1 else ''}"
+    days = round(seconds / 86400)
+    return f"{days} day{'s' if days != 1 else ''}"
+
+
+def _build_user_facing_provider_message(exc: Optional[Exception], provider_cfg: dict[str, str], response_format: Optional[str]) -> str:
+    if response_format == "json":
+        return "{}"
+
+    provider_label = provider_cfg.get("provider_label") or "AI provider"
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None and exc.response.status_code == 429:
+        retry_window = _humanize_retry_window(_parse_retry_after_seconds(exc))
+        if retry_window:
+            return (
+                f"I'm temporarily rate-limited by the {provider_label}. "
+                f"Please try again in about {retry_window}."
+            )
+        return (
+            f"I'm temporarily rate-limited by the {provider_label}. "
+            "Please try again a little later."
+        )
+    return (
+        f"I'm unable to answer right now because the {provider_label} is temporarily unavailable. "
+        "Please try again in a moment."
+    )
+
+
+def _is_uuid_like(value: Any) -> bool:
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    try:
+        uuid.UUID(raw)
+        return True
+    except Exception:
+        return False
+
+
+def _looks_like_internal_reasoning(text: str) -> bool:
+    preview = str(text or "").strip().lower()
+    if not preview:
+        return False
+    if preview.startswith("<think>") or preview.startswith("<thinking>"):
+        return True
+    if "```thinking" in preview or "```thought" in preview or "```analysis" in preview:
+        return True
+    planning_markers = (
+        "we need to respond",
+        "i need to respond",
+        "the user says",
+        "they ask",
+        "should respond",
+        "instruction:",
+        "answer the exact user ask",
+        "provide short line",
+        "so we need to say",
+        "warm but professional",
+    )
+    return any(preview.startswith(marker) for marker in planning_markers)
+
+
+def _sanitize_generation_output(text: str) -> str:
+    cleaned = str(text or "").replace("\r\n", "\n").strip()
+    if not cleaned:
+        return ""
+
+    cleaned = re.sub(r"<think>.*?</think>", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+    cleaned = re.sub(r"<thinking>.*?</thinking>", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+    cleaned = re.sub(r"```(?:thinking|thought|analysis)?\s*.*?```", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+
+    if _looks_like_internal_reasoning(cleaned):
+        return ""
+    return cleaned
+
+
+def _provider_cooldown_key(provider: str, model: str) -> str:
+    return f"{str(provider or '').strip().lower()}::{str(model or '').strip().lower()}"
+
+
+def _is_provider_in_cooldown(provider: str, model: str) -> bool:
+    key = _provider_cooldown_key(provider, model)
+    cooldown_until = _PROVIDER_FAILURE_COOLDOWNS.get(key)
+    if not cooldown_until:
+        return False
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if cooldown_until <= now:
+        _PROVIDER_FAILURE_COOLDOWNS.pop(key, None)
+        return False
+    return True
+
+
+def _mark_provider_cooldown(provider: str, model: str, seconds: Optional[int]) -> None:
+    if not model:
+        return
+    wait_seconds = int(seconds or 600)
+    wait_seconds = max(60, min(wait_seconds, 6 * 3600))
+    _PROVIDER_FAILURE_COOLDOWNS[_provider_cooldown_key(provider, model)] = (
+        datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=wait_seconds)
+    )
+
+
+def _candidate_provider_configs(provider: str, requested_model: Optional[str], allow_fallback_models: bool) -> list[dict[str, str]]:
+    primary = _provider_config(provider, requested_model=requested_model)
+    candidates = [primary] if not _is_provider_in_cooldown(primary["provider"], primary["model"]) else []
+    if (provider or "generation").strip().lower() == "generation" and allow_fallback_models:
+        for fallback_model in settings.openrouter_generation_fallback_models_list:
+            fallback_cfg = _provider_config("generation_fallback", requested_model=fallback_model)
+            if fallback_cfg["model"] and not _is_provider_in_cooldown(fallback_cfg["provider"], fallback_cfg["model"]):
+                candidates.append(fallback_cfg)
+    if not candidates:
+        candidates = [primary]
+    return candidates
 
 def is_network_error(exc: Exception) -> bool:
     message = str(exc).lower()
@@ -737,27 +953,38 @@ async def call_llm(
     temperature: Optional[float] = None,
     allow_fallback_models: bool = True,
     max_retries_override: Optional[int] = None,
+    provider: str = "generation",
 ) -> str:
-    """Helper to call OpenRouter LLM."""
+    """Helper to call the configured LLM provider."""
     if settings.mock_llm:
         return "This is a mock response from the agent."
-
-    client = get_openrouter_client()
-    candidate_models: list[str] = []
-    primary_model = (model or settings.openrouter_model or "").strip()
-    if primary_model:
-        candidate_models.append(primary_model)
-    if allow_fallback_models:
-        for fallback in settings.openrouter_fallback_models_list:
-            if fallback not in candidate_models:
-                candidate_models.append(fallback)
 
     configured_retries = settings.openrouter_max_retries if max_retries_override is None else max_retries_override
     max_retries = max(0, int(configured_retries or 0))
     backoff = max(0.1, float(settings.openrouter_retry_backoff_seconds or 0.8))
 
     last_exception: Optional[Exception] = None
-    for selected_model in candidate_models or [settings.openrouter_model]:
+    provider_candidates = _candidate_provider_configs(provider, requested_model=model, allow_fallback_models=allow_fallback_models)
+
+    for provider_cfg in provider_candidates:
+        selected_model = provider_cfg["model"]
+        base_url = provider_cfg["base_url"]
+        auth_token = provider_cfg["auth_token"]
+        endpoint = provider_cfg["endpoint"]
+        client = get_llm_client(provider_cfg["provider"])
+
+        if not selected_model or not base_url or not auth_token:
+            if provider_cfg["provider"] == "generation" and settings.openrouter_generation_fallback_models_list:
+                logger.warning(
+                    "Primary generation provider config incomplete. Skipping to configured fallback models."
+                )
+            else:
+                logger.error(
+                    "LLM provider config incomplete for %s. Check env values for model, base URL, and API key.",
+                    provider_cfg["provider"],
+                )
+            continue
+
         for attempt in range(max_retries + 1):
             payload = {
                 "model": selected_model,
@@ -771,9 +998,9 @@ async def call_llm(
                 payload["temperature"] = float(temperature)
             try:
                 response = await client.post(
-                    f"{settings.openrouter_base_url}/chat/completions",
+                    f"{base_url}{endpoint}",
                     headers={
-                        "Authorization": f"Bearer {settings.openrouter_api_key}",
+                        "Authorization": f"Bearer {auth_token}",
                         "Content-Type": "application/json",
                     },
                     json=payload,
@@ -794,11 +1021,25 @@ async def call_llm(
                     content = "\n".join(text_parts).strip()
 
                 if isinstance(content, str) and content.strip():
+                    if response_format != "json":
+                        content = _sanitize_generation_output(content)
+                        if not content:
+                            logger.warning(
+                                "Discarded internal reasoning text from provider %s model %s.",
+                                provider_cfg["provider"],
+                                selected_model,
+                            )
+                            if attempt < max_retries:
+                                await asyncio.sleep(backoff * (2 ** attempt))
+                                continue
+                            break
+                    if provider_cfg["provider"] == "generation_fallback":
+                        logger.warning("Primary generation provider unavailable. Served response via fallback model %s.", selected_model)
                     return content
 
                 if response_format == "json":
                     return "{}"
-                return "I'm sorry, I'm having trouble connecting to my brain right now."
+                return _build_user_facing_provider_message(None, provider_cfg, response_format)
             except httpx.HTTPStatusError as exc:
                 last_exception = exc
                 status = exc.response.status_code
@@ -807,23 +1048,32 @@ async def call_llm(
                     await asyncio.sleep(backoff * (2 ** attempt))
                     continue
                 if status == 429:
-                    logger.warning("OpenRouter rate limited on model %s (attempt %s).", selected_model, attempt + 1)
+                    _mark_provider_cooldown(
+                        provider_cfg["provider"],
+                        selected_model,
+                        _parse_retry_after_seconds(exc),
+                    )
+                    logger.warning("%s rate limited on model %s (attempt %s).", provider_cfg["provider_label"], selected_model, attempt + 1)
                 else:
-                    logger.error("LLM HTTP error on model %s: %s", selected_model, exc)
+                    if status == 404 and provider_cfg["provider"] == "generation_fallback":
+                        _mark_provider_cooldown(provider_cfg["provider"], selected_model, 6 * 3600)
+                    logger.error("LLM HTTP error on provider %s model %s: %s", provider_cfg["provider"], selected_model, exc)
                 break
             except Exception as exc:
                 last_exception = exc
                 if attempt < max_retries:
                     await asyncio.sleep(backoff * (2 ** attempt))
                     continue
-                logger.error("LLM Call failed on model %s: %s", selected_model, exc)
+                logger.error("LLM Call failed on provider %s model %s: %s", provider_cfg["provider"], selected_model, exc)
                 break
 
     if last_exception:
         logger.error("LLM call failed after retries/fallbacks: %s", last_exception)
+        last_provider_cfg = provider_candidates[-1] if provider_candidates else _provider_config(provider, requested_model=model)
+        return _build_user_facing_provider_message(last_exception, last_provider_cfg, response_format)
     if response_format == "json":
         return "{}"
-    return "I'm sorry, I'm having trouble connecting to my brain right now."
+    return "I'm unable to answer right now due to a temporary model availability issue. Please try again in a moment."
 
 
 def _safe_json_dict(content: Any) -> dict[str, Any]:
@@ -860,7 +1110,7 @@ async def run_backup_moderation_check(query: str, history_context: str = "") -> 
 
     try:
         timeout_seconds = max(3, min(8, int(settings.openrouter_timeout_seconds or 20) // 2 or 4))
-        model_name = settings.openrouter_model
+        model_name = settings.openrouter_intent_model
         content = await asyncio.wait_for(
             call_llm(
                 [
@@ -871,8 +1121,9 @@ async def run_backup_moderation_check(query: str, history_context: str = "") -> 
                 model=model_name,
                 max_tokens=120,
                 temperature=0.0,
-                allow_fallback_models=True,
+                allow_fallback_models=False,
                 max_retries_override=1,
+                provider="intent",
             ),
             timeout=float(timeout_seconds),
         )
@@ -954,11 +1205,12 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
                     {"role": "user", "content": f"Query: {query}"},
                 ],
                 response_format="json",
-                model=getattr(settings, "openrouter_intent_model", "") or settings.openrouter_model,
+                model=settings.openrouter_intent_model,
                 max_tokens=220,
                 temperature=0.0,
-                allow_fallback_models=True,
+                allow_fallback_models=False,
                 max_retries_override=1,
+                provider="intent",
             ),
             timeout=float(intent_timeout),
         )
@@ -1038,7 +1290,13 @@ async def run_agent_pipeline(
     now_iso = utc_now_iso()
 
     supabase = None if settings.supabase_offline_mode else get_supabase_admin()
-    conversation_id = _ensure_conversation_scope(supabase, conversation_id, user_id, user_role)
+    conversation_storage_enabled = bool(supabase and _is_uuid_like(user_id))
+    conversation_id = _ensure_conversation_scope(
+        supabase if conversation_storage_enabled else None,
+        conversation_id,
+        user_id,
+        user_role,
+    )
     moderation_state = _load_offense_state(supabase, user_id)
 
     if bool(moderation_state.get("blocked")):
@@ -1078,7 +1336,7 @@ async def run_agent_pipeline(
 
     # Get previous messages for history window (only when not already flagged locally).
     messages = []
-    if supabase and not early_moderation.get("is_flagged"):
+    if conversation_storage_enabled and not early_moderation.get("is_flagged"):
         try:
             existing = (
                 _conversation_scope_filter(
@@ -1242,7 +1500,7 @@ async def run_agent_pipeline(
 
         # Save to history and return
         conversation_id = conversation_id or str(uuid.uuid4())
-        if supabase:
+        if conversation_storage_enabled:
             existing = (
                 _conversation_scope_filter(
                     supabase.table("conversations")
@@ -1873,12 +2131,12 @@ async def run_agent_pipeline(
     if forced_answer:
         answer = forced_answer
     else:
-        answer = await call_llm(llm_messages)
+        answer = await call_llm(llm_messages, provider="generation")
 
         # Keep provider/debug details in server logs, not user-facing chat.
         if answer == "I'm sorry, I'm having trouble connecting to my brain right now.":
             logger.error(
-                "LLM provider unavailable for user query. Check OPENROUTER_API_KEY, credits, or provider/network health."
+                "LLM provider unavailable for user query. Check OPENROUTER_API_KEY / OLLAMA_API_KEY and provider/network health."
             )
             answer = "I'm unable to answer right now due to a temporary service issue. Please try again in a moment."
 
@@ -1892,7 +2150,7 @@ async def run_agent_pipeline(
     if len(messages) > 20:
         messages = messages[-20:]
 
-    if supabase:
+    if conversation_storage_enabled:
         try:
             supabase.table("conversations").upsert(
                 {
