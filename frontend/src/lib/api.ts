@@ -190,10 +190,11 @@ function normalizeUserProfile(
     fallback?: Partial<UserProfile>,
 ): UserProfile {
     const avatar = resolveAvatar(user as Partial<UserProfile> & Record<string, unknown>);
+    const resolvedRole = (user.role || fallback?.role || 'student') as UserProfile['role'];
     return {
         ...(fallback || {}),
         ...user,
-        role: (user.role || fallback?.role || 'student') as UserProfile['role'],
+        role: resolvedRole,
         avatar_url: avatar,
         profileImage: avatar,
     } as UserProfile;
@@ -223,17 +224,18 @@ export const authApi = {
         const res = await request<{ access_token: string; user: UserProfile }>('/auth/login', { method: 'POST', body: data });
         return { ...res, user: normalizeUserProfile(res.user) };
     },
-    getMe: async (token: string) =>
+    getMe: async (token: string, fallbackUser?: Partial<UserProfile>) =>
         normalizeUserProfile(await cachedGet(
             buildCacheKey('user-me', token),
             CACHE_TTL.userMe,
             () => request<UserProfile>('/user/me', { token, timeoutMs: 20_000 }),
-        )),
-    refreshMe: async (token: string) => {
+        ), fallbackUser),
+    refreshMe: async (token: string, fallbackUser?: Partial<UserProfile>) => {
         const key = buildCacheKey('user-me', token);
         invalidateCacheByPrefix(key);
         return normalizeUserProfile(
             await request<UserProfile>('/user/me', { token, timeoutMs: 20_000 }),
+            fallbackUser,
         );
     },
     updateProfile: async (
@@ -303,16 +305,21 @@ export const authApi = {
             },
         );
     },
-    getCourseDirectory: (token: string, limit = 50) =>
-        cachedGet(
-            buildCacheKey('user-courses', token, String(limit)),
+    getCourseDirectory: (token: string, limit = 50, options?: { force?: boolean }) => {
+        const key = buildCacheKey('user-courses', token, String(limit));
+        if (options?.force) {
+            invalidateCacheByPrefix(key);
+        }
+        return cachedGet(
+            key,
             CACHE_TTL.userCourses,
             () =>
                 request<CourseDirectoryResponse>(
                     `/user/courses?limit=${encodeURIComponent(String(limit))}`,
                     { token, timeoutMs: 30_000 },
                 ),
-        ),
+        );
+    },
     setRole: async (token: string, role: UserProfile['role']) =>
         request<UserProfile>('/user/role', { method: 'PUT', token, body: { role } }).then((res) => {
             const suffix = tokenSuffix(token);
@@ -406,6 +413,24 @@ export const documentsApi = {
         }),
     preview: (token: string, id: string) =>
         request<DocumentPreviewResponse>(`/documents/${encodeURIComponent(id)}/preview`, { token, timeoutMs: 35_000 }),
+    downloadOriginal: async (token: string, id: string, filename?: string) => {
+        const response = await fetch(`${API_BASE}/documents/${encodeURIComponent(id)}/file?download=1`, {
+            headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({ detail: 'Failed to download file' }));
+            throw new Error(error.detail || 'Failed to download file');
+        }
+        const blob = await response.blob();
+        const objectUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = objectUrl;
+        anchor.download = filename || 'document';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    },
 };
 
 export const noticesApi = {
