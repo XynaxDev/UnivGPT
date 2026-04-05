@@ -100,6 +100,13 @@ const initialsFromName = (name: string) => {
     return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
 
+const cleanCourseText = (value?: string | null) =>
+    String(value || '')
+        .replace(/[_]+/g, ' ')
+        .replace(/[-]{2,}/g, ' ')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
 const toDisplayFaculty = (teacher: FacultySummary): DisplayFaculty => ({
     id: teacher.id,
     full_name: teacher.full_name || 'Faculty Member',
@@ -537,14 +544,14 @@ export default function CoursesPage() {
                                         <BookOpen className="w-6 h-6" />
                                     </div>
                                     <span className="text-[10px] font-black bg-white/5 border border-white/10 px-3 py-1.5 rounded-full text-zinc-500 tracking-widest uppercase">
-                                        {course.code}
+                                        {cleanCourseText(course.code)}
                                     </span>
                                 </div>
 
                                 <div className="space-y-1 mb-5">
-                                    <h3 className="text-lg font-black text-white group-hover:text-orange-400 transition-colors leading-tight">
-                                        {course.title}
-                                    </h3>
+                                        <h3 className="text-lg font-black text-white group-hover:text-orange-400 transition-colors leading-tight">
+                                            {cleanCourseText(course.title)}
+                                        </h3>
                                     <p className="text-[10px] text-zinc-600 font-bold uppercase tracking-widest">
                                         {course.department || 'General'}
                                     </p>
@@ -644,7 +651,7 @@ export default function CoursesPage() {
                                     <div className="min-w-0">
                                         <h4 className="text-sm font-black text-white truncate">{course.title}</h4>
                                         <div className="flex items-center gap-3 mt-1">
-                                            <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-widest">{course.code}</span>
+                                            <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-widest">{cleanCourseText(course.code)}</span>
                                             <span className="w-1 h-1 rounded-full bg-zinc-800" />
                                             <span className="text-[10px] text-zinc-500 uppercase tracking-widest truncate">
                                                 {course.department || 'General'}
