@@ -1374,7 +1374,8 @@ async def list_documents(
             id=d["id"], filename=d["filename"], doc_type=DocType(d["doc_type"]),
             department=d.get("department"), course=d.get("course"), tags=d.get("tags", []),
             visibility=bool(d.get("visibility", True)),
-            uploaded_at=str(d.get("uploaded_at") or d.get("updated_at") or "")
+            uploaded_at=str(d.get("uploaded_at") or d.get("updated_at") or ""),
+            metadata=d.get("metadata") if isinstance(d.get("metadata"), dict) else {},
         ) for d in rows
     ]
 

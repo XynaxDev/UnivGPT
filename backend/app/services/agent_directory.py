@@ -459,6 +459,26 @@ def append_navigation_links(answer: str, links: list[tuple[str, str]], title: st
     return answer + "\n\n" + _navigation_block(links, title=title)
 
 
+def _default_document_links_for_role(role_norm: str) -> list[tuple[str, str]]:
+    if role_norm == "student":
+        return [
+            ("Open Notifications", "/dashboard/notifications"),
+            ("Open Courses", "/dashboard/courses"),
+            ("Open Full Timetable", "/dashboard/timetable"),
+        ]
+    if role_norm == "faculty":
+        return [
+            ("Open Notices", "/dashboard/notices"),
+            ("Open Documents", "/dashboard/documents"),
+            ("Open Notifications", "/dashboard/notifications"),
+        ]
+    return [
+        ("Open Documents", "/dashboard/documents"),
+        ("Open Notices", "/dashboard/notices"),
+        ("Open Notifications", "/dashboard/notifications"),
+    ]
+
+
 def append_intent_navigation_links(answer: str, user_role: str, intent: dict[str, Any]) -> str:
     if not answer or "(/dashboard/" in answer or "Related pages:" in answer or "Quick links:" in answer:
         return answer
@@ -477,12 +497,7 @@ def append_intent_navigation_links(answer: str, user_role: str, intent: dict[str
     if intent_type in course_intents or target_entity == "courses":
         links.append(("Open Courses", "/dashboard/courses"))
     if intent_type in document_intents or target_entity in {"documents", "notices"}:
-        if role_norm in {"admin", "faculty"}:
-            links.append(("Open Documents", "/dashboard/documents"))
-        elif role_norm == "student":
-            links.append(("Open Courses", "/dashboard/courses"))
-            links.append(("Open Full Timetable", "/dashboard/timetable"))
-        links.append(("Open Notifications", "/dashboard/notifications"))
+        links.extend(_default_document_links_for_role(role_norm))
     if intent_type == "count_users" and role_norm == "admin":
         links.append(("Open User Management", "/dashboard/users"))
         links.append(("Open Audit Logs", "/dashboard/audit"))
@@ -501,7 +516,9 @@ def build_course_faculty_context(
     query: str,
     intent: dict[str, Any],
     snapshot: dict[str, Any],
+    user_role: str,
 ) -> Optional[dict[str, Any]]:
+    role_norm = _normalize(user_role)
     courses = snapshot.get("courses") or []
     faculty_by_id = snapshot.get("faculty_by_id") or {}
     visible_faculty_ids = snapshot.get("visible_faculty_ids") or []
@@ -645,7 +662,7 @@ def build_course_faculty_context(
                 "Answer using the structured course directory snapshot only. "
                 "Summarize the relevant courses in the user's scope and do not invent missing course records."
             ),
-            "links": [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
+            "links": [("Open Courses", "/dashboard/courses"), *_default_document_links_for_role(role_norm)],
         }
 
     if intent_type == "list_faculty" or (faculty_related and not course_related and not count_request):
@@ -705,9 +722,10 @@ def build_course_faculty_context(
                 "Answer using the structured course directory snapshot only. "
                 "If there are 0 courses, say that clearly and avoid inventing course titles."
             ),
-            "links": [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
+            "links": [("Open Courses", "/dashboard/courses"), *_default_document_links_for_role(role_norm)],
         }
 
     return None
 
 
+    role_norm = _normalize(user_role)

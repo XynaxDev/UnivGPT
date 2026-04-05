@@ -1227,7 +1227,9 @@ async def run_backup_moderation_check(query: str, history_context: str = "") -> 
 
     Classify only the latest user query.
     Set "is_flagged": true when the query contains hate speech, harassment, abusive/disrespectful personal attacks,
-    threats, or demeaning comments about a person (including teacher/faculty/staff/student).
+    threats, demeaning comments about a person (including teacher/faculty/staff/student),
+    degrading vulgar abuse aimed at a university role group like faculty, teachers, staff, or students,
+    or identity-focused harassment/speculation about a named person or teacher.
     Set "is_flagged": false for normal academic questions, neutral policy questions, and mild non-targeted frustration.
 
     Return ONLY valid JSON:
@@ -1292,7 +1294,9 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
     - direct threats
     - abusive allegations about a specific teacher/faculty/staff/student/person
     - direct insulting or degrading language about a named individual, even if the person is not referred to by title
-    Keep `"is_flagged": false` for normal academic questions, neutral policy questions, mild frustration, general complaints, apologies, or references to moderation itself.
+    - degrading vulgar abuse aimed at a university role group (for example faculty, teachers, staff, students, admins), even when no individual is named
+    - identity-focused or sexuality-focused speculation/ridicule about a named person or teacher
+    Keep `"is_flagged": false` for normal academic questions, neutral policy questions, mild frustration, general complaints without abusive language, apologies, or references to moderation itself.
     Task 2 (Conversation Mode): classify whether the query is primarily casual chit-chat/emotional venting or an actionable university data/task query.
     Task 3 (Intent Routing): Extract structured intent metadata so downstream tools can filter data before the main LLM response.
 
@@ -1765,6 +1769,7 @@ async def run_agent_pipeline(
                 query=query,
                 intent=intent,
                 snapshot=course_faculty_snapshot,
+                user_role=user_role,
             )
             if directory_context:
                 context_text += "\n" + str(directory_context.get("context") or "") + "\n"

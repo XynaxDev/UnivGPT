@@ -210,6 +210,7 @@ class DocumentResponse(BaseModel):
     tags: list = Field(default_factory=list)
     visibility: bool = True
     uploaded_at: Optional[str] = None
+    metadata: Optional[dict] = Field(default_factory=dict)
 
 
 class DocumentListResponse(BaseModel):

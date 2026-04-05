@@ -236,6 +236,16 @@ def normalize_profile_role(value: Any) -> str:
         return UserRole.STUDENT.value
 
 
+def can_google_user_correct_role(user: AuthenticatedUser, existing_profile: dict[str, Any] | None) -> bool:
+    if (user.identity_provider or "").strip().lower() != "google":
+        return False
+    profile = existing_profile or {}
+    # Google role selection happens client-side before the profile is fully enriched.
+    # Allow the signed-in user to correct their own profile role here instead of
+    # silently locking them to the fallback student seed.
+    return bool(profile)
+
+
 def build_profile_seed(
     user_id: str, auth_user: Any, existing_profile: dict[str, Any] | None = None
 ) -> dict[str, Any]:
@@ -1919,14 +1929,24 @@ async def set_role(
         if existing:
             existing_role = normalize_profile_role(existing.get("role"))
             if existing_role and existing_role != body.role.value:
-                raise HTTPException(
-                    status_code=403,
-                    detail=(
-                        f"Selected role '{body.role.value}' does not match this account role "
-                        f"('{existing_role}'). Please choose the correct role."
-                    ),
-                )
-            profile = existing
+                if can_google_user_correct_role(user, existing):
+                    updated = (
+                        admin.table("profiles")
+                        .update({"role": body.role.value})
+                        .eq("id", user.id)
+                        .execute()
+                    )
+                    profile = updated.data[0] if updated.data else {**existing, "role": body.role.value}
+                else:
+                    raise HTTPException(
+                        status_code=403,
+                        detail=(
+                            f"Selected role '{body.role.value}' does not match this account role "
+                            f"('{existing_role}'). Please choose the correct role."
+                        ),
+                    )
+            else:
+                profile = existing
         else:
             profile_seed = {
                 "id": user.id,
@@ -1982,6 +2002,42 @@ async def set_role(
     except HTTPException:
         raise
     except Exception as e:
+        if is_network_error(e):
+            raise_supabase_unreachable()
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/user/account")
+async def delete_account(
+    request: Request,
+    user: AuthenticatedUser = Depends(get_current_user),
+):
+    """Delete the current UnivGPT account and revoke future sign-in."""
+    try:
+        admin = get_supabase_admin()
+
+        await log_audit_event(
+            user_id=None,
+            action="user_account_deleted",
+            ip_address=request.client.host if request.client else None,
+            payload={
+                "identity_provider": user.identity_provider or "email",
+                "original_user_id": None if user.id.startswith("dummy-id-") else user.id,
+            },
+        )
+
+        try:
+            admin.table("profiles").delete().eq("id", user.id).execute()
+        except Exception:
+            # Keep going so the auth user is still revoked even if profile cleanup is blocked.
+            pass
+
+        admin.auth.admin.delete_user(user.id)
+        _clear_user_runtime_caches(user.id)
+        return {"status": "success", "message": "Account deleted successfully."}
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise
         if is_network_error(e):
             raise_supabase_unreachable()
         raise HTTPException(status_code=400, detail=str(e))

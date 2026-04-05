@@ -34,14 +34,33 @@ def _write_audit_event_sync(
     ip_address: Optional[str] = None,
 ) -> None:
     supabase = get_supabase_admin()
-    supabase.table("audit_logs").insert(
-        {
-            "user_id": user_id,
-            "action": action,
-            "payload": payload or {},
-            "ip_address": ip_address,
-        }
-    ).execute()
+    record = {
+        "user_id": user_id,
+        "action": action,
+        "payload": payload or {},
+        "ip_address": ip_address,
+    }
+    try:
+        supabase.table("audit_logs").insert(record).execute()
+    except Exception as exc:
+        message = str(exc).lower()
+        missing_profile_fk = (
+            user_id
+            and ("audit_logs_user_id_fkey" in message or 'is not present in table "profiles"' in message)
+        )
+        if not missing_profile_fk:
+            raise
+
+        fallback_payload = dict(payload or {})
+        fallback_payload.setdefault("original_user_id", user_id)
+        supabase.table("audit_logs").insert(
+            {
+                "user_id": None,
+                "action": action,
+                "payload": fallback_payload,
+                "ip_address": ip_address,
+            }
+        ).execute()
 
 
 def _handle_audit_error(exc: Exception) -> None:

@@ -38,11 +38,9 @@ def is_fast_smalltalk_query(query: str) -> bool:
         return False
 
     greeting_markers = ("hi", "hii", "hello", "hey", "good morning", "good afternoon", "good evening")
-    help_markers = ("how can you help me", "how can u help me", "what can you do", "what can u do", "help me")
 
     starts_with_greeting = any(text.startswith(marker) for marker in greeting_markers)
-    asks_help = any(marker in text for marker in help_markers)
-    return starts_with_greeting or asks_help
+    return starts_with_greeting
 
 
 def should_filter_recent_documents(query: str, intent: dict[str, Any]) -> bool:

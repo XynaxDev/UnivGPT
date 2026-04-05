@@ -68,6 +68,11 @@ def is_academic_email(email: str) -> bool:
     return domain in allowed_domains
 
 
+def normalize_claimed_role(value: object) -> Optional[str]:
+    role = str(value or "").strip().lower()
+    return role if role in {"student", "faculty", "admin"} else None
+
+
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> AuthenticatedUser:
@@ -111,6 +116,7 @@ async def get_current_user(
     user_id: Optional[str] = None
     email: str = ""
     identity_provider: str = "email"
+    claimed_role: Optional[str] = None
 
     # Prefer local JWT verification when secret is configured.
     if settings.supabase_jwt_secret:
@@ -124,10 +130,14 @@ async def get_current_user(
             user_id = payload.get("sub")
             email = payload.get("email", "")
             app_metadata = payload.get("app_metadata") or {}
+            user_metadata = payload.get("user_metadata") or {}
             providers = app_metadata.get("providers") or []
             provider = app_metadata.get("provider") or (providers[0] if providers else None)
             if provider:
                 identity_provider = str(provider)
+            claimed_role = normalize_claimed_role(
+                user_metadata.get("role") or app_metadata.get("role")
+            )
         except JWTError:
             # Fall back to Supabase validation below (handles key mismatch in dev).
             user_id = None
@@ -141,10 +151,14 @@ async def get_current_user(
                 user_id = res.user.id
                 email = res.user.email or ""
                 app_metadata = getattr(res.user, "app_metadata", {}) or {}
+                user_metadata = getattr(res.user, "user_metadata", {}) or {}
                 providers = app_metadata.get("providers") or []
                 provider = app_metadata.get("provider") or (providers[0] if providers else None)
                 if provider:
                     identity_provider = str(provider)
+                claimed_role = normalize_claimed_role(
+                    user_metadata.get("role") or app_metadata.get("role")
+                )
         except Exception:
             pass
 
@@ -155,10 +169,14 @@ async def get_current_user(
             user_id = payload.get("sub")
             email = payload.get("email", "")
             app_metadata = payload.get("app_metadata") or {}
+            user_metadata = payload.get("user_metadata") or {}
             providers = app_metadata.get("providers") or []
             provider = app_metadata.get("provider") or (providers[0] if providers else None)
             if provider:
                 identity_provider = str(provider)
+            claimed_role = normalize_claimed_role(
+                user_metadata.get("role") or app_metadata.get("role")
+            )
         except Exception:
             pass
 
@@ -179,7 +197,7 @@ async def get_current_user(
             return AuthenticatedUser(
                 id=user_id,
                 email=email,
-                role="student",
+                role=claimed_role or "student",
                 department=None,
                 identity_provider=identity_provider,
                 academic_verified=is_academic_email(email),
@@ -216,7 +234,7 @@ async def get_current_user(
         return AuthenticatedUser(
             id=user_id,
             email=email,
-            role="student",
+            role=claimed_role or "student",
             department=None,
             identity_provider=identity_provider,
             academic_verified=is_academic_email(email),
