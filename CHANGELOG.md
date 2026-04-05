@@ -10,9 +10,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - Collapsible in-chat model reasoning view that preserves generated rationale separately from the final answer when providers emit explicit thinking blocks.
+- Dedicated role-aware timetable workflows for both students and faculty, including daily dashboard previews, full agenda pages, and downloadable original timetable PDFs.
+
+### Changed
+- Chat answers, citations, and assistant routing are now more grounded in live UnivGPT scope data, with app-first guidance before sending users to external university systems.
+- Dashboard timetable previews were simplified into stronger featured-slot cards and cleaner off-day states, while the course directory now paginates after six items.
+- Google auth, session refresh handling, and profile-completion guidance were tightened so users stay in the correct role more reliably after login and refresh.
 
 ### Fixed
 - Lightweight chat generation now avoids failing hard when providers leak reasoning before the final answer.
+- Moderation escalation, notice routing, and exact citation jumps now behave more reliably across student, faculty, and admin surfaces.
+- Account deletion, orphaned audit writes, and refresh-time session drops no longer leave users in broken auth states.
+
+### Performance
+- First-load dashboard and timetable fetches were trimmed, warm-cache reuse was expanded, and generation failover now moves off unhealthy providers faster.
 
 ## [0.12.0] - 2026-04-05
 

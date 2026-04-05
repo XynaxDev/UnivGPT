@@ -183,13 +183,6 @@ export function DateTimetableAgenda({
                         </div>
                     ) : null}
                 </div>
-                <div className="pointer-events-none relative mt-5 h-24 overflow-hidden rounded-[26px] border border-fuchsia-300/12 bg-[linear-gradient(135deg,rgba(14,15,20,0.12),rgba(255,255,255,0.02))]">
-                    <div className="absolute inset-y-0 right-0 w-[44%] min-w-[220px]">
-                        <div className="absolute right-[-34px] top-1/2 h-36 w-72 -translate-y-1/2 rounded-[46%_54%_40%_60%/58%_36%_64%_42%] bg-[linear-gradient(135deg,rgba(168,85,247,0.28),rgba(236,72,153,0.10),rgba(255,255,255,0.03))] shadow-[0_0_0_1px_rgba(216,180,254,0.12)]" />
-                        <div className="absolute right-8 top-4 h-20 w-28 rounded-[38px] border border-fuchsia-200/12 bg-fuchsia-300/8 blur-[1px]" />
-                        <div className="absolute right-10 bottom-3 h-14 w-40 rounded-[999px] bg-[linear-gradient(90deg,rgba(168,85,247,0.16),rgba(99,102,241,0.03))] blur-2xl" />
-                    </div>
-                </div>
             </header>
 
             <div className="rounded-[28px] border border-white/[0.08] bg-zinc-900/50 p-4 sm:p-5">
