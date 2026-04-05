@@ -106,7 +106,7 @@ const ProfilePage = () => {
     const { user, token, updateUser } = useAuthStore();
     const { showToast } = useToastStore();
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
-    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 120 }) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 40 }) : null;
     const role = user?.role || cachedExport?.profile?.role || 'student';
     const isStudent = role === 'student';
     const isFaculty = role === 'faculty';
@@ -154,7 +154,7 @@ const ProfilePage = () => {
                         ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 120 })
+                        ? documentsApi.list(token, { page: 1, per_page: 40 })
                         : Promise.resolve(cachedDocs),
                 ]);
 

@@ -106,7 +106,7 @@ export default function App() {
     const warmRoleCaches = (accessToken: string, role: 'student' | 'faculty' | 'admin') => {
       const warmers: Array<Promise<unknown>> = [
         authApi.exportUserData(accessToken),
-        documentsApi.list(accessToken, { page: 1, per_page: role === 'admin' ? 120 : role === 'faculty' ? 60 : 24 }),
+        documentsApi.list(accessToken, { page: 1, per_page: role === 'admin' ? 40 : role === 'faculty' ? 24 : 18 }),
       ];
 
       if (role === 'student') {

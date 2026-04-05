@@ -141,22 +141,22 @@ export default function NoticesPage() {
         let active = true;
         const loadAttachmentOptions = async () => {
             if (!token || !canServe) return;
-            const cachedDocs = documentsApi.peekList(token, { page: 1, per_page: 120 });
+            const cachedDocs = documentsApi.peekList(token, { page: 1, per_page: 60 });
             if (active && cachedDocs?.documents?.length) {
                 setAttachmentOptions(
                     (cachedDocs.documents || [])
                         .filter((doc) => !isNoticeLikeDocument(doc))
-                        .slice(0, 120),
+                        .slice(0, 60),
                 );
                 return;
             }
             try {
-                const response = await documentsApi.list(token, { page: 1, per_page: 120 });
+                const response = await documentsApi.list(token, { page: 1, per_page: 60 });
                 if (!active) return;
                 setAttachmentOptions(
                     (response.documents || [])
                         .filter((doc) => !isNoticeLikeDocument(doc))
-                        .slice(0, 120),
+                        .slice(0, 60),
                 );
             } catch {
                 if (!active) return;

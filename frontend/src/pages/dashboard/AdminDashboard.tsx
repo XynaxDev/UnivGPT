@@ -486,7 +486,7 @@ const AdminDashboard = () => {
     const [hoveredStat, setHoveredStat] = useState<number | null>(null);
     const cachedMetrics = token ? systemApi.peekMetrics(token) : null;
     const cachedAudit = token ? adminApi.peekAuditLogs(token, 1, 30) : null;
-    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 120 }) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 40 }) : null;
     const [metrics, setMetrics] = useState<MetricsResponse | null>(cachedMetrics ?? null);
     const [auditRows, setAuditRows] = useState<AuditLogEntry[]>(cachedAudit?.logs || []);
     const [liveDocCount, setLiveDocCount] = useState(Number(cachedDocs?.total || cachedDocs?.documents?.length || 0));
@@ -513,7 +513,7 @@ const AdminDashboard = () => {
                 needsMetrics ? systemApi.metrics(token) : Promise.resolve(cachedMetrics),
                 needsAudit ? adminApi.getAuditLogs(token, 1, 30) : Promise.resolve(cachedAudit),
                 needsDocs
-                    ? documentsApi.list(token, { page: 1, per_page: 120 })
+                    ? documentsApi.list(token, { page: 1, per_page: 40 })
                     : Promise.resolve(cachedDocs),
             ]);
             if (!alive) return;
