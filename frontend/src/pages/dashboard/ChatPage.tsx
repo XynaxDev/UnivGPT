@@ -107,6 +107,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
     const isUser = message.role === 'user';
     const { user } = useAuthStore();
     const [copied, setCopied] = useState(false);
+    const [showReasoning, setShowReasoning] = useState(false);
     const profileImage = (user as any)?.profileImage || null;
     const userInitial = user?.full_name?.charAt(0) || 'U';
     const isSafetyMessage =
@@ -215,6 +216,33 @@ function MessageBubble({ message }: { message: ChatMessage }) {
                                 {message.isStreaming && (
                                     <span className="inline-block ml-1 h-[1em] align-[-0.15em] w-[2px] bg-orange-300 animate-pulse" />
                                 )}
+                            </div>
+                        )}
+
+                        {!isUser && message.rationale && (
+                            <div className="mt-3 rounded-xl border border-white/[0.08] bg-white/[0.02] overflow-hidden">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowReasoning((prev) => !prev)}
+                                    className="w-full flex items-center justify-between gap-3 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-[0.18em] text-zinc-400 hover:text-zinc-200 transition-colors"
+                                >
+                                    <span>Model Reasoning</span>
+                                    {showReasoning ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                </button>
+                                <AnimatePresence initial={false}>
+                                    {showReasoning && (
+                                        <motion.div
+                                            initial={{ height: 0, opacity: 0 }}
+                                            animate={{ height: 'auto', opacity: 1 }}
+                                            exit={{ height: 0, opacity: 0 }}
+                                            className="overflow-hidden"
+                                        >
+                                            <div className="border-t border-white/[0.06] px-3 py-3 text-xs leading-6 text-zinc-400 whitespace-pre-wrap">
+                                                {message.rationale}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         )}
 

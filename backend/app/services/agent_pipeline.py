@@ -262,6 +262,36 @@ def _looks_like_internal_reasoning(text: str) -> bool:
     return any(preview.startswith(marker) for marker in planning_markers)
 
 
+def _extract_generation_rationale(text: str) -> tuple[Optional[str], str]:
+    raw = str(text or "").replace("\r\n", "\n").strip()
+    if not raw:
+        return None, ""
+
+    rationale_parts: list[str] = []
+    for pattern in (
+        r"<think>(.*?)</think>",
+        r"<thinking>(.*?)</thinking>",
+        r"```(?:thinking|thought|analysis)\s*(.*?)```",
+    ):
+        matches = re.findall(pattern, raw, flags=re.IGNORECASE | re.DOTALL)
+        for match in matches:
+            piece = re.sub(r"\s+", " ", str(match or "")).strip()
+            if piece:
+                rationale_parts.append(piece)
+
+    cleaned = re.sub(r"<think>.*?</think>", "", raw, flags=re.IGNORECASE | re.DOTALL).strip()
+    cleaned = re.sub(r"<thinking>.*?</thinking>", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+    cleaned = re.sub(r"```(?:thinking|thought|analysis)\s*.*?```", "", cleaned, flags=re.IGNORECASE | re.DOTALL).strip()
+
+    if not rationale_parts and _looks_like_internal_reasoning(raw):
+        rationale_parts.append(re.sub(r"\s+", " ", raw).strip())
+        cleaned = ""
+
+    cleaned = _sanitize_generation_output(cleaned) if cleaned else ""
+    rationale = "\n\n".join(dict.fromkeys(part for part in rationale_parts if part))
+    return (rationale or None), cleaned
+
+
 def _sanitize_generation_output(text: str) -> str:
     cleaned = str(text or "").replace("\r\n", "\n").strip()
     if not cleaned:
@@ -840,7 +870,7 @@ async def build_fast_smalltalk_answer(
         pass
 
     # Minimal emergency fallback only when all model calls fail.
-    return "I couldn't generate a reply just now. Please retry."
+    return "I'm unable to answer right now due to a temporary service issue. Please try again in a moment."
 
 
 def fetch_filtered_documents(
@@ -956,8 +986,57 @@ async def call_llm(
     provider: str = "generation",
 ) -> str:
     """Helper to call the configured LLM provider."""
+    content, _ = await _call_llm_internal(
+        messages=messages,
+        response_format=response_format,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        allow_fallback_models=allow_fallback_models,
+        max_retries_override=max_retries_override,
+        provider=provider,
+        capture_rationale=False,
+    )
+    return content
+
+
+async def call_llm_with_rationale(
+    messages: list,
+    response_format: Optional[str] = None,
+    model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    allow_fallback_models: bool = True,
+    max_retries_override: Optional[int] = None,
+    provider: str = "generation",
+) -> tuple[str, Optional[str]]:
+    return await _call_llm_internal(
+        messages=messages,
+        response_format=response_format,
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        allow_fallback_models=allow_fallback_models,
+        max_retries_override=max_retries_override,
+        provider=provider,
+        capture_rationale=True,
+    )
+
+
+async def _call_llm_internal(
+    messages: list,
+    response_format: Optional[str] = None,
+    model: Optional[str] = None,
+    max_tokens: Optional[int] = None,
+    temperature: Optional[float] = None,
+    allow_fallback_models: bool = True,
+    max_retries_override: Optional[int] = None,
+    provider: str = "generation",
+    capture_rationale: bool = False,
+) -> tuple[str, Optional[str]]:
+    """Shared helper for LLM calls with optional rationale capture."""
     if settings.mock_llm:
-        return "This is a mock response from the agent."
+        return "This is a mock response from the agent.", None
 
     configured_retries = settings.openrouter_max_retries if max_retries_override is None else max_retries_override
     max_retries = max(0, int(configured_retries or 0))
@@ -1021,8 +1100,12 @@ async def call_llm(
                     content = "\n".join(text_parts).strip()
 
                 if isinstance(content, str) and content.strip():
+                    rationale: Optional[str] = None
                     if response_format != "json":
-                        content = _sanitize_generation_output(content)
+                        if capture_rationale:
+                            rationale, content = _extract_generation_rationale(content)
+                        else:
+                            content = _sanitize_generation_output(content)
                         if not content:
                             logger.warning(
                                 "Discarded internal reasoning text from provider %s model %s.",
@@ -1035,11 +1118,11 @@ async def call_llm(
                             break
                     if provider_cfg["provider"] == "generation_fallback":
                         logger.warning("Primary generation provider unavailable. Served response via fallback model %s.", selected_model)
-                    return content
+                    return content, rationale
 
                 if response_format == "json":
-                    return "{}"
-                return _build_user_facing_provider_message(None, provider_cfg, response_format)
+                    return "{}", None
+                return _build_user_facing_provider_message(None, provider_cfg, response_format), None
             except httpx.HTTPStatusError as exc:
                 last_exception = exc
                 status = exc.response.status_code
@@ -1070,10 +1153,10 @@ async def call_llm(
     if last_exception:
         logger.error("LLM call failed after retries/fallbacks: %s", last_exception)
         last_provider_cfg = provider_candidates[-1] if provider_candidates else _provider_config(provider, requested_model=model)
-        return _build_user_facing_provider_message(last_exception, last_provider_cfg, response_format)
+        return _build_user_facing_provider_message(last_exception, last_provider_cfg, response_format), None
     if response_format == "json":
-        return "{}"
-    return "I'm unable to answer right now due to a temporary model availability issue. Please try again in a moment."
+        return "{}", None
+    return "I'm unable to answer right now due to a temporary model availability issue. Please try again in a moment.", None
 
 
 def _safe_json_dict(content: Any) -> dict[str, Any]:
@@ -2128,10 +2211,11 @@ async def run_agent_pipeline(
 
     llm_messages.append({"role": "user", "content": query})
 
+    rationale: Optional[str] = None
     if forced_answer:
         answer = forced_answer
     else:
-        answer = await call_llm(llm_messages, provider="generation")
+        answer, rationale = await call_llm_with_rationale(llm_messages, provider="generation")
 
         # Keep provider/debug details in server logs, not user-facing chat.
         if answer == "I'm sorry, I'm having trouble connecting to my brain right now.":
@@ -2144,7 +2228,10 @@ async def run_agent_pipeline(
 
     # 4. Persistence in Supabase (Store Conversations)
     messages.append({"role": "user", "content": query})
-    messages.append({"role": "assistant", "content": answer})
+    assistant_message_payload: dict[str, Any] = {"role": "assistant", "content": answer}
+    if rationale:
+        assistant_message_payload["rationale"] = rationale
+    messages.append(assistant_message_payload)
 
     # Limit message history to prevent huge rows
     if len(messages) > 20:
@@ -2198,6 +2285,7 @@ async def run_agent_pipeline(
         ],
         conversation_id=conversation_id,
         role_badge=role_badge_for(user_role),
+        rationale=rationale,
     )
 
 
