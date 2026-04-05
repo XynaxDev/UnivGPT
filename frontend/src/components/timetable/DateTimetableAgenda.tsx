@@ -4,8 +4,11 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { motion } from 'framer-motion';
-import { CalendarDays, ChevronLeft, ChevronRight, Coffee, MapPin } from 'lucide-react';
+import { CalendarDays, ChevronLeft, ChevronRight, Coffee, Minus, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { HoverTooltip } from '@/components/ui/tooltip';
+import { Link } from 'react-router-dom';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
     TIME_COLUMNS,
     formatTimetableTime,
@@ -17,6 +20,7 @@ import {
 
 const DAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const DAY_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'] as const;
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'] as const;
 
 const SURFACE_TONES: Record<TimetableSlotType, string> = {
     lecture: 'border-orange-300/35 bg-orange-400/10 text-orange-50',
@@ -109,6 +113,14 @@ export function DateTimetableAgenda({
         today.setHours(0, 0, 0, 0);
         return today;
     });
+    const [jumpMonthIndex, setJumpMonthIndex] = useState(() => {
+        const today = new Date();
+        return today.getMonth();
+    });
+    const [jumpYearValue, setJumpYearValue] = useState(() => {
+        const today = new Date();
+        return String(today.getFullYear());
+    });
     const calendarRef = useRef<HTMLDivElement | null>(null);
 
     const weekStart = useMemo(() => getWeekStart(selectedDate), [selectedDate]);
@@ -140,7 +152,9 @@ export function DateTimetableAgenda({
     useEffect(() => {
         if (!isCalendarOpen) return;
         const handleClick = (event: MouseEvent) => {
-            if (calendarRef.current?.contains(event.target as Node)) return;
+            const target = event.target as HTMLElement | null;
+            if (calendarRef.current?.contains(target as Node)) return;
+            if (target?.closest('[data-radix-popper-content-wrapper]')) return;
             setIsCalendarOpen(false);
         };
         document.addEventListener('mousedown', handleClick);
@@ -181,9 +195,11 @@ export function DateTimetableAgenda({
                         type="button"
                         onClick={() => {
                             setCalendarDate(selectedDate);
+                            setJumpMonthIndex(selectedDate.getMonth());
+                            setJumpYearValue(String(selectedDate.getFullYear()));
                             setIsCalendarOpen((prev) => !prev);
                         }}
-                        className="rounded-2xl border border-white/[0.08] bg-white/[0.02] px-4 py-2 text-center transition hover:border-orange-400/30 hover:bg-orange-500/6"
+                        className="rounded-2xl border border-white/[0.08] bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.12),transparent_55%),linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] px-4 py-2 text-center transition hover:border-fuchsia-400/25 hover:bg-fuchsia-500/8"
                     >
                         <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500">Week Of</div>
                         <div className="mt-1 text-xl font-black text-white">
@@ -200,28 +216,129 @@ export function DateTimetableAgenda({
                     </button>
 
                     {isCalendarOpen ? (
-                        <div className="absolute left-1/2 top-[calc(100%+12px)] z-20 w-[min(92vw,360px)] -translate-x-1/2 rounded-[24px] border border-white/[0.08] bg-[linear-gradient(180deg,rgba(18,19,24,0.98),rgba(11,12,16,0.98))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
+                        <div className="absolute left-1/2 top-[calc(100%+12px)] z-20 w-[min(92vw,360px)] -translate-x-1/2 rounded-[24px] border border-fuchsia-400/15 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.16),transparent_35%),linear-gradient(180deg,rgba(18,19,24,0.98),rgba(11,12,16,0.98))] p-4 shadow-[0_24px_80px_rgba(0,0,0,0.45)]">
                             <div className="flex items-center justify-between gap-3">
                                 <button
                                     type="button"
-                                    onClick={() => setCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                                    onClick={() =>
+                                        setCalendarDate((prev) => {
+                                            const next = new Date(prev.getFullYear(), prev.getMonth() - 1, 1);
+                                            setJumpMonthIndex(next.getMonth());
+                                            setJumpYearValue(String(next.getFullYear()));
+                                            return next;
+                                        })
+                                    }
                                     className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-zinc-300 transition hover:border-orange-400/30 hover:text-white"
                                 >
                                     <ChevronLeft className="h-4 w-4" />
                                 </button>
                                 <div className="text-center">
-                                    <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-zinc-500">Pick Date</div>
+                                    <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-fuchsia-200/75">Pick Date</div>
                                     <div className="mt-1 text-lg font-black text-white">
                                         {calendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
                                     </div>
                                 </div>
                                 <button
                                     type="button"
-                                    onClick={() => setCalendarDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                                    onClick={() =>
+                                        setCalendarDate((prev) => {
+                                            const next = new Date(prev.getFullYear(), prev.getMonth() + 1, 1);
+                                            setJumpMonthIndex(next.getMonth());
+                                            setJumpYearValue(String(next.getFullYear()));
+                                            return next;
+                                        })
+                                    }
                                     className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-white/[0.03] text-zinc-300 transition hover:border-orange-400/30 hover:text-white"
                                 >
                                     <ChevronRight className="h-4 w-4" />
                                 </button>
+                            </div>
+
+                            <div className="mt-4 rounded-2xl border border-fuchsia-400/15 bg-[linear-gradient(180deg,rgba(168,85,247,0.08),rgba(255,255,255,0.02))] p-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <label className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-500">
+                                        Jump To Month
+                                    </label>
+                                    <HoverTooltip content="Pick a month and year, then jump straight to that timetable week">
+                                        <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-fuchsia-200/85">
+                                            Month Picker
+                                        </span>
+                                    </HoverTooltip>
+                                </div>
+                                <div className="mt-3 grid gap-2 sm:grid-cols-[minmax(0,1fr)_110px_auto]">
+                                    <Select
+                                        value={String(jumpMonthIndex)}
+                                        onValueChange={(value) => {
+                                            const monthIndex = Number(value);
+                                            setJumpMonthIndex(monthIndex);
+                                            setCalendarDate((prev) => new Date(Number(jumpYearValue) || prev.getFullYear(), monthIndex, 1));
+                                        }}
+                                    >
+                                        <SelectTrigger className="h-11 rounded-xl border-fuchsia-400/18 bg-[linear-gradient(180deg,rgba(99,102,241,0.08),rgba(168,85,247,0.08))] text-left font-semibold text-white focus:border-fuchsia-400/35">
+                                            <SelectValue>
+                                                {MONTH_NAMES[jumpMonthIndex]}
+                                            </SelectValue>
+                                        </SelectTrigger>
+                                        <SelectContent className="border-fuchsia-400/18 bg-[linear-gradient(180deg,rgba(18,19,24,0.98),rgba(24,18,36,0.98))]">
+                                            {MONTH_NAMES.map((month, index) => (
+                                                <SelectItem key={month} value={String(index)}>
+                                                    {month}
+                                                </SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                    <div className="flex h-11 items-center overflow-hidden rounded-xl border border-fuchsia-400/18 bg-[linear-gradient(180deg,rgba(99,102,241,0.08),rgba(168,85,247,0.08))]">
+                                        <input
+                                            type="text"
+                                            inputMode="numeric"
+                                            value={jumpYearValue}
+                                            onChange={(event) => setJumpYearValue(event.target.value.replace(/[^\d]/g, '').slice(0, 4))}
+                                            className="h-full flex-1 bg-transparent px-3 text-sm font-semibold text-white outline-none"
+                                        />
+                                        <div className="mr-1 flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setJumpYearValue((prev) => {
+                                                        const nextYear = Math.min(2035, (Number(prev) || new Date().getFullYear()) + 1);
+                                                        setCalendarDate((current) => new Date(nextYear, jumpMonthIndex, 1));
+                                                        return String(nextYear);
+                                                    })
+                                                }
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-zinc-300 transition hover:border-fuchsia-300/30 hover:text-white"
+                                            >
+                                                <Plus className="h-3.5 w-3.5" />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    setJumpYearValue((prev) => {
+                                                        const nextYear = Math.max(2024, (Number(prev) || new Date().getFullYear()) - 1);
+                                                        setCalendarDate((current) => new Date(nextYear, jumpMonthIndex, 1));
+                                                        return String(nextYear);
+                                                    })
+                                                }
+                                                className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.04] text-zinc-300 transition hover:border-fuchsia-300/30 hover:text-white"
+                                            >
+                                                <Minus className="h-3.5 w-3.5" />
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            const year = Number(jumpYearValue);
+                                            if (!Number.isFinite(year)) return;
+                                            const next = new Date(year, jumpMonthIndex, Math.min(selectedDate.getDate(), 28));
+                                            setSelectedDate(next);
+                                            setCalendarDate(new Date(year, jumpMonthIndex, 1));
+                                            setIsCalendarOpen(false);
+                                        }}
+                                        className="inline-flex h-11 items-center justify-center rounded-xl border border-fuchsia-400/20 bg-fuchsia-500/12 px-4 text-xs font-bold uppercase tracking-[0.18em] text-fuchsia-100 transition hover:border-fuchsia-300/35 hover:bg-fuchsia-500/18"
+                                    >
+                                        Go
+                                    </button>
+                                </div>
                             </div>
 
                             <div className="mt-4 grid grid-cols-7 gap-2">
@@ -245,7 +362,7 @@ export function DateTimetableAgenda({
                                             className={cn(
                                                 'aspect-square rounded-xl border text-sm font-bold transition',
                                                 active
-                                                    ? 'border-orange-400/35 bg-orange-500/15 text-white'
+                                                    ? 'border-fuchsia-400/35 bg-fuchsia-500/18 text-white'
                                                     : 'border-white/[0.08] bg-white/[0.02] hover:border-white/[0.16] hover:bg-white/[0.04]',
                                                 muted ? 'text-zinc-600' : weekend ? 'text-zinc-400' : 'text-zinc-100',
                                             )}
@@ -399,26 +516,47 @@ export function DateTimetableAgenda({
                                         <div className="text-sm text-white/70">to {formatTimetableTime(slot.end)}</div>
                                     </div>
                                     <div className="rounded-2xl border border-white/10 bg-black/10 px-4 py-4">
-                                        <div className="flex flex-wrap items-center gap-2">
-                                            <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]', badgeToneFor(slot.type))}>
-                                                {slot.type}
-                                            </span>
-                                            <span className="inline-flex rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
-                                                {slot.code}
-                                            </span>
+                                        <div className="flex flex-wrap items-start justify-between gap-3">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                <span className={cn('inline-flex rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em]', badgeToneFor(slot.type))}>
+                                                    {slot.type}
+                                                </span>
+                                                <span className="inline-flex rounded-full border border-white/10 bg-black/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
+                                                    {slot.code}
+                                                </span>
+                                            </div>
+                                            <div className="flex flex-wrap items-center justify-end gap-2 text-right">
+                                                <div className="inline-flex rounded-full border border-white/10 bg-black/10 px-3 py-1.5 text-xs font-semibold text-white/80">
+                                                    {slot.room}
+                                                </div>
+                                                {slot.department ? (
+                                                    <div className="inline-flex rounded-full border border-white/10 bg-black/10 px-3 py-1.5 text-[11px] uppercase tracking-[0.16em] text-white/70">
+                                                        {slot.department}
+                                                    </div>
+                                                ) : null}
+                                            </div>
                                         </div>
                                         <div className="mt-3 text-lg font-black leading-snug text-white">{slot.course}</div>
-                                        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/80">
-                                            <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/10 px-3 py-1.5">
-                                                <MapPin className="h-4 w-4 shrink-0" />
-                                                <span className="truncate">{slot.room}</span>
-                                            </div>
-                                            {slot.department ? (
-                                                <div className="inline-flex rounded-full border border-white/10 bg-black/10 px-3 py-1.5 text-xs uppercase tracking-[0.16em] text-white/70">
-                                                    {slot.department}
+                                        {slot.facultyName ? (
+                                            slot.facultyId ? (
+                                                <Link
+                                                    to={`/dashboard/faculty/${slot.facultyId}`}
+                                                    className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-100 transition hover:text-white hover:underline"
+                                                >
+                                                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[11px] font-bold uppercase text-white/85">
+                                                        {slot.facultyName.slice(0, 1)}
+                                                    </span>
+                                                    {slot.facultyName}
+                                                </Link>
+                                            ) : (
+                                                <div className="mt-3 inline-flex items-center gap-2 text-sm font-semibold text-orange-100">
+                                                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-[11px] font-bold uppercase text-white/85">
+                                                        {slot.facultyName.slice(0, 1)}
+                                                    </span>
+                                                    {slot.facultyName}
                                                 </div>
-                                            ) : null}
-                                        </div>
+                                            )
+                                        ) : null}
                                     </div>
                                 </motion.div>
                             );
