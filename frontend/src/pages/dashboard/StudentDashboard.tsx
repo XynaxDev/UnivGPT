@@ -19,7 +19,6 @@ import {
     Activity,
     GraduationCap,
     UserRound,
-    SunMedium,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
@@ -256,11 +255,16 @@ export default function StudentDashboard() {
     };
 
     const openCampusBoard = () => {
-        navigate('/dashboard/documents');
+        navigate('/dashboard/notifications');
     };
 
-    const openNotice = (title: string) => {
-        openChatWithPrefill(`Summarize this notice and tell me key deadlines: ${title}`);
+    const openNotice = (documentId: string) => {
+        navigate('/dashboard/notifications', {
+            state: {
+                focusNotificationId: documentId,
+                openDocumentId: documentId,
+            },
+        });
     };
 
     const openFaculty = (faculty: FacultyCard) => {
@@ -321,7 +325,10 @@ export default function StudentDashboard() {
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3">
-                        <Link to="/dashboard/chat">
+                        <Link
+                            to="/dashboard/chat"
+                            state={{ prefill: 'Help me review today’s notices, timetable, and deadlines in my student scope.' }}
+                        >
                             <Button title="Open student assistant chat" className="bg-orange-600 hover:bg-orange-500 text-white font-semibold px-6 h-11 rounded-2xl shadow-lg shadow-orange-500/20 transition-all active:scale-95 flex gap-2 text-sm">
                                 <Sparkles className="w-4 h-4" /> Ask UnivGPT Assistant
                             </Button>
@@ -431,10 +438,14 @@ export default function StudentDashboard() {
                 {todaySlots.length === 0 ? (
                     <div className="overflow-hidden rounded-2xl border border-fuchsia-400/15 bg-[linear-gradient(135deg,rgba(88,28,135,0.18),rgba(24,25,31,0.98) 42%,rgba(124,58,237,0.12))] p-5">
                         <div className="relative overflow-hidden rounded-2xl border border-fuchsia-300/10 bg-[radial-gradient(circle_at_top_left,rgba(216,180,254,0.10),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-6">
-                            <div className="pointer-events-none absolute -right-10 bottom-[-28px] text-fuchsia-200/14">
-                                <SunMedium className="h-36 w-36" />
+                            <div className="pointer-events-none absolute inset-y-0 right-0 w-64">
+                                <div className="absolute right-[-54px] top-1/2 h-48 w-48 -translate-y-1/2 rounded-full border border-fuchsia-300/12 bg-[radial-gradient(circle,rgba(196,181,253,0.14),transparent_62%)]" />
+                                <div className="absolute right-8 top-8 h-24 w-24 rounded-[32px] border border-fuchsia-300/14 bg-fuchsia-300/8 blur-[2px]" />
+                                <div className="absolute right-14 bottom-8 h-20 w-40 rounded-[999px] border border-fuchsia-300/10 bg-[linear-gradient(90deg,rgba(168,85,247,0.12),rgba(244,114,182,0.04))]" />
+                                <div className="absolute right-5 top-14 h-40 w-40 rounded-full border border-fuchsia-300/10" />
+                                <div className="absolute right-20 top-20 h-28 w-28 rounded-full border border-fuchsia-200/10" />
+                                <div className="absolute right-10 top-10 h-40 w-20 rounded-[999px] bg-fuchsia-300/8 blur-2xl" />
                             </div>
-                            <div className="pointer-events-none absolute right-14 top-5 h-16 w-16 rounded-full bg-fuchsia-300/12 blur-2xl" />
                             <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-fuchsia-200/70">
                                 {todayHoliday ? 'Holiday Window' : isWeekendToday ? 'Weekend Reset' : 'Open Study Window'}
                             </div>
@@ -564,7 +575,7 @@ export default function StudentDashboard() {
                                         <Button
                                             variant="ghost"
                                             size="sm"
-                                            onClick={() => openNotice(notice.title)}
+                                            onClick={() => openNotice(notice.id)}
                                             className="text-zinc-600 hover:text-orange-400 uppercase text-[10px] font-bold tracking-widest"
                                         >
                                             View <ArrowUpRight className="w-3.5 h-3.5 ml-1" />

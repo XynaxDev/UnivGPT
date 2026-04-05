@@ -16,7 +16,6 @@ import {
     Activity,
     Megaphone,
     ArrowUpRight,
-    SunMedium,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
@@ -69,7 +68,7 @@ export default function FacultyDashboard() {
     const navigate = useNavigate();
     const displayName = normalizeDisplayName(user?.full_name);
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
-    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 60 }) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 24 }) : null;
     const cachedCourses = token ? authApi.peekCourseDirectory(token, 24) : null;
     const [isLoading, setIsLoading] = useState(!(cachedExport || cachedDocs));
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
@@ -92,7 +91,7 @@ export default function FacultyDashboard() {
                         ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 60 })
+                        ? documentsApi.list(token, { page: 1, per_page: 24 })
                         : Promise.resolve(cachedDocs),
                     needsCourses
                         ? authApi.getCourseDirectory(token, 24)
@@ -217,7 +216,12 @@ export default function FacultyDashboard() {
 
     return (
         <div className="p-6 md:p-8 space-y-7 pb-20 w-full max-w-7xl mx-auto overflow-x-hidden">
-            <header className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.14),transparent_26%),linear-gradient(145deg,rgba(18,20,24,0.98),rgba(12,15,19,0.98))] p-6">
+            <header className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.16),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(56,189,248,0.10),transparent_28%),linear-gradient(145deg,rgba(18,20,24,0.98),rgba(12,15,19,0.98))] p-6">
+                <div className="pointer-events-none absolute inset-y-0 right-0 w-72">
+                    <div className="absolute right-[-56px] top-[-24px] h-56 w-56 rounded-full border border-orange-300/10 bg-[radial-gradient(circle,rgba(251,146,60,0.12),transparent_62%)]" />
+                    <div className="absolute right-16 top-10 h-28 w-28 rounded-[34px] border border-sky-300/12 bg-sky-300/8 blur-[2px]" />
+                    <div className="absolute right-20 bottom-[-28px] h-32 w-56 rounded-[999px] border border-orange-300/10 bg-[linear-gradient(90deg,rgba(249,115,22,0.08),rgba(56,189,248,0.02))]" />
+                </div>
                 <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                     <div className="space-y-2">
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.03] px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-300">
@@ -236,7 +240,10 @@ export default function FacultyDashboard() {
                                 <FileText className="w-4 h-4 mr-2" /> Upload Document
                             </Button>
                         </Link>
-                        <Link to="/dashboard/chat">
+                        <Link
+                            to="/dashboard/chat"
+                            state={{ prefill: 'Help me review today’s faculty timetable, notices, and class actions in my scope.' }}
+                        >
                             <Button className="bg-orange-600 hover:bg-orange-500 text-white font-semibold px-6 h-11 rounded-2xl shadow-lg shadow-orange-500/20 text-sm">
                                 <Sparkles className="w-4 h-4 mr-2" /> Faculty Assistant
                             </Button>
@@ -315,10 +322,14 @@ export default function FacultyDashboard() {
                     ) : (
                         <div className="overflow-hidden rounded-2xl border border-fuchsia-400/15 bg-[linear-gradient(135deg,rgba(88,28,135,0.18),rgba(24,25,31,0.98) 42%,rgba(124,58,237,0.12))] p-5">
                             <div className="relative overflow-hidden rounded-2xl border border-fuchsia-300/10 bg-[radial-gradient(circle_at_top_left,rgba(216,180,254,0.10),transparent_28%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] p-6">
-                                <div className="pointer-events-none absolute -right-10 bottom-[-28px] text-fuchsia-200/14">
-                                    <SunMedium className="h-36 w-36" />
+                                <div className="pointer-events-none absolute inset-y-0 right-0 w-64">
+                                    <div className="absolute right-[-54px] top-1/2 h-48 w-48 -translate-y-1/2 rounded-full border border-fuchsia-300/12 bg-[radial-gradient(circle,rgba(196,181,253,0.14),transparent_62%)]" />
+                                    <div className="absolute right-8 top-8 h-24 w-24 rounded-[32px] border border-fuchsia-300/14 bg-fuchsia-300/8 blur-[2px]" />
+                                    <div className="absolute right-14 bottom-8 h-20 w-40 rounded-[999px] border border-fuchsia-300/10 bg-[linear-gradient(90deg,rgba(168,85,247,0.12),rgba(244,114,182,0.04))]" />
+                                    <div className="absolute right-5 top-14 h-40 w-40 rounded-full border border-fuchsia-300/10" />
+                                    <div className="absolute right-20 top-20 h-28 w-28 rounded-full border border-fuchsia-200/10" />
+                                    <div className="absolute right-10 top-10 h-40 w-20 rounded-[999px] bg-fuchsia-300/8 blur-2xl" />
                                 </div>
-                                <div className="pointer-events-none absolute right-14 top-5 h-16 w-16 rounded-full bg-fuchsia-300/12 blur-2xl" />
                                 <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-fuchsia-200/70">
                                     {todayHoliday ? 'Holiday Window' : isWeekendToday ? 'Weekend Reset' : 'Open Faculty Window'}
                                 </div>

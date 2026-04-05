@@ -30,7 +30,7 @@ export default function FacultyTimetablePage() {
     const { user, token } = useAuthStore();
     const displayName = normalizeDisplayName(user?.full_name);
     const cachedCourses = token ? authApi.peekCourseDirectory(token, 48) : null;
-    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 80 }) : null;
+    const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 24 }) : null;
     const [courses, setCourses] = useState<CourseDirectoryItem[]>(cachedCourses?.courses || []);
     const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
     const [facultyMembers, setFacultyMembers] = useState<FacultySummary[]>([]);
@@ -48,7 +48,7 @@ export default function FacultyTimetablePage() {
             try {
                 const [coursesResult, docsResult, facultyResult] = await Promise.allSettled([
                     authApi.getCourseDirectory(token, 48),
-                    documentsApi.list(token, { page: 1, per_page: 80 }),
+                    documentsApi.list(token, { page: 1, per_page: 24 }),
                     authApi.getFacultyDirectory(token, 60),
                 ]);
 
@@ -134,7 +134,10 @@ export default function FacultyTimetablePage() {
                     isLoading={isLoading}
                     action={
                         <>
-                            <Link to="/dashboard/chat">
+                            <Link
+                                to="/dashboard/chat"
+                                state={{ prefill: 'Help me review today’s faculty timetable, class blocks, and any related notices in my teaching schedule.' }}
+                            >
                                 <Button className="h-11 rounded-2xl bg-orange-600 px-5 text-white hover:bg-orange-500">
                                     <Sparkles className="mr-2 h-4 w-4" /> Faculty Assistant
                                 </Button>
