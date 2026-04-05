@@ -15,36 +15,14 @@ import {
     ArrowRight,
     Activity,
     Megaphone,
+    ArrowUpRight,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
 import { Link, useNavigate } from 'react-router-dom';
-import { authApi, documentsApi, type DocumentResponse, type UserExportData } from '@/lib/api';
+import { authApi, documentsApi, type CourseDirectoryItem, type DocumentResponse, type UserExportData } from '@/lib/api';
 import { Skeleton } from '@/components/ui/skeleton';
-
-type TimetableSlot = {
-    day: string;
-    start: string;
-    end: string;
-    course: string;
-    room: string;
-    type: string;
-};
-
-const WEEKLY_TIMETABLE: TimetableSlot[] = [
-    { day: 'Mon', start: '09:00', end: '10:00', course: 'CS301 Data Structures', room: 'Room RL-301', type: 'Lecture' },
-    { day: 'Mon', start: '14:00', end: '15:00', course: 'AI405 Applied ML', room: 'Lab ML-2', type: 'Lab' },
-    { day: 'Tue', start: '11:00', end: '12:00', course: 'CS402 DBMS', room: 'Room RL-204', type: 'Lecture' },
-    { day: 'Wed', start: '10:00', end: '11:00', course: 'CS301 Data Structures', room: 'Room RL-301', type: 'Tutorial' },
-    { day: 'Thu', start: '13:00', end: '14:00', course: 'AI405 Applied ML', room: 'Lab ML-2', type: 'Lab' },
-    { day: 'Fri', start: '12:00', end: '13:00', course: 'CS402 DBMS', room: 'Room RL-204', type: 'Lecture' },
-];
-
-const toMinutes = (value: string) => {
-    const [h, m] = value.split(':').map((v) => Number(v));
-    if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
-    return h * 60 + m;
-};
+import { buildLiveTimetableSlots, formatTimetableTime, getTodayWorkdayLabel, summarizeTimetable, type TimetableSlot } from '@/lib/timetable';
 
 const toRelativeTime = (value?: string) => {
     if (!value) return 'recently';
@@ -66,13 +44,11 @@ const normalizeDisplayName = (fullName?: string | null) => {
     return stripped;
 };
 
-const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-
-const groupSlotsByDay = (slots: TimetableSlot[]) =>
-    DAYS.map((day) => ({
-        day,
-        slots: slots.filter((slot) => slot.day === day),
-    })).filter((entry) => entry.slots.length > 0);
+const toMinutes = (value: string) => {
+    const [h, m] = value.split(':').map((v) => Number(v));
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return 0;
+    return h * 60 + m;
+};
 
 const isNoticeLike = (doc: DocumentResponse) => {
     const name = (doc.filename || '').toLowerCase();
@@ -93,12 +69,14 @@ export default function FacultyDashboard() {
     const displayName = normalizeDisplayName(user?.full_name);
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 60 }) : null;
+    const cachedCourses = token ? authApi.peekCourseDirectory(token, 24) : null;
     const suspiciousDocsCache =
         Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
 
     const [isLoading, setIsLoading] = useState(!(cachedExport || cachedDocs));
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
     const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
+    const [courses, setCourses] = useState<CourseDirectoryItem[]>(cachedCourses?.courses || []);
 
     useEffect(() => {
         let alive = true;
@@ -106,13 +84,14 @@ export default function FacultyDashboard() {
             if (!token) return;
             const needsExport = !cachedExport;
             const needsDocs = !cachedDocs || suspiciousDocsCache;
-            const shouldSilentRefresh = !needsExport && !needsDocs;
+            const needsCourses = !cachedCourses;
+            const shouldSilentRefresh = !needsExport && !needsDocs && !needsCourses;
 
             if (!cachedExport && !cachedDocs) {
                 setIsLoading(true);
             }
             try {
-                const [exportResult, docsResult] = await Promise.allSettled([
+                const [exportResult, docsResult, coursesResult] = await Promise.allSettled([
                     (needsExport || shouldSilentRefresh)
                         ? authApi.exportUserData(token, { force: shouldSilentRefresh })
                         : Promise.resolve(cachedExport),
@@ -121,6 +100,9 @@ export default function FacultyDashboard() {
                         : shouldSilentRefresh
                             ? documentsApi.list(token, { page: 1, per_page: 60 }, { force: true })
                             : Promise.resolve(cachedDocs),
+                    (needsCourses || shouldSilentRefresh)
+                        ? authApi.getCourseDirectory(token, 24, { force: shouldSilentRefresh })
+                        : Promise.resolve(cachedCourses),
                 ]);
                 if (!alive) return;
 
@@ -130,10 +112,14 @@ export default function FacultyDashboard() {
                 if (docsResult.status === 'fulfilled' && docsResult.value) {
                     setDocuments(docsResult.value.documents || []);
                 }
+                if (coursesResult.status === 'fulfilled' && coursesResult.value) {
+                    setCourses(coursesResult.value.courses || []);
+                }
             } catch {
                 if (!alive) return;
                 if (needsExport && !cachedExport && !shouldSilentRefresh) setExportData(null);
                 if (needsDocs && !cachedDocs && !shouldSilentRefresh) setDocuments([]);
+                if (needsCourses && !cachedCourses && !shouldSilentRefresh) setCourses([]);
             } finally {
                 if (alive) setIsLoading(false);
             }
@@ -166,14 +152,25 @@ export default function FacultyDashboard() {
             .slice(0, 5);
     }, [documents]);
 
-    const todayLabel = useMemo(
-        () => new Date().toLocaleDateString('en-US', { weekday: 'short' }),
-        [],
+    const todayLabel = useMemo(() => getTodayWorkdayLabel(), []);
+
+    const timetableSlots = useMemo(
+        () =>
+            buildLiveTimetableSlots(courses, {
+                userId: user?.id,
+                role: user?.role,
+                department: user?.department,
+                program: user?.program,
+            }),
+        [courses, user?.department, user?.id, user?.program, user?.role],
     );
 
     const todaySlots = useMemo(
-        () => WEEKLY_TIMETABLE.filter((slot) => slot.day.toLowerCase() === todayLabel.toLowerCase()),
-        [todayLabel],
+        () =>
+            timetableSlots
+                .filter((slot) => slot.day.toLowerCase() === todayLabel.toLowerCase())
+                .sort((a, b) => toMinutes(a.start) - toMinutes(b.start)),
+        [todayLabel, timetableSlots],
     );
 
     const nextClass = useMemo(() => {
@@ -183,7 +180,7 @@ export default function FacultyDashboard() {
         const dayOrder = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
         const nowIdx = dayOrder.indexOf(nowDay);
 
-        const withDelta = WEEKLY_TIMETABLE.map((slot) => {
+        const withDelta = timetableSlots.map((slot) => {
             const slotIdx = dayOrder.indexOf(slot.day.toLowerCase());
             let dayDelta = slotIdx - nowIdx;
             if (dayDelta < 0) dayDelta += 7;
@@ -193,9 +190,9 @@ export default function FacultyDashboard() {
         }).sort((a, b) => a.delta - b.delta);
 
         return withDelta[0]?.slot || null;
-    }, []);
+    }, [timetableSlots]);
 
-    const groupedTimetable = useMemo(() => groupSlotsByDay(WEEKLY_TIMETABLE), []);
+    const timetableSummary = useMemo(() => summarizeTimetable(timetableSlots), [timetableSlots]);
 
     const metrics = [
         {
@@ -210,7 +207,7 @@ export default function FacultyDashboard() {
             icon: Bell,
             hint: 'Recent faculty notices',
         },
-        { label: 'Total Queries', value: exportData ? String(exportData.queries) : '0', icon: Activity, hint: 'From your account history' },
+        { label: 'Teaching Blocks', value: String(timetableSummary.blocks), icon: Activity, hint: 'Live mapped timetable blocks' },
         { label: 'Department', value: user?.department || 'Not set', icon: Building2, hint: user?.program || 'Teaching area not set' },
     ];
 
@@ -220,9 +217,7 @@ export default function FacultyDashboard() {
 
     return (
         <div className="p-6 md:p-8 space-y-7 pb-20 w-full max-w-7xl mx-auto overflow-x-hidden">
-            <header className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-gradient-to-r from-zinc-900 via-zinc-900/95 to-slate-900/80 p-6">
-                <div className="absolute -top-20 right-6 w-64 h-64 bg-cyan-400/10 blur-[90px] rounded-full pointer-events-none" />
-                <div className="absolute -bottom-16 left-8 w-56 h-56 bg-orange-500/10 blur-[90px] rounded-full pointer-events-none" />
+            <header className="relative overflow-hidden rounded-3xl border border-white/[0.08] bg-[radial-gradient(circle_at_top_left,rgba(249,115,22,0.14),transparent_26%),linear-gradient(145deg,rgba(18,20,24,0.98),rgba(12,15,19,0.98))] p-6">
                 <div className="relative z-10 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
                     <div className="space-y-2">
                         <div className="inline-flex items-center gap-2 rounded-full border border-white/[0.12] bg-white/[0.03] px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-zinc-300">
@@ -274,70 +269,58 @@ export default function FacultyDashboard() {
                 <section id="weekly-timetable" className="xl:col-span-8 rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5 sm:p-6 scroll-mt-24">
                     <div className="flex items-center justify-between mb-4 gap-3">
                         <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                            <Clock3 className="w-4 h-4 text-orange-400" /> Weekly Teaching Timetable
+                            <Clock3 className="w-4 h-4 text-orange-400" /> Today&apos;s Teaching Schedule
                         </h3>
                         <div className="flex items-center gap-3">
-                            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-wider">Mon-Sun</span>
                             <Link to="/dashboard/timetable" className="text-[10px] uppercase tracking-wider text-zinc-500 hover:text-orange-400">
-                                Full page
+                                Open full timetable
                             </Link>
                         </div>
                     </div>
 
                     {isLoading ? (
-                        <div className="space-y-2">
-                            {Array.from({ length: 6 }).map((_, idx) => (
-                                <div key={`faculty-timetable-skeleton-${idx}`} className="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
-                                    <Skeleton className="h-4 w-36 mb-2" />
-                                    <Skeleton className="h-3 w-48" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {Array.from({ length: 3 }).map((_, idx) => (
+                                <div key={`faculty-timetable-skeleton-${idx}`} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                                    <Skeleton className="mb-3 h-4 w-24" />
+                                    <Skeleton className="mb-2 h-5 w-40" />
+                                    <Skeleton className="h-3 w-28" />
+                                </div>
+                            ))}
+                        </div>
+                    ) : todaySlots.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {todaySlots.map((slot) => (
+                                <div
+                                    key={`${slot.day}-${slot.start}-${slot.course}`}
+                                    className="rounded-2xl border border-orange-400/20 bg-[linear-gradient(180deg,rgba(249,115,22,0.14),rgba(17,24,39,0.62))] p-4"
+                                >
+                                    <div className="flex items-start justify-between gap-3">
+                                        <div className="inline-flex rounded-full border border-orange-400/25 bg-orange-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
+                                            {slot.type}
+                                        </div>
+                                        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-300">
+                                            {slot.day}
+                                        </div>
+                                    </div>
+                                    <div className="mt-3 text-[11px] font-bold uppercase tracking-[0.18em] text-white/55">{slot.code}</div>
+                                    <div className="mt-1 text-lg font-black leading-tight text-white">{slot.course}</div>
+                                    <div className="mt-4 flex items-center justify-between gap-3 text-xs text-zinc-300">
+                                        <span>{formatTimetableTime(slot.start)} - {formatTimetableTime(slot.end)}</span>
+                                        <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-400">
+                                            {slot.room}
+                                        </span>
+                                    </div>
+                                    {slot.department && (
+                                        <div className="mt-3 text-[11px] text-zinc-500">{slot.department}</div>
+                                    )}
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <>
-                            <div className="hidden md:grid md:grid-cols-2 xl:grid-cols-3 gap-3">
-                                {groupedTimetable.map((group) => (
-                                    <div key={group.day} className="rounded-2xl border border-white/[0.06] bg-black/25 p-3">
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{group.day}</span>
-                                            <span className="text-[10px] font-semibold text-zinc-600">{group.slots.length} class{group.slots.length > 1 ? 'es' : ''}</span>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {group.slots.map((slot) => (
-                                                <div key={`${slot.day}-${slot.start}-${slot.course}`} className="rounded-xl border border-orange-500/15 bg-gradient-to-br from-orange-500/10 to-amber-500/5 p-3">
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <p className="truncate text-sm font-semibold text-white">{slot.course}</p>
-                                                        <span className="shrink-0 text-[10px] font-semibold text-zinc-300">{slot.start}-{slot.end}</span>
-                                                    </div>
-                                                    <p className="mt-1 text-[11px] text-zinc-500">{slot.room} | {slot.type}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            <div className="flex gap-3 overflow-x-auto pb-2 md:hidden snap-x snap-mandatory">
-                                {groupedTimetable.map((group) => (
-                                    <div key={group.day} className="min-w-[260px] snap-start rounded-2xl border border-white/[0.06] bg-black/25 p-3">
-                                        <div className="mb-3 flex items-center justify-between">
-                                            <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-500">{group.day}</span>
-                                            <span className="text-[10px] font-semibold text-zinc-600">{group.slots.length} class{group.slots.length > 1 ? 'es' : ''}</span>
-                                        </div>
-                                        <div className="space-y-2">
-                                            {group.slots.map((slot) => (
-                                                <div key={`${slot.day}-${slot.start}-${slot.course}`} className="rounded-xl border border-orange-500/15 bg-gradient-to-br from-orange-500/10 to-amber-500/5 p-3">
-                                                    <div className="flex items-center justify-between gap-2">
-                                                        <p className="truncate text-sm font-semibold text-white">{slot.course}</p>
-                                                        <span className="shrink-0 text-[10px] font-semibold text-zinc-300">{slot.start}-{slot.end}</span>
-                                                    </div>
-                                                    <p className="mt-1 text-[11px] text-zinc-500">{slot.room} | {slot.type}</p>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </>
+                        <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] p-5 text-sm text-zinc-500">
+                            No classes are scheduled for today. Open the full timetable to review the rest of the week.
+                        </div>
                     )}
                 </section>
 
@@ -352,7 +335,7 @@ export default function FacultyDashboard() {
                                 {todaySlots.map((slot) => (
                                     <div key={`${slot.day}-${slot.start}-${slot.course}`} className="rounded-lg border border-white/[0.06] bg-white/[0.02] p-2.5">
                                         <p className="text-xs font-semibold text-white">{slot.course}</p>
-                                        <p className="text-[11px] text-zinc-500 mt-1">{slot.start} - {slot.end} | {slot.room}</p>
+                                        <p className="text-[11px] text-zinc-500 mt-1">{formatTimetableTime(slot.start)} - {formatTimetableTime(slot.end)} | {slot.room}</p>
                                     </div>
                                 ))}
                             </div>
@@ -367,7 +350,7 @@ export default function FacultyDashboard() {
                             <>
                                 <p className="text-sm font-semibold text-white">{nextClass.course}</p>
                                 <p className="text-[11px] text-zinc-500 mt-1">
-                                    {nextClass.day} | {nextClass.start} - {nextClass.end} | {nextClass.room}
+                                    {nextClass.day} | {formatTimetableTime(nextClass.start)} - {formatTimetableTime(nextClass.end)} | {nextClass.room}
                                 </p>
                             </>
                         ) : (

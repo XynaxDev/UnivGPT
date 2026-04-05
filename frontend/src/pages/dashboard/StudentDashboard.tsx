@@ -25,7 +25,8 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Link, useNavigate } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { authApi, documentsApi, type DocumentResponse, type UserExportData, type FacultySummary } from '@/lib/api';
+import { authApi, documentsApi, type CourseDirectoryItem, type DocumentResponse, type UserExportData, type FacultySummary } from '@/lib/api';
+import { buildLiveTimetableSlots, formatTimetableTime, getTodayWorkdayLabel, summarizeTimetable } from '@/lib/timetable';
 
 type DashboardNotice = {
     id: string;
@@ -123,12 +124,14 @@ export default function StudentDashboard() {
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 24 }) : null;
     const cachedFaculty = token ? authApi.peekFacultyDirectory(token, 12) : null;
+    const cachedCourses = token ? authApi.peekCourseDirectory(token, 24) : null;
     const suspiciousDocsCache =
         Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
 
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
     const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
     const [facultyMembers, setFacultyMembers] = useState<FacultySummary[]>(cachedFaculty?.faculty || []);
+    const [courses, setCourses] = useState<CourseDirectoryItem[]>(cachedCourses?.courses || []);
     const [facultyLoading, setFacultyLoading] = useState(!cachedFaculty);
 
     useEffect(() => {
@@ -138,11 +141,12 @@ export default function StudentDashboard() {
             const needsExport = !cachedExport;
             const needsDocs = !cachedDocs || suspiciousDocsCache;
             const needsFaculty = !cachedFaculty;
-            const shouldSilentRefresh = !needsExport && !needsDocs && !needsFaculty;
+            const needsCourses = !cachedCourses;
+            const shouldSilentRefresh = !needsExport && !needsDocs && !needsFaculty && !needsCourses;
 
             if (needsFaculty || shouldSilentRefresh) setFacultyLoading(needsFaculty);
             try {
-                const [exportResult, docsResult, facultyResult] = await Promise.allSettled([
+                const [exportResult, docsResult, facultyResult, coursesResult] = await Promise.allSettled([
                     (needsExport || shouldSilentRefresh)
                         ? authApi.exportUserData(token, { force: shouldSilentRefresh })
                         : Promise.resolve(cachedExport),
@@ -156,6 +160,11 @@ export default function StudentDashboard() {
                         : shouldSilentRefresh
                             ? authApi.getFacultyDirectory(token, 12, { force: true })
                             : Promise.resolve(cachedFaculty),
+                    needsCourses
+                        ? authApi.getCourseDirectory(token, 24)
+                        : shouldSilentRefresh
+                            ? authApi.getCourseDirectory(token, 24, { force: true })
+                            : Promise.resolve(cachedCourses),
                 ]);
 
                 if (!alive) return;
@@ -171,11 +180,17 @@ export default function StudentDashboard() {
                 } else if (needsFaculty && !shouldSilentRefresh) {
                     setFacultyMembers([]);
                 }
+                if (coursesResult.status === 'fulfilled' && coursesResult.value) {
+                    setCourses(coursesResult.value.courses || []);
+                } else if (needsCourses && !shouldSilentRefresh) {
+                    setCourses([]);
+                }
             } catch {
                 if (!alive) return;
                 if (needsExport && !cachedExport && !shouldSilentRefresh) setExportData(null);
                 if (needsDocs && !cachedDocs && !shouldSilentRefresh) setDocuments([]);
                 if (needsFaculty && !cachedFaculty && !shouldSilentRefresh) setFacultyMembers([]);
+                if (needsCourses && !cachedCourses && !shouldSilentRefresh) setCourses([]);
             } finally {
                 if (alive) setFacultyLoading(false);
             }
@@ -210,6 +225,27 @@ export default function StudentDashboard() {
         }
         return buildFallbackFacultyCards(user?.program);
     }, [facultyMembers, user?.program]);
+
+    const timetableSlots = useMemo(
+        () =>
+            buildLiveTimetableSlots(courses, {
+                userId: user?.id,
+                role: user?.role,
+                department: user?.department,
+                program: user?.program,
+            }),
+        [courses, user?.department, user?.id, user?.program, user?.role],
+    );
+
+    const timetableSummary = useMemo(() => summarizeTimetable(timetableSlots), [timetableSlots]);
+    const todayLabel = useMemo(() => getTodayWorkdayLabel(), []);
+    const todaySlots = useMemo(
+        () =>
+            timetableSlots
+                .filter((slot) => slot.day.toLowerCase() === todayLabel.toLowerCase())
+                .sort((a, b) => a.start.localeCompare(b.start)),
+        [todayLabel, timetableSlots],
+    );
 
     const openChatWithPrefill = (prefill: string) => {
         navigate('/dashboard/chat', { state: { prefill } });
@@ -254,10 +290,10 @@ export default function StudentDashboard() {
             color: 'text-violet-400',
         },
         {
-            label: 'Department',
-            value: user?.department || 'Not set',
-            hint: user?.program || 'Program not set',
-            icon: CheckCircle2,
+            label: 'Weekly Blocks',
+            value: String(timetableSummary.blocks),
+            hint: 'Live course timetable blocks',
+            icon: Calendar,
             color: 'text-emerald-400',
         },
     ];
@@ -369,6 +405,53 @@ export default function StudentDashboard() {
                         <ChevronRight className="w-4 h-4 ml-2 text-zinc-600 group-hover:text-orange-400 transition-colors" />
                     </Button>
                 </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/[0.08] bg-zinc-900/50 p-5 sm:p-6">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+                    <div>
+                        <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Calendar className="w-4 h-4 text-orange-400" /> Today&apos;s Timetable
+                        </h3>
+                        <p className="mt-1 text-xs text-zinc-500">
+                            Your classes for {todayLabel}, built from the live course directory.
+                        </p>
+                    </div>
+                    <Link to="/dashboard/timetable">
+                        <Button variant="outline" className="h-10 rounded-xl border-white/12 bg-white/[0.03] px-4 text-zinc-200 hover:text-white">
+                            <Calendar className="w-4 h-4 mr-2" /> Open Full Timetable
+                        </Button>
+                    </Link>
+                </div>
+
+                {todaySlots.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] p-5 text-sm text-zinc-500">
+                        No classes are scheduled for today. Open the full timetable to review the rest of the week.
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                        {todaySlots.map((slot) => (
+                            <div
+                                key={`${slot.day}-${slot.start}-${slot.course}`}
+                                className="rounded-2xl border border-white/[0.08] bg-[linear-gradient(180deg,rgba(249,115,22,0.08),rgba(17,24,39,0.64))] p-4"
+                            >
+                                <div className="flex items-start justify-between gap-3">
+                                    <span className="inline-flex rounded-full border border-orange-400/20 bg-orange-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-orange-200">
+                                        {slot.type}
+                                    </span>
+                                    <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10px] uppercase tracking-[0.18em] text-zinc-400">
+                                        {slot.code}
+                                    </span>
+                                </div>
+                                <div className="mt-3 text-base font-black leading-tight text-white">{slot.course}</div>
+                                <div className="mt-4 text-xs text-zinc-300">
+                                    {formatTimetableTime(slot.start)} - {formatTimetableTime(slot.end)}
+                                </div>
+                                <div className="mt-2 text-[11px] text-zinc-500">{slot.room}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
             </section>
 
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
