@@ -21,6 +21,12 @@ export type TimetableSlot = {
 export const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
 export const OFF_DAYS = ['Sat', 'Sun'] as const;
 
+export const ACADEMIC_HOLIDAYS = [
+    { month: 1, day: 26, name: 'Republic Day' },
+    { month: 8, day: 15, name: 'Independence Day' },
+    { month: 10, day: 2, name: 'Gandhi Jayanti' },
+] as const;
+
 export const TIME_COLUMNS = [
     { start: '09:00', end: '10:00', label: '9 AM', block: 'A', kind: 'slot' as const },
     { start: '10:00', end: '11:00', label: '10 AM', block: 'B', kind: 'slot' as const },
@@ -59,12 +65,10 @@ function hashString(value: string) {
     return Math.abs(hash);
 }
 
-function buildRoom(course: CourseDirectoryItem, type: TimetableSlotType) {
+function buildRoom(course: CourseDirectoryItem, block: string) {
     const hash = hashString(`${course.code}-${course.title}`);
-    const wing = type === 'lab' ? 'LAB' : 'RL';
-    const floor = (hash % 3) + 1;
-    const room = (hash % 7) + 1;
-    return `${wing}-${floor}0${room}`;
+    const room = 200 + ((hash % 8) + 1);
+    return `${block}-${room}`;
 }
 
 function compactCourseTitle(course: CourseDirectoryItem) {
@@ -110,6 +114,12 @@ export function buildLiveTimetableSlots(
     return scopedCourses.map((course, index): TimetableSlot => {
         const blueprint = SLOT_BLUEPRINTS[index % SLOT_BLUEPRINTS.length];
         const type = inferType(course, blueprint.type);
+        const block = TIME_COLUMNS.find(
+            (column) =>
+                column.kind === 'slot' &&
+                column.start === blueprint.start &&
+                column.end === blueprint.end,
+        )?.block || 'A';
         return {
             id: `${course.id}-${blueprint.day}-${blueprint.start}`,
             day: blueprint.day,
@@ -118,7 +128,7 @@ export function buildLiveTimetableSlots(
             type,
             course: compactCourseTitle(course),
             code: String(course.code || 'COURSE').trim().toUpperCase(),
-            room: buildRoom(course, type),
+            room: buildRoom(course, block),
             department: course.department,
         };
     });
@@ -165,4 +175,10 @@ export function formatTimetableTime(value: string) {
     const suffix = normalizedHours >= 12 ? 'PM' : 'AM';
     const twelveHour = normalizedHours % 12 || 12;
     return `${twelveHour}:${String(normalizedMinutes).padStart(2, '0')} ${suffix}`;
+}
+
+export function getAcademicHoliday(date: Date) {
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return ACADEMIC_HOLIDAYS.find((holiday) => holiday.month === month && holiday.day === day) || null;
 }

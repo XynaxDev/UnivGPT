@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import {
     TIME_COLUMNS,
     formatTimetableTime,
+    getAcademicHoliday,
     getTimetableSlot,
     type TimetableSlot,
     type TimetableSlotType,
@@ -120,6 +121,7 @@ export function DateTimetableAgenda({
     const selectedShortDay = DAY_SHORT[selectedDate.getDay()];
     const selectedLongDay = DAY_LONG[selectedDate.getDay()];
     const isWeekend = selectedDate.getDay() === 0 || selectedDate.getDay() === 6;
+    const selectedHoliday = getAcademicHoliday(selectedDate);
 
     const selectedTimeline = useMemo(
         () =>
@@ -294,15 +296,25 @@ export function DateTimetableAgenda({
                         </h2>
                     </div>
                     <div className="text-sm text-zinc-400">
-                        {isWeekend
-                            ? 'Off-day window for rest, prep, and catch-up work.'
+                        {selectedHoliday
+                            ? `${selectedHoliday.name} is observed today across the timetable board.`
+                            : isWeekend
+                                ? 'Off-day window for rest, prep, and catch-up work.'
                             : selectedSessions
                                 ? `${selectedSessions} block${selectedSessions === 1 ? '' : 's'} scheduled between 9 AM and 2 PM`
                                 : 'No classes lined up today. Good window for prep, meetings, or revision.'}
                     </div>
                 </div>
 
-                {isWeekend ? (
+                {selectedHoliday ? (
+                    <div className="rounded-[24px] border border-dashed border-emerald-400/15 bg-[radial-gradient(circle_at_top_right,rgba(16,185,129,0.10),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02))] p-8">
+                        <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-emerald-300/80">Holiday Marker</div>
+                        <div className="mt-3 text-2xl font-black text-white">{selectedHoliday.name}</div>
+                        <div className="mt-2 max-w-2xl text-sm text-zinc-400">
+                            This day is marked as a named academic holiday, so regular class blocks stay cleared. Use the week strip above to review the nearest active teaching day or download the official timetable PDF below.
+                        </div>
+                    </div>
+                ) : isWeekend ? (
                     <div className="rounded-[24px] border border-dashed border-white/[0.08] bg-[radial-gradient(circle_at_top_right,rgba(249,115,22,0.08),transparent_36%),linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.02))] p-8">
                         <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500">Weekend Outlook</div>
                         <div className="mt-3 text-2xl font-black text-white">No academic blocks scheduled today</div>
