@@ -492,17 +492,13 @@ const AdminDashboard = () => {
     const [liveDocCount, setLiveDocCount] = useState(Number(cachedDocs?.total || cachedDocs?.documents?.length || 0));
     const [isLoading, setIsLoading] = useState(!(cachedMetrics || cachedAudit || cachedDocs));
     const [loadError, setLoadError] = useState<string | null>(null);
-    const suspiciousDocsCache = Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
-    const suspiciousMetricsCache =
-        Number(cachedMetrics?.stats?.total_documents || 0) === 0 && !suspiciousDocsCache;
-
     useEffect(() => {
         let alive = true;
         const load = async () => {
             if (!token) return;
-            const needsMetrics = !cachedMetrics || suspiciousMetricsCache;
+            const needsMetrics = !cachedMetrics;
             const needsAudit = !cachedAudit;
-            const needsDocs = !cachedDocs || suspiciousDocsCache;
+            const needsDocs = !cachedDocs;
 
             if (!needsMetrics && !needsAudit && !needsDocs) {
                 setIsLoading(false);
@@ -514,10 +510,10 @@ const AdminDashboard = () => {
             }
             setLoadError(null);
             const [metricsResult, auditResult, docsResult] = await Promise.allSettled([
-                needsMetrics ? systemApi.metrics(token, { force: suspiciousMetricsCache }) : Promise.resolve(cachedMetrics),
+                needsMetrics ? systemApi.metrics(token) : Promise.resolve(cachedMetrics),
                 needsAudit ? adminApi.getAuditLogs(token, 1, 30) : Promise.resolve(cachedAudit),
                 needsDocs
-                    ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: suspiciousDocsCache })
+                    ? documentsApi.list(token, { page: 1, per_page: 120 })
                     : Promise.resolve(cachedDocs),
             ]);
             if (!alive) return;

@@ -107,7 +107,6 @@ const ProfilePage = () => {
     const { showToast } = useToastStore();
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 120 }) : null;
-    const suspiciousDocsCache = Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
     const role = user?.role || cachedExport?.profile?.role || 'student';
     const isStudent = role === 'student';
     const isFaculty = role === 'faculty';
@@ -145,20 +144,18 @@ const ProfilePage = () => {
         const loadStats = async () => {
             if (!token) return;
             const needsExport = !cachedExport;
-            const needsDocs = !cachedDocs || suspiciousDocsCache;
-            const shouldSilentRefresh = !needsExport && !needsDocs;
+            const needsDocs = !cachedDocs;
+            const shouldSilentRefresh = false;
 
             if (!shouldSilentRefresh) setIsLoadingStats(true);
             try {
                 const [exportResult, docsResult] = await Promise.allSettled([
-                    (needsExport || shouldSilentRefresh)
-                        ? authApi.exportUserData(token, { force: shouldSilentRefresh })
+                    needsExport
+                        ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: suspiciousDocsCache })
-                        : shouldSilentRefresh
-                            ? documentsApi.list(token, { page: 1, per_page: 120 }, { force: true })
-                            : Promise.resolve(cachedDocs),
+                        ? documentsApi.list(token, { page: 1, per_page: 120 })
+                        : Promise.resolve(cachedDocs),
                 ]);
 
                 const payload = exportResult.status === 'fulfilled' ? exportResult.value : null;

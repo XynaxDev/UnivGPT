@@ -21,7 +21,7 @@ const normalizeRole = (value?: string | null): 'student' | 'faculty' | 'admin' |
 
 export default function AuthCallback() {
     const navigate = useNavigate();
-    const { setSession, finishInitializing, user } = useAuthStore();
+    const { setSession, finishInitializing, clearSession } = useAuthStore();
 
     useEffect(() => {
         const handleCallback = async () => {
@@ -39,28 +39,20 @@ export default function AuthCallback() {
 
             try {
                 if (selectedRole) {
-                    try {
-                        await authApi.setRole(session.access_token, selectedRole);
-                    } catch (roleErr) {
-                        console.warn('Role sync skipped:', roleErr);
-                    }
+                    await authApi.setRole(session.access_token, selectedRole);
                 }
                 // Sync with backend
                 const user = await authApi.refreshMe(session.access_token);
+                if (selectedRole && normalizeRole(user.role) !== selectedRole) {
+                    throw new Error(`Role sync failed: expected ${selectedRole}, received ${user.role}`);
+                }
                 setSession(session.access_token, user);
                 navigate('/dashboard');
             } catch (err) {
-                console.warn('Backend sync failed in callback, using session metadata:', err);
-                const existingRole = normalizeRole(user?.role);
-                setSession(session.access_token, {
-                    id: session.user.id,
-                    email: session.user.email || '',
-                    full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || 'Google User',
-                    role: selectedRole || existingRole || normalizeRole(session.user.user_metadata?.role as string) || 'student',
-                    academic_verified: isAcademicEmail(session.user.email || ''),
-                    identity_provider: session.user.app_metadata?.provider || session.user.app_metadata?.providers?.[0] || 'email',
-                });
-                navigate('/dashboard');
+                console.warn('Google auth callback sync failed, clearing session:', err);
+                await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+                clearSession();
+                navigate('/auth/login?error=google_sync_failed');
             } finally {
                 window.localStorage.removeItem(ROLE_STORAGE_KEY);
                 finishInitializing();
@@ -68,7 +60,7 @@ export default function AuthCallback() {
         };
 
         handleCallback();
-    }, [navigate, setSession, finishInitializing, user?.role]);
+    }, [navigate, setSession, finishInitializing, clearSession]);
 
     return (
         <div className="min-h-screen w-full bg-black flex flex-col items-center justify-center gap-4">

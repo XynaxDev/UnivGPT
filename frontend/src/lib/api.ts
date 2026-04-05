@@ -36,6 +36,31 @@ interface RequestOptions {
     timeoutMs?: number;
 }
 
+function sanitizeUserFacingErrorMessage(detail: string, status?: number): string {
+    const normalized = String(detail || '').trim();
+    const lower = normalized.toLowerCase();
+
+    const infraIssue =
+        lower.includes('cannot reach supabase') ||
+        lower.includes('supabase_url') ||
+        lower.includes('dns') ||
+        lower.includes('vpn') ||
+        lower.includes('internet connectivity') ||
+        lower.includes('internet connection') ||
+        lower.includes('service unavailable') ||
+        lower.includes('fetch failed') ||
+        lower.includes('network error');
+
+    const timeoutIssue = lower.includes('timed out');
+    const serverIssue = typeof status === 'number' && status >= 500;
+
+    if (infraIssue || timeoutIssue || serverIssue) {
+        return 'Sorry for the inconvenience. Something went wrong on our side. Please try again in a moment.';
+    }
+
+    return normalized || 'Sorry for the inconvenience. Something went wrong. Please try again.';
+}
+
 async function request<T>(endpoint: string, options: RequestOptions = {}): Promise<T> {
     const { method = 'GET', body, token, isFormData = false } = options;
     const timeoutMs = options.timeoutMs ?? (method === 'GET' ? 45_000 : 90_000);
@@ -61,14 +86,15 @@ async function request<T>(endpoint: string, options: RequestOptions = {}): Promi
                 window.location.href = '/auth/login';
             }
             const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-            throw new Error(error.detail || `HTTP ${response.status}`);
+            throw new Error(sanitizeUserFacingErrorMessage(error.detail || `HTTP ${response.status}`, response.status));
         }
         return response.json();
     } catch (error: any) {
         if (error?.name === 'AbortError') {
-            throw new Error('Request timed out. Please retry.');
+            throw new Error('Sorry for the inconvenience. Something went wrong on our side. Please try again in a moment.');
         }
-        throw error;
+        const message = error instanceof Error ? error.message : String(error || '');
+        throw new Error(sanitizeUserFacingErrorMessage(message));
     } finally {
         clearTimeout(timeoutId);
     }
@@ -263,6 +289,17 @@ export const authApi = {
         request<UserSettingsResponse>('/user/settings', { method: 'PUT', token, body: settings }).then((res) => {
             invalidateCacheByPrefix(`user-settings:${tokenSuffix(token)}`);
             invalidateCacheByPrefix(`user-export-data:${tokenSuffix(token)}`);
+            return res;
+        }),
+    deleteAccount: (token: string) =>
+        request<{ status: string; message: string }>('/user/account', { method: 'DELETE', token }).then((res) => {
+            const suffix = tokenSuffix(token);
+            invalidateCacheByPrefix(`user-me:${suffix}`);
+            invalidateCacheByPrefix(`user-settings:${suffix}`);
+            invalidateCacheByPrefix(`user-notifications:${suffix}`);
+            invalidateCacheByPrefix(`user-faculty:${suffix}`);
+            invalidateCacheByPrefix(`user-courses:${suffix}`);
+            invalidateCacheByPrefix(`user-export-data:${suffix}`);
             return res;
         }),
     getNotifications: (token: string, limit = 20, options?: { force?: boolean }) => {
@@ -733,6 +770,7 @@ export interface DocumentResponse {
     visibility: boolean;
     uploaded_at?: string;
     created_at?: string; // Alias for uploaded_at
+    metadata?: Record<string, unknown>;
 }
 
 export interface DocumentListResponse {

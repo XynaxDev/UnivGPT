@@ -111,11 +111,15 @@ export default function App() {
           : await authApi.getMe(session.access_token, getCurrentUser() || undefined);
         setSession(session.access_token, refreshedUser);
       } catch (err) {
-        console.warn('Session sync failed, using metadata fallback:', err);
+        console.warn('Session sync failed, attempting safe metadata fallback:', err);
         const fallbackRole =
           normalizeRole(getCurrentUser()?.role) ||
-          normalizeRole(session.user.user_metadata?.role as string) ||
-          'student';
+          normalizeRole(session.user.user_metadata?.role as string);
+        if (!fallbackRole) {
+          lastSyncedTokenRef.current = null;
+          clearSession();
+          return;
+        }
         setSession(session.access_token, {
           id: session.user.id,
           email: session.user.email || '',
@@ -130,11 +134,26 @@ export default function App() {
     };
 
     const initAuth = async () => {
+      const persistedState = useAuthStore.getState();
+      const persistedToken = persistedState.token;
+      const persistedUser = persistedState.user;
+      if (persistedToken && persistedUser) {
+        lastSyncedTokenRef.current = persistedToken;
+        finishInitializing();
+      }
+
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
-        await syncSessionToBackend(session, 'User');
+        const hasPersistedMatch =
+          persistedToken === session.access_token && Boolean(persistedUser);
+        if (!hasPersistedMatch) {
+          await syncSessionToBackend(session, 'User');
+        }
       } else {
         lastSyncedTokenRef.current = null;
+        if (persistedToken) {
+          clearSession();
+        }
       }
       finishInitializing();
     };
@@ -143,6 +162,9 @@ export default function App() {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth Event:', event);
+      if (event === 'INITIAL_SESSION') {
+        return;
+      }
       if (session?.access_token) {
         await syncSessionToBackend(session, 'Google User', { force: event === 'USER_UPDATED' });
       } else if (event === 'SIGNED_OUT') {

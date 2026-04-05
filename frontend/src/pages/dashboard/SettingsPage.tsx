@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Settings, Bell,
-    Trash2, AlertTriangle, Download, Eye,
+    Trash2, AlertTriangle, Download, Eye, Loader2,
     UserCircle2, ShieldCheck, Building2, GraduationCap, Layers, Hash
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -34,7 +34,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: () => void 
 }
 
 const SettingsPage = () => {
-    const { logout, user, token } = useAuthStore();
+    const { logout, user, token, clearSession } = useAuthStore();
     const { showToast } = useToastStore();
     const navigate = useNavigate();
     const role = user?.role || 'student';
@@ -45,6 +45,7 @@ const SettingsPage = () => {
     const [isExporting, setIsExporting] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+    const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
     const [settings, setSettings] = useState({
         emailNotifications: true,
@@ -90,9 +91,18 @@ const SettingsPage = () => {
     };
 
     const handleDeleteAccount = async () => {
-        if (deleteConfirmText === 'DELETE') {
+        if (deleteConfirmText !== 'DELETE' || !token) return;
+        setIsDeletingAccount(true);
+        try {
+            await authApi.deleteAccount(token);
             await logout();
+            clearSession();
+            showToast('Account deleted successfully.', 'success');
             navigate('/auth/login', { replace: true });
+        } catch (err: any) {
+            showToast(err?.message || 'Failed to delete account.', 'error');
+        } finally {
+            setIsDeletingAccount(false);
         }
     };
 
@@ -360,16 +370,25 @@ const SettingsPage = () => {
                                 <Button
                                     onClick={() => { setShowDeleteDialog(false); setDeleteConfirmText(''); }}
                                     variant="outline"
+                                    disabled={isDeletingAccount}
                                     className="flex-1 h-10 rounded-xl text-xs font-semibold border-white/10 hover:bg-white/[0.08] hover:border-white/[0.2] transition-all active:scale-[0.98] text-white hover:text-white"
                                 >
                                     Cancel
                                 </Button>
                                 <Button
                                     onClick={handleDeleteAccount}
-                                    disabled={deleteConfirmText !== 'DELETE'}
+                                    disabled={deleteConfirmText !== 'DELETE' || isDeletingAccount}
                                     className="flex-1 h-10 rounded-xl text-xs font-semibold bg-red-600 hover:bg-red-500 disabled:opacity-30 disabled:cursor-not-allowed transition-all hover:shadow-lg hover:shadow-red-500/20 active:scale-[0.98]"
                                 >
-                                    <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Forever
+                                    {isDeletingAccount ? (
+                                        <>
+                                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> Deleting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Trash2 className="w-3.5 h-3.5 mr-1.5" /> Delete Forever
+                                        </>
+                                    )}
                                 </Button>
                             </div>
                         </motion.div>

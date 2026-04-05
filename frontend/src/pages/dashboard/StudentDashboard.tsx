@@ -126,9 +126,6 @@ export default function StudentDashboard() {
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 24 }) : null;
     const cachedFaculty = token ? authApi.peekFacultyDirectory(token, 12) : null;
     const cachedCourses = token ? authApi.peekCourseDirectory(token, 24) : null;
-    const suspiciousDocsCache =
-        Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
-
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
     const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
     const [facultyMembers, setFacultyMembers] = useState<FacultySummary[]>(cachedFaculty?.faculty || []);
@@ -140,7 +137,7 @@ export default function StudentDashboard() {
         const loadData = async () => {
             if (!token) return;
             const needsExport = !cachedExport;
-            const needsDocs = !cachedDocs || suspiciousDocsCache;
+            const needsDocs = !cachedDocs;
             const needsFaculty = !cachedFaculty;
             const needsCourses = !cachedCourses;
             if (needsFaculty) setFacultyLoading(true);
@@ -150,7 +147,7 @@ export default function StudentDashboard() {
                         ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 24 }, suspiciousDocsCache ? { force: true } : undefined)
+                        ? documentsApi.list(token, { page: 1, per_page: 24 })
                         : Promise.resolve(cachedDocs),
                     needsFaculty
                         ? authApi.getFacultyDirectory(token, 12)

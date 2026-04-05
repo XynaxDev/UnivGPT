@@ -71,9 +71,6 @@ export default function FacultyDashboard() {
     const cachedExport = token ? authApi.peekExportUserData(token) : null;
     const cachedDocs = token ? documentsApi.peekList(token, { page: 1, per_page: 60 }) : null;
     const cachedCourses = token ? authApi.peekCourseDirectory(token, 24) : null;
-    const suspiciousDocsCache =
-        Number(cachedDocs?.total || cachedDocs?.documents?.length || 0) === 0;
-
     const [isLoading, setIsLoading] = useState(!(cachedExport || cachedDocs));
     const [exportData, setExportData] = useState<UserExportData | null>(cachedExport ?? null);
     const [documents, setDocuments] = useState<DocumentResponse[]>(cachedDocs?.documents || []);
@@ -84,7 +81,7 @@ export default function FacultyDashboard() {
         const loadData = async () => {
             if (!token) return;
             const needsExport = !cachedExport;
-            const needsDocs = !cachedDocs || suspiciousDocsCache;
+            const needsDocs = !cachedDocs;
             const needsCourses = !cachedCourses;
             if (!cachedExport && !cachedDocs) {
                 setIsLoading(true);
@@ -95,7 +92,7 @@ export default function FacultyDashboard() {
                         ? authApi.exportUserData(token)
                         : Promise.resolve(cachedExport),
                     needsDocs
-                        ? documentsApi.list(token, { page: 1, per_page: 60 }, suspiciousDocsCache ? { force: true } : undefined)
+                        ? documentsApi.list(token, { page: 1, per_page: 60 })
                         : Promise.resolve(cachedDocs),
                     needsCourses
                         ? authApi.getCourseDirectory(token, 24)
