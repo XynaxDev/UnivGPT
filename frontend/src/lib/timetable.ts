@@ -27,8 +27,6 @@ export const TIME_COLUMNS = [
     { start: '11:00', end: '12:00', label: '11 AM', block: 'C', kind: 'slot' as const },
     { start: '12:00', end: '13:00', label: 'Lunch', block: 'L', kind: 'lunch' as const },
     { start: '13:00', end: '14:00', label: '1 PM', block: 'D', kind: 'slot' as const },
-    { start: '14:00', end: '15:00', label: '2 PM', block: 'E', kind: 'slot' as const },
-    { start: '15:00', end: '16:00', label: '3 PM', block: 'F', kind: 'slot' as const },
 ] as const;
 
 type ScheduleBlueprint = {
@@ -43,8 +41,8 @@ const SLOT_BLUEPRINTS: ScheduleBlueprint[] = [
     { day: 'Mon', start: '10:00', end: '11:00', type: 'tutorial' },
     { day: 'Tue', start: '11:00', end: '12:00', type: 'lecture' },
     { day: 'Wed', start: '13:00', end: '14:00', type: 'lab' },
-    { day: 'Thu', start: '14:00', end: '15:00', type: 'lecture' },
-    { day: 'Fri', start: '15:00', end: '16:00', type: 'lecture' },
+    { day: 'Thu', start: '09:00', end: '10:00', type: 'lecture' },
+    { day: 'Fri', start: '10:00', end: '11:00', type: 'lecture' },
     { day: 'Tue', start: '09:00', end: '10:00', type: 'tutorial' },
     { day: 'Thu', start: '11:00', end: '12:00', type: 'lab' },
 ] as const;
