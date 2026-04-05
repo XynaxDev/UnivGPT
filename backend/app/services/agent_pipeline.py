@@ -1086,6 +1086,8 @@ async def _call_llm_internal(
 
     configured_retries = settings.openrouter_max_retries if max_retries_override is None else max_retries_override
     max_retries = max(0, int(configured_retries or 0))
+    if (provider or "generation").strip().lower() == "generation" and allow_fallback_models and settings.openrouter_generation_fallback_models_list:
+        max_retries = min(max_retries, 0)
     backoff = max(0.1, float(settings.openrouter_retry_backoff_seconds or 0.8))
 
     last_exception: Optional[Exception] = None
@@ -1097,6 +1099,11 @@ async def _call_llm_internal(
         auth_token = provider_cfg["auth_token"]
         endpoint = provider_cfg["endpoint"]
         client = get_llm_client(provider_cfg["provider"])
+        provider_timeout = float(settings.openrouter_timeout_seconds or 20)
+        if provider_cfg["provider"] == "generation" and settings.openrouter_generation_fallback_models_list:
+            provider_timeout = min(max(6.0, provider_timeout / 2), 10.0)
+        elif provider_cfg["provider"] == "generation_fallback":
+            provider_timeout = min(max(8.0, provider_timeout), 15.0)
 
         if not selected_model or not base_url or not auth_token:
             if provider_cfg["provider"] == "generation" and settings.openrouter_generation_fallback_models_list:
@@ -1129,6 +1136,7 @@ async def _call_llm_internal(
                         "Content-Type": "application/json",
                     },
                     json=payload,
+                    timeout=provider_timeout,
                 )
                 response.raise_for_status()
                 data = response.json()
@@ -1184,12 +1192,16 @@ async def _call_llm_internal(
                     )
                     logger.warning("%s rate limited on model %s (attempt %s).", provider_cfg["provider_label"], selected_model, attempt + 1)
                 else:
+                    if provider_cfg["provider"] == "generation" and settings.openrouter_generation_fallback_models_list:
+                        _mark_provider_cooldown(provider_cfg["provider"], selected_model, 900)
                     if status == 404 and provider_cfg["provider"] == "generation_fallback":
                         _mark_provider_cooldown(provider_cfg["provider"], selected_model, 6 * 3600)
                     logger.error("LLM HTTP error on provider %s model %s: %s", provider_cfg["provider"], selected_model, exc)
                 break
             except Exception as exc:
                 last_exception = exc
+                if provider_cfg["provider"] == "generation" and settings.openrouter_generation_fallback_models_list:
+                    _mark_provider_cooldown(provider_cfg["provider"], selected_model, 900)
                 if attempt < max_retries:
                     await asyncio.sleep(backoff * (2 ** attempt))
                     continue
@@ -2029,7 +2041,7 @@ async def run_agent_pipeline(
         if forced_answer is not None:
             logger.info("Skipping vector search because structured response is already resolved.")
         else:
-            logger.warning("Pinecone index not initialized. Skipping vector search.")
+            logger.info("Pinecone index not initialized. Skipping vector search.")
 
     if not chunks and not structured_sources:
         context_text += "\n[System Note: No documents matched the query in the current database (0 documents for current filters).]\n"
