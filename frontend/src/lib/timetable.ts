@@ -16,6 +16,8 @@ export type TimetableSlot = {
     room: string;
     type: TimetableSlotType;
     department?: string | null;
+    facultyId?: string | null;
+    facultyName?: string | null;
 };
 
 export const WORK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'] as const;
@@ -93,12 +95,16 @@ export function buildLiveTimetableSlots(
         role?: string | null;
         department?: string | null;
         program?: string | null;
+        currentUserName?: string | null;
+        facultyLookup?: Record<string, { id: string; full_name: string }>;
     },
 ) {
     const userId = String(options?.userId || '').trim();
     const role = normalize(options?.role);
     const department = normalize(options?.department);
     const program = normalize(options?.program);
+    const currentUserName = String(options?.currentUserName || '').trim();
+    const facultyLookup = options?.facultyLookup || {};
 
     const scopedCourses = [...courses]
         .filter((course) => {
@@ -120,6 +126,16 @@ export function buildLiveTimetableSlots(
                 column.start === blueprint.start &&
                 column.end === blueprint.end,
         )?.block || 'A';
+        const matchedFacultyId =
+            (course.faculty_ids || []).find((facultyId) => facultyLookup[facultyId]) ||
+            (course.faculty_ids || [])[0] ||
+            null;
+        const matchedFacultyName =
+            role === 'faculty'
+                ? currentUserName || facultyLookup[matchedFacultyId || '']?.full_name || 'Assigned Faculty'
+                : matchedFacultyId
+                    ? facultyLookup[matchedFacultyId]?.full_name || 'Assigned Faculty'
+                    : null;
         return {
             id: `${course.id}-${blueprint.day}-${blueprint.start}`,
             day: blueprint.day,
@@ -130,6 +146,8 @@ export function buildLiveTimetableSlots(
             code: String(course.code || 'COURSE').trim().toUpperCase(),
             room: buildRoom(course, block),
             department: course.department,
+            facultyId: matchedFacultyId,
+            facultyName: matchedFacultyName,
         };
     });
 }
