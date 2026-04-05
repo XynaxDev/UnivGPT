@@ -357,11 +357,11 @@ def fetch_notice_recipients(
         profile_id = str(row.get("id") or "").strip()
         role = str(row.get("role") or "").strip().lower()
         email = str(row.get("email") or "").strip()
-        if not profile_id or not email or role not in {UserRole.STUDENT.value, UserRole.FACULTY.value, UserRole.ADMIN.value}:
+        if not profile_id or not email or role not in {UserRole.STUDENT.value, UserRole.FACULTY.value}:
             continue
         if served_by_user_id and profile_id == served_by_user_id:
-            # The sender already sees the served notice list; recipient fan-out is for targeted users.
-            pass
+            # Recipient fan-out is only for the targeted audience.
+            continue
         preferences = row.get("preferences") if isinstance(row.get("preferences"), dict) else {}
         settings_payload = preferences.get("settings") if isinstance(preferences.get("settings"), dict) else {}
         if settings_payload.get("emailNotifications") is False:
@@ -452,6 +452,46 @@ def normalize_notice_target(value: str) -> str:
     if text in {"both", "all"}:
         return "both"
     raise HTTPException(status_code=400, detail="Invalid notice target. Use students, faculty, or both.")
+
+
+def resolve_actor_profile_id(supabase, user: AuthenticatedUser) -> str | None:
+    raw_id = str(user.id or "").strip()
+    try:
+        uuid.UUID(raw_id)
+        return raw_id
+    except Exception:
+        pass
+
+    email = str(user.email or "").strip().lower()
+    if not email:
+        return None
+
+    try:
+        rows = (
+            supabase.table("profiles")
+            .select("id,email,role")
+            .eq("email", email)
+            .limit(10)
+            .execute()
+        ).data or []
+    except Exception:
+        return None
+
+    if not rows:
+        return None
+
+    requested_role = str(user.role or "").strip().lower()
+    for row in rows:
+        candidate_id = str(row.get("id") or "").strip()
+        candidate_role = str(row.get("role") or "").strip().lower()
+        if candidate_id and candidate_role == requested_role:
+            return candidate_id
+
+    for row in rows:
+        candidate_id = str(row.get("id") or "").strip()
+        if candidate_id:
+            return candidate_id
+    return None
 
 
 def notice_doc_types_for_target(target: str) -> list[str]:
@@ -655,7 +695,12 @@ async def serve_notice(
     department = str(body.department or user.department or "").strip()
     course = str(body.course or "").strip()
     manual_tags = [str(tag).strip() for tag in (body.tags or []) if str(tag).strip()]
-    audit_user_id = None if user.id.startswith("dummy-id-") else user.id
+    audit_user_id = resolve_actor_profile_id(supabase, user)
+    if not audit_user_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not resolve your faculty/admin profile for notice delivery. Please sign in again and retry.",
+        )
 
     created: list[dict[str, Any]] = []
     created_rows: list[dict[str, Any]] = []
@@ -941,7 +986,12 @@ async def upload_document(
 
     # 1. Save metadata to Supabase Postgres
     supabase = get_supabase_admin()
-    audit_user_id = None if user.id.startswith("dummy-id-") else user.id
+    audit_user_id = resolve_actor_profile_id(supabase, user)
+    if not audit_user_id:
+        raise HTTPException(
+            status_code=503,
+            detail="Could not resolve the sender profile for this upload. Please sign in again and retry.",
+        )
     base_payload = {
         "id": document_id,
         "uploader_id": audit_user_id,
