@@ -16,9 +16,9 @@ const TIMETABLE_TAGS = ['timetable', 'time-table', 'schedule', 'routine'];
 
 const normalizeDisplayName = (fullName?: string | null) => {
     const raw = String(fullName || '').trim();
-    if (!raw) return 'Faculty';
+    if (!raw) return 'Student';
     const stripped = raw.replace(/^(dr|mr|mrs|ms|prof)\.?\s+/i, '').trim();
-    return stripped || 'Faculty';
+    return stripped || 'Student';
 };
 
 const isTimetableDocument = (doc: DocumentResponse) => {
@@ -27,7 +27,7 @@ const isTimetableDocument = (doc: DocumentResponse) => {
     return TIMETABLE_TAGS.some((keyword) => filename.includes(keyword) || tags.includes(keyword));
 };
 
-export default function FacultyTimetablePage() {
+export default function StudentTimetablePage() {
     const { user, token } = useAuthStore();
     const displayName = normalizeDisplayName(user?.full_name);
     const cachedCourses = token ? authApi.peekCourseDirectory(token, 48) : null;
@@ -123,7 +123,7 @@ export default function FacultyTimetablePage() {
                         </div>
                         <div className="rounded-[28px] border border-white/[0.08] bg-zinc-900/45 p-6 space-y-3">
                             {Array.from({ length: 5 }).map((_, idx) => (
-                                <div key={`faculty-date-skeleton-${idx}`} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
+                                <div key={`student-date-skeleton-${idx}`} className="rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4">
                                     <Skeleton className="h-4 w-40" />
                                     <Skeleton className="mt-3 h-24 w-full" />
                                 </div>
@@ -133,19 +133,19 @@ export default function FacultyTimetablePage() {
                 ) : (
                     <DateTimetableAgenda
                         slots={timetableSlots}
-                        title={`Teaching Timetable for ${displayName}`}
-                        subtitle="Date-based faculty agenda built from your mapped courses. Monday to Friday follows 9 AM to 4 PM academic blocks, while weekends stay off."
-                        emptyMessage="No faculty timetable could be derived yet from your live course directory. Once mapped courses are available, your daily agenda will appear here."
+                        title={`Class Timetable for ${displayName}`}
+                        subtitle="Date-based student timetable built from your mapped courses. Monday to Friday follows 9 AM to 4 PM academic blocks, while weekends stay off."
+                        emptyMessage="No student timetable could be derived yet from your current course directory. Once mapped courses are available, your day agenda will appear here."
                         action={
                             <>
                                 <Link to="/dashboard/chat">
                                     <Button className="h-11 rounded-2xl bg-orange-600 px-5 text-white hover:bg-orange-500">
-                                        <Sparkles className="mr-2 h-4 w-4" /> Faculty Assistant
+                                        <Sparkles className="mr-2 h-4 w-4" /> Ask UnivGPT Assistant
                                     </Button>
                                 </Link>
                                 <Link to="/dashboard">
                                     <Button variant="outline" className="h-11 rounded-2xl border-white/15 px-5 text-zinc-200 hover:text-white">
-                                        Back To Faculty Dashboard
+                                        Back To Student Dashboard
                                     </Button>
                                 </Link>
                             </>
@@ -159,7 +159,7 @@ export default function FacultyTimetablePage() {
                             <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-zinc-500">Original Timetable Files</div>
                             <h2 className="mt-1 text-xl font-black text-white">Download Uploaded Timetable PDFs</h2>
                             <p className="mt-1 text-sm text-zinc-400">
-                                Role-scoped timetable documents tagged by admin and faculty are listed here for direct download.
+                                Timetable-tagged files available in your student scope are listed here for direct download.
                             </p>
                         </div>
                         <div className="text-sm text-zinc-500">{timetableDocs.length} file{timetableDocs.length === 1 ? '' : 's'}</div>
@@ -168,7 +168,7 @@ export default function FacultyTimetablePage() {
                     <div className="mt-5 space-y-3">
                         {timetableDocs.length === 0 ? (
                             <div className="rounded-2xl border border-dashed border-white/[0.08] bg-white/[0.02] p-5 text-sm text-zinc-500">
-                                No timetable-tagged files are available in your current faculty scope.
+                                No timetable-tagged files are available in your current student scope.
                             </div>
                         ) : (
                             timetableDocs.map((doc) => (
