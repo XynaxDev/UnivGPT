@@ -334,18 +334,21 @@ def fetch_course_faculty_snapshot(
 
 
 def should_use_course_faculty_snapshot(query: str, intent: dict[str, Any]) -> bool:
+    text = _normalize(query)
     target = _normalize(intent.get("target_entity"))
     intent_type = _normalize(intent.get("intent_type"))
     faculty_intents = {"count_faculty", "list_faculty", "faculty_profile", "course_faculty_map"}
     course_intents = {"count_courses", "list_courses", "course_faculty_map"}
     faculty_targets = {"faculty", "faculties", "teachers", "professors", "mentors", "instructors"}
     course_targets = {"courses", "course", "subjects", "curriculum", "syllabus"}
+    teaching_markers = ("teach", "teaches", "teaching", "taught", "subject", "subjects", "handles")
     return (
         intent_type in faculty_intents
         or intent_type in course_intents
         or target in faculty_targets
         or target in course_targets
         or bool(str(intent.get("course") or "").strip())
+        or any(marker in text for marker in teaching_markers)
     )
 
 
@@ -450,12 +453,19 @@ def _navigation_block(links: list[tuple[str, str]], title: str = "Related pages"
     return "\n" + "\n".join(lines)
 
 
+def append_navigation_links(answer: str, links: list[tuple[str, str]], title: str = "Related pages") -> str:
+    if not answer or not links:
+        return answer
+    return answer + "\n\n" + _navigation_block(links, title=title)
+
+
 def append_intent_navigation_links(answer: str, user_role: str, intent: dict[str, Any]) -> str:
     if not answer or "(/dashboard/" in answer or "Related pages:" in answer or "Quick links:" in answer:
         return answer
 
     intent_type = _normalize(intent.get("intent_type"))
     target_entity = _normalize(intent.get("target_entity"))
+    role_norm = _normalize(user_role)
     links: list[tuple[str, str]] = []
 
     faculty_intents = {"count_faculty", "list_faculty", "faculty_profile", "course_faculty_map"}
@@ -467,12 +477,16 @@ def append_intent_navigation_links(answer: str, user_role: str, intent: dict[str
     if intent_type in course_intents or target_entity == "courses":
         links.append(("Open Courses", "/dashboard/courses"))
     if intent_type in document_intents or target_entity in {"documents", "notices"}:
-        links.append(("Open Documents", "/dashboard/documents"))
+        if role_norm in {"admin", "faculty"}:
+            links.append(("Open Documents", "/dashboard/documents"))
+        elif role_norm == "student":
+            links.append(("Open Courses", "/dashboard/courses"))
+            links.append(("Open Full Timetable", "/dashboard/timetable"))
         links.append(("Open Notifications", "/dashboard/notifications"))
-    if intent_type == "count_users" and _normalize(user_role) == "admin":
+    if intent_type == "count_users" and role_norm == "admin":
         links.append(("Open User Management", "/dashboard/users"))
         links.append(("Open Audit Logs", "/dashboard/audit"))
-    if _normalize(user_role) == "admin":
+    if role_norm == "admin":
         if intent_type in {"count_appeals", "list_appeals"} or target_entity in {"appeal", "appeals", "moderation"}:
             links.append(("Open Dean Appeals", "/dashboard/dean"))
             links.append(("Open Audit Logs", "/dashboard/audit"))
@@ -480,16 +494,14 @@ def append_intent_navigation_links(answer: str, user_role: str, intent: dict[str
             links.append(("Open Audit Logs", "/dashboard/audit"))
             links.append(("Open User Management", "/dashboard/users"))
 
-    if not links:
-        return answer
-    return answer + "\n\n" + _navigation_block(links)
+    return append_navigation_links(answer, links)
 
 
-def build_course_faculty_answer(
+def build_course_faculty_context(
     query: str,
     intent: dict[str, Any],
     snapshot: dict[str, Any],
-) -> Optional[str]:
+) -> Optional[dict[str, Any]]:
     courses = snapshot.get("courses") or []
     faculty_by_id = snapshot.get("faculty_by_id") or {}
     visible_faculty_ids = snapshot.get("visible_faculty_ids") or []
@@ -532,65 +544,50 @@ def build_course_faculty_answer(
             if faculty_id in {str(fid) for fid in (item.get("faculty_ids") or [])}
         ]
         name = str(faculty_row.get("full_name") or "Faculty")
-        department = str(faculty_row.get("department") or "Department not set")
-        email = str(faculty_row.get("email") or "")
-        email_line = f"- Email: {email}\n" if email else ""
-        if mapped_courses:
-            courses_lines = "\n".join(
-                f"- {item.get('title')} ({int(item.get('notice_count', 0))} notices)"
-                for item in mapped_courses[:8]
+        context_lines = [
+            "[Structured Faculty Profile Match]",
+            f"- Name: {name}",
+            f"- Department: {faculty_row.get('department') or 'Department not set'}",
+        ]
+        if faculty_row.get("email"):
+            context_lines.append(f"- Email: {faculty_row.get('email')}")
+        context_lines.append(f"- Courses taught in accessible scope: {len(mapped_courses)}")
+        for item in mapped_courses[:8]:
+            context_lines.append(
+                f"- Course: {item.get('title')} | notices: {int(item.get('notice_count', 0))}"
             )
-            answer = (
-                f"Here is the live profile match:\n"
-                f"- Name: {name}\n"
-                f"- Department: {department}\n"
-                f"{email_line}"
-                f"- Courses taught in your accessible scope: {len(mapped_courses)}\n"
-                f"{courses_lines}"
-            )
-            answer += "\n\n" + _navigation_block(
-                [
-                    (f"Open {name} Profile", f"/dashboard/faculty/{faculty_id}"),
-                    ("Open Faculty Directory", "/dashboard/faculty"),
-                    ("Open Courses", "/dashboard/courses"),
-                ],
-                title="Quick links",
-            )
-            return answer
-        answer = (
-            f"Here is the live profile match:\n"
-            f"- Name: {name}\n"
-            f"- Department: {department}\n"
-            f"{email_line}"
-            f"- Courses taught in your accessible scope: 0"
-        )
-        answer += "\n\n" + _navigation_block(
-            [
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer only from the structured faculty profile snapshot. "
+                "If the accessible course count is 0, say so clearly and do not invent teaching assignments."
+            ),
+            "links": [
                 (f"Open {name} Profile", f"/dashboard/faculty/{faculty_id}"),
                 ("Open Faculty Directory", "/dashboard/faculty"),
                 ("Open Courses", "/dashboard/courses"),
             ],
-            title="Quick links",
-        )
-        return answer
+        }
 
     if (count_request and course_related) or intent_type == "count_courses":
-        if not scoped_courses:
-            scope_label = f" for `{intent.get('course')}`" if intent.get("course") else ""
-            answer = f"I checked the live course directory and found **0 courses{scope_label}** in your current access scope."
-            return answer + "\n\n" + _navigation_block(
-                [("Open Courses", "/dashboard/courses"), ("Open Faculty Directory", "/dashboard/faculty")],
-                title="Quick links",
+        context_lines = [
+            "[Structured Course Directory Snapshot]",
+            f"- Matching course count: {len(scoped_courses)}",
+        ]
+        if intent.get("course"):
+            context_lines.append(f"- Requested course filter: {intent.get('course')}")
+        for item in scoped_courses[:6]:
+            context_lines.append(
+                f"- Course: {item.get('title')} | notices: {int(item.get('notice_count', 0))}"
             )
-        preview = "\n".join(f"- {item.get('title')} ({item.get('notice_count', 0)} notices)" for item in scoped_courses[:6])
-        answer = (
-            f"I found **{len(scoped_courses)} courses** in your live directory.\n\n"
-            f"Top matches:\n{preview}"
-        )
-        return answer + "\n\n" + _navigation_block(
-            [("Open Courses", "/dashboard/courses"), ("Open Faculty Directory", "/dashboard/faculty")],
-            title="Quick links",
-        )
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer using the structured course directory snapshot only. "
+                "State the exact matching course count and mention only the top relevant matches."
+            ),
+            "links": [("Open Courses", "/dashboard/courses"), ("Open Faculty Directory", "/dashboard/faculty")],
+        }
 
     if (count_request and faculty_related) or intent_type == "count_faculty":
         faculty_ids = {
@@ -599,108 +596,117 @@ def build_course_faculty_answer(
             for fid in (item.get("faculty_ids") or [])
             if str(fid)
         } or {str(fid) for fid in visible_faculty_ids if str(fid)}
-        answer = f"I found **{len(faculty_ids)} faculty members** mapped to your accessible courses/scope."
-        return answer + "\n\n" + _navigation_block(
-            [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
-            title="Quick links",
-        )
+        return {
+            "context": (
+                "[Structured Faculty Directory Snapshot]\n"
+                f"- Accessible faculty count: {len(faculty_ids)}"
+            ),
+            "directive": (
+                "Answer using the structured faculty directory snapshot only. "
+                "State the exact accessible faculty count and do not imply access beyond the user's scope."
+            ),
+            "links": [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
+        }
 
     if course_related and faculty_related:
-        if not scoped_courses:
-            answer = "I checked your live course directory and found **0 matching courses**, so there are no mapped faculty yet."
-            return answer + "\n\n" + _navigation_block(
-                [("Open Courses", "/dashboard/courses"), ("Open Faculty Directory", "/dashboard/faculty")],
-                title="Quick links",
-            )
-        lines: list[str] = []
+        context_lines = [
+            "[Structured Course-Faculty Mapping Snapshot]",
+            f"- Matching course count: {len(scoped_courses)}",
+        ]
         for item in scoped_courses[:8]:
             faculty_names = [
                 str((faculty_by_id.get(str(fid)) or {}).get("full_name") or "Unassigned")
                 for fid in (item.get("faculty_ids") or [])
             ]
             faculty_text = ", ".join(faculty_names) if faculty_names else "No faculty mapped yet"
-            lines.append(f"- {item.get('title')}: {faculty_text}")
-        answer = "Here are the faculty mappings from your live course directory:\n" + "\n".join(lines)
-        return answer + "\n\n" + _navigation_block(
-            [("Open Courses", "/dashboard/courses"), ("Open Faculty Directory", "/dashboard/faculty")],
-            title="Quick links",
-        )
+            context_lines.append(f"- {item.get('title')}: {faculty_text}")
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer only from the structured course-faculty mapping snapshot. "
+                "If the course count is 0, say there are no mapped faculty in the current scope."
+            ),
+            "links": [("Open Courses", "/dashboard/courses"), ("Open Faculty Directory", "/dashboard/faculty")],
+        }
 
     if intent_type == "list_courses" or (course_related and not faculty_related and not count_request):
-        if not scoped_courses:
-            answer = "I checked your live course directory and found **0 courses** in your current access scope."
-            return answer + "\n\n" + _navigation_block(
-                [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
-                title="Quick links",
-            )
-        lines = []
+        context_lines = [
+            "[Structured Course Directory Snapshot]",
+            f"- Matching course count: {len(scoped_courses)}",
+        ]
         for item in scoped_courses[:10]:
-            lines.append(
+            context_lines.append(
                 f"- {item.get('title')} | notices: {int(item.get('notice_count', 0))}"
                 f"{f' | latest: {_format_short_date(item.get('next_update_at'))}' if item.get('next_update_at') else ''}"
             )
-        answer = "Here are your live courses from the database:\n" + "\n".join(lines)
-        return answer + "\n\n" + _navigation_block(
-            [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
-            title="Quick links",
-        )
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer using the structured course directory snapshot only. "
+                "Summarize the relevant courses in the user's scope and do not invent missing course records."
+            ),
+            "links": [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
+        }
 
     if intent_type == "list_faculty" or (faculty_related and not course_related and not count_request):
         visible_ids = [str(fid) for fid in visible_faculty_ids if str(fid)]
-        if not visible_ids:
-            answer = "I checked your live faculty directory and found **0 faculty records** in your current scope."
-            return answer + "\n\n" + _navigation_block(
-                [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
-                title="Quick links",
-            )
-        lines = []
+        context_lines = [
+            "[Structured Faculty Directory Snapshot]",
+            f"- Visible faculty count: {len(visible_ids)}",
+        ]
         for fid in visible_ids[:12]:
             row = faculty_by_id.get(fid) or {}
             name = row.get("full_name") or "Faculty"
-            lines.append(
-                f"- {name} ({row.get('department') or 'Department not set'}) "
-                f"[Open profile](/dashboard/faculty/{fid})"
+            context_lines.append(
+                f"- Faculty: {name} | department: {row.get('department') or 'Department not set'} | profile: /dashboard/faculty/{fid}"
             )
-        answer = "Here are faculty members from your live directory:\n" + "\n".join(lines)
-        return answer + "\n\n" + _navigation_block(
-            [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
-            title="Quick links",
-        )
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer using the structured faculty directory snapshot only. "
+                "List relevant faculty in scope and mention profile links only when present in context."
+            ),
+            "links": [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
+        }
 
     if faculty_related:
         visible_ids = [str(fid) for fid in visible_faculty_ids if str(fid)]
-        if not visible_ids:
-            answer = "I checked your live faculty directory and found **0 faculty records** in your current scope."
-            return answer + "\n\n" + _navigation_block(
-                [("Open Faculty Directory", "/dashboard/faculty")],
-                title="Quick links",
-            )
-        lines = []
+        context_lines = [
+            "[Structured Faculty Directory Snapshot]",
+            f"- Visible faculty count: {len(visible_ids)}",
+        ]
         for fid in visible_ids[:8]:
             row = faculty_by_id.get(fid) or {}
             name = row.get("full_name") or "Faculty"
-            lines.append(f"- {name} ({row.get('department') or 'Department not set'}) [Open profile](/dashboard/faculty/{fid})")
-        answer = "I checked the live faculty directory. Here are relevant faculty profiles:\n" + "\n".join(lines)
-        return answer + "\n\n" + _navigation_block(
-            [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
-            title="Quick links",
-        )
+            context_lines.append(
+                f"- Faculty: {name} | department: {row.get('department') or 'Department not set'} | profile: /dashboard/faculty/{fid}"
+            )
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer using the structured faculty directory snapshot only. "
+                "If there are 0 faculty records, say that clearly."
+            ),
+            "links": [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
+        }
 
     if course_related:
-        if not scoped_courses:
-            answer = "I checked your live course directory and found **0 courses** in your current access scope."
-            return answer + "\n\n" + _navigation_block(
-                [("Open Courses", "/dashboard/courses")],
-                title="Quick links",
-            )
-        lines = []
+        context_lines = [
+            "[Structured Course Directory Snapshot]",
+            f"- Matching course count: {len(scoped_courses)}",
+        ]
         for item in scoped_courses[:8]:
-            lines.append(f"- {item.get('title')} ({int(item.get('notice_count', 0))} notices)")
-        answer = "I checked the live course directory. Here are relevant courses:\n" + "\n".join(lines)
-        return answer + "\n\n" + _navigation_block(
-            [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
-            title="Quick links",
-        )
+            context_lines.append(
+                f"- Course: {item.get('title')} | notices: {int(item.get('notice_count', 0))}"
+            )
+        return {
+            "context": "\n".join(context_lines),
+            "directive": (
+                "Answer using the structured course directory snapshot only. "
+                "If there are 0 courses, say that clearly and avoid inventing course titles."
+            ),
+            "links": [("Open Courses", "/dashboard/courses"), ("Open Documents", "/dashboard/documents")],
+        }
 
     return None
 
