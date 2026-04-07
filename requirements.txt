@@ -1,6 +1,8 @@
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
 
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 pydantic==2.9.2
 pydantic-settings==2.5.2
 
@@ -15,7 +17,7 @@ psycopg2==2.9.11
 pinecone==8.1.0
 
 sentence-transformers==5.2.3
-torch>=2.2.0
+torch==2.10.0+cpu
 
 langchain-core==0.3.83
 langchain-openai==0.3.35
