@@ -408,6 +408,7 @@ export default function ChatPage() {
     const [isSubmittingAppeal, setIsSubmittingAppeal] = useState(false);
     const [appealFeedback, setAppealFeedback] = useState<string | null>(null);
     const [moderationState, setModerationState] = useState<ModerationMeta | null>(null);
+    const [isLoadingModerationState, setIsLoadingModerationState] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
     const { messages, isQuerying, sendQuery, newConversation, error, clearError, setScope } = useChatStore();
@@ -437,20 +438,32 @@ export default function ChatPage() {
         return () => window.clearInterval(interval);
     }, [isQuerying]);
 
+    const role = ((user?.role || 'student') as ChatRole);
+
     useEffect(() => {
-        if (!token) return;
+        if (!token || role !== 'student') {
+            setIsLoadingModerationState(false);
+            setModerationState(null);
+            return;
+        }
         let cancelled = false;
+        setIsLoadingModerationState(true);
         agentApi.getModerationState(token)
             .then((res) => {
                 if (!cancelled) {
                     setModerationState(res.moderation || null);
                 }
             })
-            .catch(() => undefined);
+            .catch(() => undefined)
+            .finally(() => {
+                if (!cancelled) {
+                    setIsLoadingModerationState(false);
+                }
+            });
         return () => {
             cancelled = true;
         };
-    }, [token]);
+    }, [token, role]);
 
     useEffect(() => {
         const previousCount = previousMessageCountRef.current;
@@ -484,7 +497,18 @@ export default function ChatPage() {
 
     const handleSend = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!input.trim() || !token || isQuerying || moderationState?.blocked) return;
+        if (!input.trim() || !token || isQuerying || moderationState?.blocked || isLoadingModerationState) return;
+        if (role === 'student') {
+            try {
+                const res = await agentApi.getModerationState(token);
+                if (res?.moderation) {
+                    setModerationState(res.moderation);
+                    if (res.moderation.blocked) return;
+                }
+            } catch {
+                // Backend still enforces blocked state if this refresh fails.
+            }
+        }
         const query = input;
         setInput('');
         if (textareaRef.current) textareaRef.current.style.height = 'auto';
@@ -498,7 +522,6 @@ export default function ChatPage() {
         }
     };
 
-    const role = ((user?.role || 'student') as ChatRole);
     const greetingName = normalizeGreetingName(user?.full_name, role);
     const chatScope = `dashboard-chat:${user?.id || 'anon'}:${role}`;
     const roleUI = CHAT_ROLE_UI[role] || CHAT_ROLE_UI.student;
@@ -673,7 +696,7 @@ export default function ChatPage() {
                             data-lenis-prevent="true"
                             className="flex-1 bg-transparent px-4 py-3 sm:px-5 sm:py-4 text-xs sm:text-sm placeholder:text-zinc-600 outline-none resize-none max-h-40 min-h-[44px] sm:min-h-[52px] text-white overflow-y-auto overscroll-contain"
                             rows={1}
-                            disabled={isQuerying || isChatBlocked}
+                            disabled={isQuerying || isChatBlocked || isLoadingModerationState}
                         />
                         <div className="flex items-center gap-1.5 sm:gap-2 p-2 sm:p-2.5 shrink-0">
                             {messages.length > 0 && (
@@ -691,7 +714,7 @@ export default function ChatPage() {
                                 type="submit"
                                 size="icon"
                                 className="h-9 w-9 rounded-xl bg-orange-600 hover:bg-orange-500 text-white shadow-md shadow-orange-500/20 transition-all hover:shadow-lg hover:shadow-orange-500/30 active:scale-90 disabled:opacity-30 disabled:hover:scale-100 disabled:shadow-none"
-                                disabled={!input.trim() || isQuerying || isChatBlocked}
+                                disabled={!input.trim() || isQuerying || isChatBlocked || isLoadingModerationState}
                             >
                                 <ArrowUp className="w-4 h-4" />
                             </Button>
