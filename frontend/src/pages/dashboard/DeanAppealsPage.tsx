@@ -3,7 +3,7 @@
  */
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, ShieldAlert, XCircle, RefreshCw } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, ShieldAlert, XCircle, RefreshCw, Loader2 } from 'lucide-react';
 import { adminApi, type DeanAppealItem } from '@/lib/api';
 import { useAuthStore } from '@/store/authStore';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,7 @@ export default function DeanAppealsPage() {
     const [loading, setLoading] = useState(false);
     const [isPaginating, setIsPaginating] = useState(false);
     const [actingUserId, setActingUserId] = useState<string | null>(null);
+    const [actingAction, setActingAction] = useState<'approve' | 'reject' | 'reset' | null>(null);
     const [currentPage, setCurrentPage] = useState(1);
     const ITEMS_PER_PAGE = 6;
 
@@ -95,6 +96,7 @@ export default function DeanAppealsPage() {
         if (!token) return;
         try {
             setActingUserId(userId);
+            setActingAction(action);
             if (action === 'approve') {
                 await adminApi.approveDeanAppeal(token, userId, 'Approved by dean review.');
                 showToast('Appeal approved and user was notified.', 'success');
@@ -110,6 +112,7 @@ export default function DeanAppealsPage() {
             showToast((err as Error)?.message || 'Action failed.', 'error');
         } finally {
             setActingUserId(null);
+            setActingAction(null);
         }
     };
 
@@ -194,28 +197,30 @@ export default function DeanAppealsPage() {
                                                 </div>
                                                 <div className="text-xs text-zinc-400">{item.email || 'No email'} - {item.department || 'No department'}</div>
                                                 <div className="text-xs text-zinc-500">
-                                                    Offense total: {item.offense_total} - Blocked: {item.blocked ? 'Yes' : 'No'}
+                                                    Offense total: <span className="text-zinc-300">{item.offense_total}</span> - Blocked: <span className="text-zinc-300">{item.blocked ? 'Yes' : 'No'}</span>
                                                 </div>
                                             </div>
                                             <div className="text-xs px-2.5 py-1 rounded-full border border-white/15 bg-white/5 text-zinc-300">
                                                 {status.toUpperCase()}
                                             </div>
                                         </div>
-                                        <div className="mt-3 rounded-xl border border-white/10 bg-zinc-900/50 p-3">
-                                            <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Apology message</div>
-                                            <p className="text-sm text-zinc-200 whitespace-pre-wrap">
-                                                {item.appeal?.message || 'No appeal text provided.'}
-                                            </p>
-                                        </div>
+                                        {item.appeal?.message && (
+                                            <div className="mt-3 rounded-xl border border-white/10 bg-zinc-900/50 p-3">
+                                                <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Apology message</div>
+                                                <p className="text-sm text-zinc-200 whitespace-pre-wrap">
+                                                    {item.appeal.message}
+                                                </p>
+                                            </div>
+                                        )}
                                         {item.offensive_messages?.length > 0 && (
-                                            <div className="mt-2 text-xs text-zinc-400">
-                                                <div className="inline-flex items-center gap-1 text-red-300 mb-1">
+                                            <div className="mt-3 rounded-xl border border-red-400/15 bg-red-500/[0.04] p-3 text-xs text-zinc-300">
+                                                <div className="inline-flex items-center gap-1 text-red-300 mb-2">
                                                     <AlertTriangle className="w-3 h-3" />
                                                     Flagged history ({item.offensive_messages.length})
                                                 </div>
                                                 <ul className="list-disc pl-4 space-y-1">
                                                     {item.offensive_messages.slice(0, 5).map((msg, idx) => (
-                                                        <li key={`${item.user_id}-${idx}`} className="text-zinc-500">{msg}</li>
+                                                        <li key={`${item.user_id}-${idx}`} className="text-zinc-300">{msg}</li>
                                                     ))}
                                                 </ul>
                                             </div>
@@ -229,7 +234,11 @@ export default function DeanAppealsPage() {
                                                         disabled={actingUserId === item.user_id}
                                                         onClick={() => runAction(item.user_id, 'approve')}
                                                     >
-                                                        <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" /> Approve Appeal
+                                                        {actingUserId === item.user_id && actingAction === 'approve' ? (
+                                                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                                        ) : (
+                                                            <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                                                        )} Approve Appeal
                                                     </Button>
                                                     <Button
                                                         type="button"
@@ -238,7 +247,11 @@ export default function DeanAppealsPage() {
                                                         disabled={actingUserId === item.user_id}
                                                         onClick={() => runAction(item.user_id, 'reject')}
                                                     >
-                                                        <XCircle className="w-3.5 h-3.5 mr-1.5" /> Reject
+                                                        {actingUserId === item.user_id && actingAction === 'reject' ? (
+                                                            <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                                        ) : (
+                                                            <XCircle className="w-3.5 h-3.5 mr-1.5" />
+                                                        )} Reject
                                                     </Button>
                                                 </>
                                             ) : (
@@ -268,6 +281,9 @@ export default function DeanAppealsPage() {
                                                     disabled={actingUserId === item.user_id}
                                                     onClick={() => runAction(item.user_id, 'reset')}
                                                 >
+                                                    {actingUserId === item.user_id && actingAction === 'reset' ? (
+                                                        <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                                                    ) : null}
                                                     Force Reset Flags
                                                 </Button>
                                             )}
