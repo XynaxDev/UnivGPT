@@ -675,13 +675,22 @@ def fetch_user_appeal_decision_feed(admin: Any, user: AuthenticatedUser, limit: 
 
         if action == "dean_appeal_approved":
             title = "Appeal Approved"
-            message = "Your moderation appeal was approved. Chat access has been restored."
+            message = (
+                "Your moderation appeal was approved. Chat access has been restored. "
+                "Please keep future messages respectful and focused on academic or administrative help."
+            )
         elif action == "dean_appeal_rejected":
             title = "Appeal Rejected"
-            message = "Your moderation appeal was reviewed and rejected."
+            message = (
+                "Your moderation appeal was reviewed and rejected. "
+                "Please avoid abusive language and contact the Dean section if you need further clarification."
+            )
         else:
             title = "Flags Reset by Dean"
-            message = "Your moderation flags were reset by the Dean Office."
+            message = (
+                "Your moderation flags were reset by the Dean Office. "
+                "Chat access is available again. Please keep future messages respectful and professional."
+            )
 
         if note:
             message = f"{message} Note: {note}"

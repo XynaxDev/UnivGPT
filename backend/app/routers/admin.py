@@ -792,6 +792,7 @@ async def reset_user_flags(
 ) -> dict[str, Any]:
     _require_dean_access(user)
     supabase = get_supabase_admin()
+    target_email, target_name = _fetch_target_profile_for_appeal_mail(supabase, target_user_id)
     state = admin_reset_user_moderation_flags(
         supabase=supabase,
         target_user_id=target_user_id,
@@ -802,7 +803,19 @@ async def reset_user_flags(
     await log_audit_event(
         user_id=None if user.id.startswith("dummy-id-") else user.id,
         action="dean_flags_reset",
-        payload={"target_user_id": target_user_id, "note": body.note},
+        payload={
+            "target_user_id": target_user_id,
+            "target_user_email": target_email,
+            "target_user_name": target_name,
+            "reviewer_email": user.email,
+            "note": body.note,
+        },
+    )
+    await _send_appeal_status_email_if_possible(
+        receiver_email=target_email,
+        full_name=target_name,
+        approved=True,
+        decision_note=body.note or "Your chat access was restored by the Dean section.",
     )
     return {"status": "success", "message": "User flags reset and chat access restored.", "moderation": moderation_meta_from_state(state)}
 

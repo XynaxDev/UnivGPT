@@ -218,7 +218,10 @@ class EmailService:
         """Sends an alert to the admin about flagged/inappropriate student behavior."""
         try:
             sender_email, smtp_password = EmailService._resolve_sender()
-            delivery_email = settings.smtp_user
+            dean_recipients = settings.dean_emails_list
+            recipients = dean_recipients or ([settings.smtp_user] if settings.smtp_user else [])
+            if not recipients:
+                raise ValueError("No dean/admin recipients configured for flagged alert email.")
 
             subject = "ACTION REQUIRED: Flagged User Behavior in UnivGPT"
             history = [str(item).strip() for item in (offensive_history or []) if str(item).strip()]
@@ -272,7 +275,7 @@ class EmailService:
             msg = MIMEMultipart("alternative")
             msg["Subject"] = subject
             msg["From"] = f"{settings.smtp_from_name} <{sender_email}>"
-            msg["To"] = delivery_email
+            msg["To"] = ", ".join(recipients)
 
             msg.attach(MIMEText(html_content, "html"))
 
@@ -306,8 +309,8 @@ class EmailService:
                     "Your chat access has been restored."
                 )
                 policy_note = (
-                    "Please maintain respectful conduct in future conversations. "
-                    "Repeated violations may lead to disciplinary action, including fines or temporary account restrictions."
+                    "You can continue using chat normally. Please keep future conversations respectful, focused on academic or administrative needs, "
+                    "and avoid abusive personal remarks. Repeated violations may lead to another block or stronger disciplinary review."
                 )
             else:
                 subject = "UnivGPT Appeal Update: Rejected"
@@ -317,7 +320,8 @@ class EmailService:
                     "Your account remains blocked for chat access."
                 )
                 policy_note = (
-                    "If you believe this decision was incorrect, contact university administration with additional context."
+                    "If you still believe this decision was incorrect, contact university administration with additional context. "
+                    "Future messages should remain respectful and professional."
                 )
 
             note_block_text = f"\nReviewer note: {safe_note}" if safe_note else ""
