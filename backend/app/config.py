@@ -28,8 +28,6 @@ class Settings(BaseSettings):
     )
     frontend_app_url: str = "http://localhost:5173"
     oauth_redirect_path: str = "/auth/callback"
-    academic_email_domains: str = ""
-    require_verified_academic_email_for_queries: bool = False
     dean_emails: str = ""
 
     # Supabase (Auth & Core Data)
@@ -155,4 +153,3 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-

@@ -257,6 +257,30 @@ def build_oauth_redirect_url() -> str:
     return f"{base}{path}"
 
 
+def configured_admin_emails() -> set[str]:
+    allowed = {email.strip().lower() for email in settings.dean_emails_list if email.strip()}
+    smtp_user = (settings.smtp_user or "").strip().lower()
+    if smtp_user:
+        allowed.add(smtp_user)
+    return allowed
+
+
+def ensure_admin_email_allowed(email: str, role: str | None) -> None:
+    if normalize_profile_role(role) != UserRole.ADMIN.value:
+        return
+    allowed = configured_admin_emails()
+    target_email = (email or "").strip().lower()
+    if target_email and target_email in allowed:
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=(
+            "This email is not authorized for admin access. "
+            "Please contact the maintainer to add it to the admin allowlist before logging in as admin."
+        ),
+    )
+
+
 def with_query_param(url: str, key: str, value: str) -> str:
     parsed = urlparse(url)
     query = dict(parse_qsl(parsed.query, keep_blank_values=True))
@@ -374,7 +398,7 @@ def build_user_profile(profile: dict, auth_user: Any = None) -> UserProfile:
         roll_number=profile.get("roll_number") or metadata.get("roll_number"),
         avatar_url=profile.get("avatar_url"),
         created_at=str(profile.get("created_at")) if profile.get("created_at") else None,
-        academic_verified=is_academic_email(email),
+        academic_verified=True,
         identity_provider=extract_identity_provider(auth_user),
     )
 
@@ -777,6 +801,8 @@ async def signup(request: Request, body: InitiateSignupRequest):
     """
     try:
         admin = get_supabase_admin()
+        requested_role = body.role.value if hasattr(body.role, "value") else str(body.role)
+        ensure_admin_email_allowed(body.email, requested_role)
 
         # 1. Generate 6-digit OTP
         otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
@@ -796,7 +822,6 @@ async def signup(request: Request, body: InitiateSignupRequest):
                 )
 
             user_metadata = _auth_user_metadata(existing_auth_user)
-            requested_role = body.role.value if hasattr(body.role, "value") else str(body.role)
             existing_role = normalize_profile_role(user_metadata.get("role") or requested_role)
 
             if is_effectively_verified_auth_user(existing_auth_user):
@@ -935,6 +960,7 @@ async def login(request: Request, body: LoginRequest):
     # 2. Attempt real Supabase auth
     try:
         admin = get_supabase_admin()
+        ensure_admin_email_allowed(body.email, body.role.value if body.role else None)
         auth_user = find_auth_user_by_email(admin, body.email)
         if auth_user and is_google_only_auth_user(auth_user):
             raise HTTPException(
@@ -1250,6 +1276,14 @@ async def reset_password(body: ResetPasswordRequest):
 async def google_auth(role: UserRole = Query(default=UserRole.STUDENT)):
     """Returns the authorization URL for Google OAuth."""
     try:
+        if role == UserRole.ADMIN and not configured_admin_emails():
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Admin Google sign-in is not configured yet. "
+                    "Please contact the maintainer to add approved admin emails first."
+                ),
+            )
         supabase = get_supabase_client()
         redirect_to = with_query_param(
             build_oauth_redirect_url(),
@@ -1284,7 +1318,7 @@ async def get_me(user: AuthenticatedUser = Depends(get_current_user)):
         roll_number=user.roll_number,
         avatar_url=user.avatar_url,
         created_at=user.created_at,
-        academic_verified=user.academic_verified or user.id.startswith("dummy-id-"),
+            academic_verified=True,
         identity_provider=provider,
     )
 
@@ -1392,7 +1426,7 @@ async def update_profile(
             roll_number=updated.get("roll_number") or user.roll_number,
             avatar_url=updated.get("avatar_url"),
             created_at=str(updated.get("created_at")) if updated.get("created_at") else user.created_at,
-            academic_verified=is_academic_email(email),
+            academic_verified=True,
             identity_provider=updated.get("identity_provider") or user.identity_provider or "email",
         )
     except Exception as e:
@@ -1975,7 +2009,7 @@ async def export_user_data(
                 ),
                 section=profile.get("section") or user.section,
                 roll_number=profile.get("roll_number") or user.roll_number,
-                academic_verified=bool(user.academic_verified),
+                academic_verified=True,
                 member_since=str(created_at) if created_at else None,
             ),
             queries=queries,
@@ -1998,6 +2032,7 @@ async def set_role(
 ):
     """Persist selected role for the authenticated user profile."""
     try:
+        ensure_admin_email_allowed(user.email, body.role.value)
         admin = get_supabase_admin()
         existing_res = (
             admin.table("profiles").select("*").eq("id", user.id).limit(1).execute()
@@ -2074,7 +2109,7 @@ async def set_role(
             roll_number=profile.get("roll_number") or user.roll_number,
             avatar_url=profile.get("avatar_url") or user.avatar_url,
             created_at=str(profile.get("created_at")) if profile.get("created_at") else None,
-            academic_verified=is_academic_email(email) or user.id.startswith("dummy-id-"),
+            academic_verified=True,
             identity_provider=user.identity_provider or "email",
         )
     except HTTPException:

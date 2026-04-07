@@ -55,17 +55,9 @@ class AuthenticatedUser:
 
 
 def is_academic_email(email: str) -> bool:
-    normalized_email = (email or "").strip().lower()
-    if "@" not in normalized_email:
-        return False
-
-    domain = normalized_email.split("@", 1)[1]
-    allowed_domains = {
-        allowed.strip().lower().lstrip("@")
-        for allowed in settings.academic_email_domains.split(",")
-        if allowed.strip()
-    }
-    return domain in allowed_domains
+    # Academic email gating is no longer part of the active auth/chat experience.
+    # Keep the field shape for compatibility, but treat signed-in users as verified.
+    return True
 
 
 def normalize_claimed_role(value: object) -> Optional[str]:
@@ -200,7 +192,7 @@ async def get_current_user(
                 role=claimed_role or "student",
                 department=None,
                 identity_provider=identity_provider,
-                academic_verified=is_academic_email(email),
+                academic_verified=True,
             )
 
         p = result.data
@@ -213,7 +205,6 @@ async def get_current_user(
             except Exception:
                 profile_email = email
         resolved_email = profile_email or email
-        is_verified = is_academic_email(profile_email) or is_academic_email(email)
         return AuthenticatedUser(
             id=p["id"],
             email=resolved_email,
@@ -227,7 +218,7 @@ async def get_current_user(
             avatar_url=p.get("avatar_url"),
             created_at=str(p.get("created_at")) if p.get("created_at") else None,
             identity_provider=identity_provider,
-            academic_verified=is_verified,
+            academic_verified=True,
         )
     except Exception:
         # Fallback to defaults
@@ -237,7 +228,7 @@ async def get_current_user(
             role=claimed_role or "student",
             department=None,
             identity_provider=identity_provider,
-            academic_verified=is_academic_email(email),
+            academic_verified=True,
         )
 
 

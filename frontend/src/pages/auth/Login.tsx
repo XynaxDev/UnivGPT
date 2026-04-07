@@ -3,7 +3,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { AuthUI, Label, Input, PasswordInput, Button, OTPInput, Select } from '@/components/ui/auth-fuse';
 import { Loader2 } from 'lucide-react';
@@ -23,6 +23,7 @@ export default function Login() {
     const { showToast } = useToastStore();
     const { login, forgotPassword, resetPassword, googleAuth, isLoading, error, clearError, token } = useAuthStore();
     const navigate = useNavigate();
+    const location = useLocation();
 
     useEffect(() => {
         if (token) navigate('/dashboard');
@@ -32,6 +33,15 @@ export default function Login() {
     useEffect(() => {
         clearError();
     }, [clearError]);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const routeError = params.get('error');
+        if (!routeError) return;
+        showToast(routeError === 'oauth_failed' ? 'Google authentication could not be completed.' : routeError);
+        params.delete('error');
+        navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
+    }, [location.pathname, location.search, navigate, showToast]);
 
     const handleLoginSubmit = async (e: React.FormEvent) => {
         e.preventDefault();

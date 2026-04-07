@@ -37,8 +37,6 @@ const FacultyProfilePage = lazyWithPreload(() => import('@/pages/dashboard/Facul
 const FacultyDirectoryPage = lazyWithPreload(() => import('@/pages/dashboard/FacultyDirectoryPage'));
 const DeanAppealsPage = lazyWithPreload(() => import('@/pages/dashboard/DeanAppealsPage'));
 
-const academicDomain = (import.meta.env.VITE_ACADEMIC_EMAIL_DOMAIN || '').toLowerCase();
-const isAcademicEmail = (email?: string) => (email || '').trim().toLowerCase().endsWith(`@${academicDomain}`);
 const VALID_ROLES = new Set(['student', 'faculty', 'admin']);
 const normalizeRole = (value?: string | null): 'student' | 'faculty' | 'admin' | null => {
   const role = String(value || '').trim().toLowerCase();
@@ -155,7 +153,7 @@ export default function App() {
           email: session.user.email || '',
           full_name: session.user.user_metadata?.full_name || session.user.user_metadata?.name || fallbackName,
           role: fallbackRole,
-          academic_verified: isAcademicEmail(session.user.email || ''),
+          academic_verified: true,
           identity_provider: session.user.app_metadata?.provider || session.user.app_metadata?.providers?.[0] || 'email',
         };
         setSession(session.access_token, fallbackUser);

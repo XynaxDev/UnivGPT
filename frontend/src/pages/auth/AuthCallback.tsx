@@ -52,7 +52,8 @@ export default function AuthCallback() {
                 console.warn('Google auth callback sync failed, clearing session:', err);
                 await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
                 clearSession();
-                navigate('/auth/login?error=google_sync_failed');
+                const message = err instanceof Error ? err.message : 'google_sync_failed';
+                navigate(`/auth/login?error=${encodeURIComponent(message)}`);
             } finally {
                 window.localStorage.removeItem(ROLE_STORAGE_KEY);
                 finishInitializing();
