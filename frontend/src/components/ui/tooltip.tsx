@@ -27,6 +27,22 @@ export function HoverTooltip({
     delayDuration?: number;
 }) {
     if (!content) return children;
+    const [tooltipEnabled, setTooltipEnabled] = React.useState(true);
+
+    React.useEffect(() => {
+        if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+        const mediaQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
+        const sync = () => setTooltipEnabled(mediaQuery.matches);
+        sync();
+        if (typeof mediaQuery.addEventListener === "function") {
+            mediaQuery.addEventListener("change", sync);
+            return () => mediaQuery.removeEventListener("change", sync);
+        }
+        mediaQuery.addListener(sync);
+        return () => mediaQuery.removeListener(sync);
+    }, []);
+
+    if (!tooltipEnabled) return children;
     const tooltipBase =
         "z-[260] max-w-[320px] rounded-xl border border-orange-400/35 bg-gradient-to-b from-zinc-900/98 to-black/98 px-3 py-2 text-[11px] font-medium text-zinc-100 shadow-[0_18px_40px_rgba(0,0,0,0.62)] backdrop-blur-md";
 
