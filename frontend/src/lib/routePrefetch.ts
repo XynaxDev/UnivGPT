@@ -6,9 +6,42 @@ import { lazy } from 'react';
 
 type Loader<T extends React.ComponentType<any>> = () => Promise<{ default: T }>;
 
+const CHUNK_RELOAD_FLAG = 'unigpt:chunk-reload-once';
+
+function isChunkLoadFailure(error: unknown): boolean {
+    const message = String((error as any)?.message || error || '').toLowerCase();
+    return (
+        message.includes('failed to fetch dynamically imported module') ||
+        message.includes('importing a module script failed') ||
+        message.includes('dynamically imported module')
+    );
+}
+
+async function loadWithChunkRecovery<T extends React.ComponentType<any>>(loader: Loader<T>) {
+    try {
+        return await loader();
+    } catch (error) {
+        if (!isChunkLoadFailure(error) || typeof window === 'undefined') {
+            throw error;
+        }
+
+        const alreadyRetried = window.sessionStorage.getItem(CHUNK_RELOAD_FLAG) === '1';
+        if (!alreadyRetried) {
+            window.sessionStorage.setItem(CHUNK_RELOAD_FLAG, '1');
+            // Force a full reload so the browser fetches the latest HTML that points to valid hashed assets.
+            window.location.reload();
+            return new Promise<never>(() => undefined);
+        }
+
+        window.sessionStorage.removeItem(CHUNK_RELOAD_FLAG);
+        throw error;
+    }
+}
+
 export function lazyWithPreload<T extends React.ComponentType<any>>(loader: Loader<T>) {
-    const Component = lazy(loader) as React.LazyExoticComponent<T> & { preload: Loader<T> };
-    Component.preload = loader;
+    const guardedLoader: Loader<T> = () => loadWithChunkRecovery(loader);
+    const Component = lazy(guardedLoader) as React.LazyExoticComponent<T> & { preload: Loader<T> };
+    Component.preload = guardedLoader;
     return Component;
 }
 

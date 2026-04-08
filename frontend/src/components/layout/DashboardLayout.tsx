@@ -247,7 +247,7 @@ export default function DashboardLayout() {
     };
 
     return (
-        <div className="flex min-h-[100dvh] w-full overflow-x-hidden bg-[#050507] text-white md:h-screen md:overflow-hidden">
+        <div className="flex min-h-[100dvh] w-full overflow-x-hidden overflow-y-auto bg-[#050507] text-white touch-pan-y md:h-screen md:overflow-hidden md:overflow-y-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
             {/* Sticky Sidebar */}
             <div className="sticky top-0 h-screen shrink-0 z-50 bg-black border-r border-white/[0.07]">
                 <Sidebar open={sidebarOpen} setOpen={setSidebarOpen}>
@@ -297,7 +297,7 @@ export default function DashboardLayout() {
 
             {/* Content Area */}
             <div className="flex min-w-0 flex-1 flex-col bg-[#050507] pt-0 min-h-[100dvh] md:min-h-0 md:overflow-hidden md:pb-2 md:pr-2">
-                <div className="relative flex min-h-[100dvh] flex-1 flex-col bg-[#06070a] md:min-h-0 md:overflow-hidden md:rounded-tl-[30px] md:border-l md:border-t md:border-white/[0.07]">
+                <div className="relative flex min-h-[100dvh] flex-1 flex-col bg-[#06070a] touch-pan-y md:min-h-0 md:overflow-hidden md:rounded-tl-[30px] md:border-l md:border-t md:border-white/[0.07]" style={{ WebkitOverflowScrolling: 'touch' }}>
                     <header className="sticky top-0 z-40 flex h-20 shrink-0 items-center justify-between bg-[#06070a] px-4 sm:px-6 md:px-8 lg:border-b lg:border-white/[0.06]">
                         <div className="flex items-center gap-4">
                             {/* Mobile Brand Toggle */}
@@ -451,7 +451,7 @@ export default function DashboardLayout() {
                             "relative z-10 mx-auto flex-1 w-full overflow-x-hidden",
                             isChatRoute
                                 ? "min-h-0 overflow-hidden h-[calc(100dvh-5rem)] md:h-auto"
-                                : "overflow-y-auto overscroll-contain",
+                                : "overflow-y-auto overscroll-contain touch-pan-y",
                         )}
                         data-lenis-prevent="true"
                         style={{ WebkitOverflowScrolling: 'touch' }}

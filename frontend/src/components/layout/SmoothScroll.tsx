@@ -11,6 +11,17 @@ import 'lenis/dist/lenis.css';
 
 gsap.registerPlugin(ScrollTrigger);
 
+function clearLenisArtifacts() {
+    if (typeof document === 'undefined') return;
+    const html = document.documentElement;
+    const body = document.body;
+    const classes = ['lenis', 'lenis-smooth', 'lenis-stopped', 'lenis-scrolling', 'lenis-autoToggle'];
+    classes.forEach((name) => {
+        html.classList.remove(name);
+        body.classList.remove(name);
+    });
+}
+
 export default function SmoothScroll({ children }: { children: React.ReactNode }) {
     const { pathname } = useLocation();
 
@@ -22,8 +33,9 @@ export default function SmoothScroll({ children }: { children: React.ReactNode }
                 navigator.maxTouchPoints > 0
             );
 
-        // Dashboard uses its own scroll containers; keep native scrolling there.
+        // Dashboard and touch devices should always use native scrolling.
         if (pathname.startsWith('/dashboard') || isTouchDevice) {
+            clearLenisArtifacts();
             return;
         }
 
@@ -52,6 +64,7 @@ export default function SmoothScroll({ children }: { children: React.ReactNode }
         return () => {
             lenis.destroy();
             gsap.ticker.remove(raf);
+            clearLenisArtifacts();
         };
     }, [pathname]);
 
