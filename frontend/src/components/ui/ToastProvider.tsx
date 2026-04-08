@@ -17,9 +17,9 @@ export const ToastProvider = () => {
                         const tone =
                             toast.type === 'error'
                                 ? {
-                                    iconWrap: 'border border-red-500/35 bg-red-500/12 text-red-300',
+                                    iconWrap: 'text-red-400',
                                     icon: <AlertCircle className="h-4 w-4 shrink-0" />,
-                                    className: 'bg-[#16171b]/96 text-zinc-50 border border-red-500/35 shadow-[0_16px_42px_rgba(38,7,11,0.55)]',
+                                    className: 'bg-[#16171b]/96 text-zinc-50 shadow-[0_16px_42px_rgba(18,19,24,0.58)]',
                                 }
                                 : toast.type === 'info'
                                     ? {
@@ -40,7 +40,7 @@ export const ToastProvider = () => {
                         exit={{ opacity: 0, y: -20, scale: 0.94 }}
                         className={`pointer-events-auto flex min-w-[240px] items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-md ${tone.className}`}
                     >
-                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone.iconWrap}`}>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center ${tone.iconWrap}`}>
                             {tone.icon}
                         </span>
                         <span className="pr-1 text-[13px] font-semibold tracking-tight text-zinc-100">{toast.message}</span>

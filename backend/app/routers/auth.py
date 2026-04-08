@@ -9,6 +9,7 @@ Simplified for Supabase Auth integration.
 from fastapi import APIRouter, HTTPException, Depends, Request, Query
 import random
 import httpx
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from urllib.parse import urlparse, parse_qsl, urlencode, urlunparse
@@ -50,6 +51,7 @@ from app.services.demo_directory_seed import (
 )
 
 router = APIRouter(tags=["Authentication"])
+logger = logging.getLogger(__name__)
 
 # Runtime schema capability flags and short-lived response caches to reduce repeated DB probes.
 # Most current Supabase docs schemas use uploaded_at/updated_at and may not expose created_at.
@@ -899,6 +901,10 @@ async def signup(request: Request, body: InitiateSignupRequest):
                 receiver_email=body.email, otp=otp_code, user_name=body.full_name
             )
         except Exception as smtp_error:
+            logger.exception(
+                "Signup OTP delivery failed for %s after auth user preparation.",
+                body.email,
+            )
             if created_new_auth_user and user_id:
                 try:
                     admin.auth.admin.delete_user(user_id)
