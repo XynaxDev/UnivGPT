@@ -1,33 +1,46 @@
 <!-- Copyright (c) 2026 XynaxDev | Contact: akashkumar.cs27@gmail.com -->
 
 <h1 align="center">
-  Univ<span style="color:#f97316;">GPT</span>
+  Univ<img src="https://img.shields.io/badge/GPT-f97316?style=flat&logoColor=white" alt="GPT" height="28" />
 </h1>
 
 <p align="center">
-  Role-aware university assistant with grounded chat, notices, timetable guidance, moderation, and admin operations.
+  Role-aware university workspace with grounded AI, live notices, timetable intelligence, moderation controls, and admin operations.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
-  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
-  <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
-  <img src="https://img.shields.io/badge/Vite-7-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
-  <img src="https://img.shields.io/badge/TailwindCSS-4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
-  <img src="https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
-  <img src="https://img.shields.io/badge/Pinecone-Vector%20Search-000000?style=for-the-badge" alt="Pinecone" />
-  <img src="https://img.shields.io/badge/OpenRouter-Intent%20%26%20Fallback-111111?style=for-the-badge" alt="OpenRouter" />
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=flat&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=flat&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react&logoColor=06151f" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-7-646CFF?style=flat&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat&logo=tailwindcss&logoColor=white" alt="Tailwind" />
+  <img src="https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?style=flat&logo=supabase&logoColor=052e16" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Pinecone-Vector%20Search-111827?style=flat&logoColor=white" alt="Pinecone" />
+  <img src="https://img.shields.io/badge/OpenRouter-Intent%20Layer-0f172a?style=flat&logoColor=white" alt="OpenRouter" />
+  <img src="https://img.shields.io/badge/Railway-Backend-0B0D0E?style=flat&logo=railway&logoColor=white" alt="Railway" />
+  <img src="https://img.shields.io/badge/Vercel-Frontend-000000?style=flat&logo=vercel&logoColor=white" alt="Vercel" />
 </p>
 
-## Overview
+<p align="center">
+  <img src="https://img.shields.io/badge/Status-Production%20Ready-f97316?style=flat" alt="Production Ready" />
+  <img src="https://img.shields.io/badge/Roles-Student%20%C2%B7%20Faculty%20%C2%B7%20Admin-1f2937?style=flat" alt="Roles" />
+  <img src="https://img.shields.io/badge/Moderation-Dean%20Review%20Workflow-7f1d1d?style=flat" alt="Moderation" />
+  <img src="https://img.shields.io/badge/Search-Grounded%20Citations-1d4ed8?style=flat" alt="Grounded Search" />
+</p>
 
-UnivGPT is a university workspace that combines:
+<p align="center">
+  <strong>Live scope-aware chat</strong> · <strong>role-bounded dashboards</strong> · <strong>document ingestion</strong> · <strong>appeals and audit workflows</strong>
+</p>
 
-- role-bounded AI assistants for `student`, `faculty`, and `admin`
-- grounded answers from live profile, course, notice, and faculty data
-- document upload and vector ingestion for institutional content
-- moderation, appeals, dean review, and restored-access workflows
-- responsive dashboards for chat, timetable, notices, documents, audit, and user management
+## Why UnivGPT
+
+UnivGPT is built to feel like a real university operating layer, not just a generic chatbot. It combines:
+
+- grounded answers from live profile, notice, course, and faculty data
+- role-aware experiences for students, faculty, and admins
+- document upload, parsing, embeddings, and retrieval
+- moderation, appeals, dean review, audit, and notification loops
+- responsive dashboards designed for daily campus workflows
 
 ## What It Can Do
 

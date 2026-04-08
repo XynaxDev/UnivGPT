@@ -155,6 +155,21 @@ export default function DashboardLayout() {
     };
 
     useEffect(() => {
+        const pendingToast = window.sessionStorage.getItem('unigpt:pending-toast');
+        if (!pendingToast) return;
+        try {
+            const parsed = JSON.parse(pendingToast) as { message?: string; type?: 'success' | 'error' | 'info' };
+            if (parsed.message) {
+                showToast(parsed.message, parsed.type || 'success');
+            }
+        } catch {
+            showToast('Signed in successfully.', 'success');
+        } finally {
+            window.sessionStorage.removeItem('unigpt:pending-toast');
+        }
+    }, [showToast]);
+
+    useEffect(() => {
         let active = true;
         const loadTopbarData = async () => {
             if (!token) return;

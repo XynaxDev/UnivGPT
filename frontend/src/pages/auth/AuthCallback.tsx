@@ -47,6 +47,10 @@ export default function AuthCallback() {
                     throw new Error(`Role sync failed: expected ${selectedRole}, received ${user.role}`);
                 }
                 setSession(session.access_token, user);
+                window.sessionStorage.setItem('unigpt:pending-toast', JSON.stringify({
+                    message: 'Signed in successfully.',
+                    type: 'success',
+                }));
                 navigate('/dashboard');
             } catch (err) {
                 console.warn('Google auth callback sync failed, clearing session:', err);

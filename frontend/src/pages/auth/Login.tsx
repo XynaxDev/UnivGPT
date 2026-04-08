@@ -50,6 +50,7 @@ export default function Login() {
         }
         try {
             await login(email, password, selectedRole);
+            showToast('Signed in successfully.', 'success');
             navigate('/dashboard');
         } catch (err: any) {
             const message = err.message || "Invalid credentials.";
