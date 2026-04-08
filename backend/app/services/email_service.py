@@ -2,6 +2,7 @@
 # Contact: akashkumar.cs27@gmail.com
 
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
@@ -87,13 +88,21 @@ class EmailService:
 
         try:
             send_with_starttls(smtp_host, smtp_port)
-        except OSError as exc:
+        except (TimeoutError, socket.timeout, OSError, smtplib.SMTPException) as exc:
             message = str(exc).lower()
-            blocked = "forbidden by its access permissions" in message or "10013" in message
-            if blocked:
+            blocked = (
+                "forbidden by its access permissions" in message
+                or "10013" in message
+                or "timed out" in message
+                or "connection unexpectedly closed" in message
+                or "connection reset" in message
+            )
+            if blocked or "gmail.com" in smtp_host:
                 logger.warning(
-                    "SMTP STARTTLS failed with socket permission error on port %s. Retrying with SSL on 465.",
+                    "SMTP STARTTLS delivery failed on %s:%s (%s). Retrying with SSL on 465.",
+                    smtp_host,
                     smtp_port,
+                    exc,
                 )
                 send_with_ssl(smtp_host, 465)
                 return

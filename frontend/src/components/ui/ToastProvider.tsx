@@ -4,10 +4,10 @@
 
 import { useToastStore } from '@/store/toastStore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, AlertTriangle, Info, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info } from 'lucide-react';
 
 export const ToastProvider = () => {
-    const { toasts, removeToast } = useToastStore();
+    const { toasts } = useToastStore();
 
     return (
         <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] flex flex-col gap-3 w-full max-w-[90vw] sm:max-w-md items-center pointer-events-none">
@@ -17,17 +17,20 @@ export const ToastProvider = () => {
                         const tone =
                             toast.type === 'error'
                                 ? {
-                                    icon: <AlertTriangle className="w-4 h-4 shrink-0 text-red-200" />,
-                                    className: 'bg-red-950/90 text-red-50 border border-red-500/35 shadow-[0_12px_36px_rgba(127,29,29,0.45)]',
+                                    iconWrap: 'border border-red-500/35 bg-red-500/12 text-red-300',
+                                    icon: <AlertCircle className="h-4 w-4 shrink-0" />,
+                                    className: 'bg-[#16171b]/96 text-zinc-50 border border-red-500/35 shadow-[0_16px_42px_rgba(38,7,11,0.55)]',
                                 }
                                 : toast.type === 'info'
                                     ? {
-                                        icon: <Info className="w-4 h-4 shrink-0 text-sky-200" />,
-                                        className: 'bg-sky-950/90 text-sky-50 border border-sky-500/30 shadow-[0_12px_36px_rgba(8,47,73,0.38)]',
+                                        iconWrap: 'border border-sky-500/30 bg-sky-500/12 text-sky-300',
+                                        icon: <Info className="h-4 w-4 shrink-0" />,
+                                        className: 'bg-[#16171b]/96 text-zinc-50 border border-sky-500/30 shadow-[0_16px_42px_rgba(7,24,38,0.45)]',
                                     }
                                     : {
-                                        icon: <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-200" />,
-                                        className: 'bg-emerald-950/90 text-emerald-50 border border-emerald-500/30 shadow-[0_12px_36px_rgba(6,78,59,0.38)]',
+                                        iconWrap: 'border border-emerald-500/30 bg-emerald-500/12 text-emerald-300',
+                                        icon: <CheckCircle2 className="h-4 w-4 shrink-0" />,
+                                        className: 'bg-[#16171b]/96 text-zinc-50 border border-emerald-500/28 shadow-[0_16px_42px_rgba(6,24,18,0.42)]',
                                     };
                         return (
                     <motion.div
@@ -35,10 +38,12 @@ export const ToastProvider = () => {
                         initial={{ opacity: 0, y: -20, scale: 0.9 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={{ opacity: 0, y: -20, scale: 0.94 }}
-                        className={`pointer-events-auto px-4 py-2.5 rounded-xl backdrop-blur-md flex items-center gap-2.5 w-auto min-w-[220px] ${tone.className}`}
+                        className={`pointer-events-auto flex min-w-[240px] items-center gap-3 rounded-2xl px-4 py-3 backdrop-blur-md ${tone.className}`}
                     >
-                        {tone.icon}
-                        <span className="text-[13px] font-bold tracking-tight pr-1">{toast.message}</span>
+                        <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${tone.iconWrap}`}>
+                            {tone.icon}
+                        </span>
+                        <span className="pr-1 text-[13px] font-semibold tracking-tight text-zinc-100">{toast.message}</span>
                     </motion.div>
                         );
                     })()
