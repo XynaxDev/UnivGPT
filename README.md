@@ -1,50 +1,72 @@
-﻿<!-- Copyright (c) 2026 XynaxDev | Contact: akashkumar.cs27@gmail.com -->
+<!-- Copyright (c) 2026 XynaxDev | Contact: akashkumar.cs27@gmail.com -->
 
-# UnivGPT
+<h1 align="center">
+  Univ<span style="color:#f97316;">GPT</span>
+</h1>
 
-Role-aware university assistant with document ingestion, moderation, and dashboard operations.
+<p align="center">
+  Role-aware university assistant with grounded chat, notices, timetable guidance, moderation, and admin operations.
+</p>
 
-## Badges
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.12-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
+  <img src="https://img.shields.io/badge/FastAPI-0.115-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
+  <img src="https://img.shields.io/badge/React-19-61DAFB?style=for-the-badge&logo=react&logoColor=black" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-7-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
+  <img src="https://img.shields.io/badge/TailwindCSS-4-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" alt="TailwindCSS" />
+  <img src="https://img.shields.io/badge/Supabase-Auth%20%26%20DB-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Pinecone-Vector%20Search-000000?style=for-the-badge" alt="Pinecone" />
+  <img src="https://img.shields.io/badge/OpenRouter-Intent%20%26%20Fallback-111111?style=for-the-badge" alt="OpenRouter" />
+</p>
 
-![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat-square&logo=fastapi&logoColor=white)
-![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black)
-![Vite](https://img.shields.io/badge/Vite-7-646CFF?style=flat-square&logo=vite&logoColor=white)
-![Tailwind](https://img.shields.io/badge/TailwindCSS-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white)
-![Supabase](https://img.shields.io/badge/Auth%20%26%20DB-Supabase-3ECF8E?style=flat-square&logo=supabase&logoColor=white)
-![Pinecone](https://img.shields.io/badge/Vector%20DB-Pinecone-000000?style=flat-square)
-![OpenRouter](https://img.shields.io/badge/LLM%20Gateway-OpenRouter-111111?style=flat-square)
-![Frontend Build](https://img.shields.io/badge/Frontend%20Build-Passing-brightgreen?style=flat-square)
-![Environment](https://img.shields.io/badge/Environment-Local%20Dev-orange?style=flat-square)
+## Overview
 
-## What This Project Does
+UnivGPT is a university workspace that combines:
 
-UnivGPT provides:
+- role-bounded AI assistants for `student`, `faculty`, and `admin`
+- grounded answers from live profile, course, notice, and faculty data
+- document upload and vector ingestion for institutional content
+- moderation, appeals, dean review, and restored-access workflows
+- responsive dashboards for chat, timetable, notices, documents, audit, and user management
 
-- Role-based AI assistants for `student`, `faculty`, and `admin`
-- Document upload and metadata routing (`public`, `student`, `faculty`, `admin`)
-- Ingestion pipeline: extraction -> chunking -> embeddings -> vector index
-- Moderation and appeal workflow (including Dean review flow)
-- Dashboard analytics, user management, audit logs, and notifications
+## What It Can Do
+
+### Student
+
+- ask about notices, deadlines, faculty, timetable, courses, and profile-bound details
+- view role-scoped notifications and timetable
+- appeal chat blocks if moderation rules are violated
+
+### Faculty
+
+- view timetable, notices, uploads, and faculty workflows
+- access faculty-scoped chat grounded to department/course context
+
+### Admin / Dean
+
+- manage users, uploads, notices, and audit logs
+- review moderation appeals
+- approve, reject, or reset student chat flags
 
 ## Tech Stack
 
 ### Backend
 
 - FastAPI
-- Supabase (Auth + Postgres + profile persistence)
-- Pinecone (vector search)
-- SentenceTransformers (`all-MiniLM-L6-v2`) for embeddings
-- OpenRouter for model inference
-- SMTP for OTP and moderation/appeal status emails
+- Supabase Auth + Postgres
+- Pinecone
+- SentenceTransformers with `all-MiniLM-L6-v2`
+- OpenRouter for intent/fallback generation
+- Ollama-compatible generation endpoint
+- SMTP email delivery for OTP, moderation, and appeal status updates
 
 ### Frontend
 
 - React 19 + TypeScript
 - Vite 7
 - Tailwind CSS
-- Framer Motion + Radix primitives
-- Zustand state stores
+- Framer Motion
+- Zustand
 
 ## Repository Layout
 
@@ -52,231 +74,265 @@ UnivGPT provides:
 GPT/
   backend/
     app/
-      routers/         # auth, agent, admin, documents APIs
-      services/        # ingestion, moderation, routing, integrations
-      middleware/      # auth + RBAC
-      models/          # pydantic schemas
+      routers/       # auth, agent, admin, documents
+      services/      # moderation, routing, ingestion, integrations
+      middleware/    # auth and RBAC
+      models/        # pydantic schemas
     migrate.py
-    seed.py
+    reset_db.py
+    requirements.txt
   frontend/
     src/
-      pages/           # role dashboards + auth pages
+      pages/
       components/
       store/
       lib/
-  docs/
-    README.md
-    design.md
-    tunnel_setup_local_vs_hosted.md
-    private/           # ignored from git
-  infrastructure/
-    supabase/
 ```
 
-## Quick Start
+## Local Setup
 
-## 1. Prerequisites
+### 1. Prerequisites
 
-- Python `3.11+`
+- Python `3.12.x`
 - Node.js `20+`
 - npm
 
-## 2. Clone
+### 2. Clone the project
 
 ```bash
 git clone <your-repo-url>
 cd GPT
 ```
 
-## 3. Backend Setup
+### 3. Backend setup
 
 ```bash
 cd backend
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-Copy env template:
-
-```bash
 copy .env.example .env
 ```
 
-Run migrations:
+Fill `backend/.env` with your real values before starting the API.
+
+Then run:
 
 ```bash
 python migrate.py
-```
-
-Run backend:
-
-```bash
 uvicorn app.main:app --reload --port 8000
 ```
 
-Backend API docs:
+Backend docs:
 
 - `http://localhost:8000/docs`
 
-## 4. Frontend Setup
+### 4. Frontend setup
 
 Open a new terminal:
 
 ```bash
 cd frontend
 npm install
-```
-
-Copy env template:
-
-```bash
 copy .env.example .env.local
-```
-
-Run frontend:
-
-```bash
 npm run dev
 ```
 
-Frontend URL:
+Frontend runs at:
 
 - `http://localhost:5173`
 
-## 5. Optional Seed Commands
+## Required Environment Variables
+
+### Backend `.env`
+
+These are the main variables you need:
+
+```env
+ENVIRONMENT=development
+FRONTEND_APP_URL=http://localhost:5173
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+OAUTH_REDIRECT_PATH=/auth/callback
+
+SUPABASE_URL=
+SUPABASE_ANON_KEY=
+SUPABASE_SERVICE_ROLE_KEY=
+SUPABASE_JWT_SECRET=
+SUPABASE_STORAGE_BUCKET=documents
+
+PINECONE_API_KEY=
+PINECONE_INDEX_NAME=univgpt-index
+
+OPENROUTER_API_KEY=
+OPENROUTER_INTENT_MODEL=
+OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+OPENROUTER_GENERATION_FALLBACK_MODELS=
+
+OLLAMA_API_KEY=
+OLLAMA_GENERATION_MODEL=
+OLLAMA_BASE_URL=
+
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=
+SMTP_PASSWORD=
+SMTP_FROM_EMAIL=
+SMTP_FROM_NAME=UnivGPT Support
+
+DEAN_EMAILS=
+PRELOAD_EMBEDDINGS_ON_STARTUP=false
+MOCK_LLM=false
+ENABLE_DUMMY_AUTH=false
+SUPABASE_OFFLINE_MODE=false
+```
+
+### Frontend `.env.local`
+
+```env
+VITE_API_URL=http://localhost:8000
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+VITE_ACADEMIC_EMAIL_DOMAIN=
+```
+
+## Supabase Setup
+
+If you are running this project yourself, configure these in Supabase:
+
+### Authentication
+
+- enable Email/Password
+- enable Google if you want Google sign-in
+- set **Site URL** to your frontend URL
+- add **Redirect URLs**:
+  - `http://localhost:5173/auth/callback`
+  - your production frontend callback URL
+
+### Database
+
+Make sure your Supabase project contains the expected application tables such as:
+
+- `profiles`
+- `documents`
+- `conversations`
+- `audit_logs`
+
+Then run:
 
 ```bash
 cd backend
-python seed.py
+python migrate.py
 ```
 
-`seed.py` includes command/menu modes for:
+to align runtime-required columns and indexes.
 
-- `seed_all`
-- `delete_all`
-- `reset`
-- `seed_dummy`
-- `seed_demo`
+## Production Setup
 
-## Environment Variables (Important)
+### Recommended hosting
 
-In `backend/.env`, configure:
+- **Frontend**: Vercel
+- **Backend**: Railway
 
-- Supabase:
-  - `SUPABASE_URL`
-  - `SUPABASE_ANON_KEY`
-  - `SUPABASE_SERVICE_ROLE_KEY`
-- Postgres direct:
-  - `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`
-- Vector DB:
-  - `PINECONE_API_KEY`
-  - `PINECONE_INDEX_NAME`
-- LLM:
-  - `OPENROUTER_API_KEY`
-  - `OPENROUTER_MODEL`
-  - `OPENROUTER_INTENT_MODEL`
-- Email/OTP:
-  - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`
-  - `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`
+### Production checklist
 
-In `frontend/.env.local`, configure:
+1. Deploy the backend and get the public Railway URL
+2. Deploy the frontend and set the real `VITE_API_URL`
+3. Update backend `CORS_ORIGINS` and `FRONTEND_APP_URL`
+4. Update Supabase Site URL and Redirect URLs
+5. Add real SMTP credentials so signup OTP and appeal emails work
+6. Set `DEAN_EMAILS` so moderation alerts go to the right admin/dean recipients
 
-- backend API URL
-- frontend-side Supabase public keys if used by UI flow
+## Core Flows
 
-## Core Functional Flows
+### Authentication
 
-## Auth
+- email signup sends a verification OTP
+- email login requires a verified account
+- Google auth respects role selection and admin allowlist rules
+- logout clears local chat cache so users start fresh next time
 
-- Email/password + OTP verification
-- Google login
-- Role-aware access checks at API and UI layers
+### Grounded AI
 
-## Documents
+- detects role and intent
+- pulls structured live context from profile/course/faculty/admin data
+- uses vector retrieval where appropriate
+- adds role-safe navigation links into the final answer
 
-1. Upload document with metadata (`doc_type`, `department`, `course`, `tags`)
-2. Extract text
-3. Chunk + embed
-4. Store metadata in Supabase
-5. Store vectors in Pinecone
+### Moderation
 
-## Agent Query
+- student-only moderation
+- warnings -> block -> apology appeal
+- dean/admin can approve, reject, or reset flags
+- email + in-app notifications are sent on decisions
 
-1. User query enters intent/moderation routing
-2. Role scope resolved
-3. Relevant context fetched (structured + vector where needed)
-4. LLM response generated with role constraints
-5. Conversation + audit stored
+### Documents
 
-## Moderation + Appeals
-
-- Flag abusive behavior
-- Warn/block based on policy
-- User can submit appeal
-- Dean/admin can approve/reject
-- Status emails dispatched on decision
-
-## Scripts Reference
-
-From `backend/`:
-
-- `python migrate.py` -> apply/verify schema + runtime columns/indexes
-- `python seed.py` -> seed/reset workflows
-- `python reset_db.py` -> reset helper
-
-From `frontend/`:
-
-- `npm run dev` -> local dev server
-- `npm run build` -> production build
-- `npm run preview` -> preview production build
+- upload with metadata
+- extract and chunk text
+- generate embeddings
+- store searchable context in Pinecone
 
 ## Troubleshooting
 
-## Supabase DNS / Connectivity
+### Signup says verification email could not be sent
 
-If you see `getaddrinfo failed`:
+That is usually an SMTP issue, not a frontend issue.
 
-- verify `SUPABASE_URL`
-- verify VPN / DNS resolution
-- check ISP restrictions
-- test with `migrate.py` and simple auth endpoint
+Check:
 
-## Pinecone Timeout
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASSWORD`
+- `SMTP_FROM_EMAIL`
 
-If vector query is slow/failing:
+Also make sure your SMTP mailbox/app password actually allows outbound mail.
 
-- verify `PINECONE_API_KEY` + index name
-- confirm index region and host reachability
-- reduce query timeout / retries in config
+### Login fails from production frontend
 
-## OpenRouter 429 / Rate Limit
+Check:
 
-- switch to a more stable model
-- configure fallback models
-- reduce retries and high-frequency calls during load testing
+- backend `CORS_ORIGINS`
+- frontend `VITE_API_URL`
+- Supabase Site URL / Redirect URLs
 
-## SMTP OTP Issues
+### Chat feels slow
 
-- verify app password (for Gmail)
-- verify sender alignment and SSL/TLS mode
-- check logs for blocked socket or auth failure
+Check:
 
-## Security Notes
+- production model provider latency
+- Supabase query speed
+- Pinecone query timeout
+- `PRELOAD_EMBEDDINGS_ON_STARTUP`
 
-- Never commit `.env` files
-- Keep `docs/private/` out of public repo (already ignored)
-- Rotate exposed keys immediately if leaked
+### Faculty/course answers look wrong
 
-## Contributing
+Check that your `profiles`, `documents`, and course/faculty mapping data are populated in Supabase.
 
-1. Create branch
-2. Make small, reviewable commits
-3. Run backend compile/tests and frontend build
-4. Open PR with clear summary and screenshots for UI changes
+## Useful Commands
 
-## Project Status
+### Backend
 
-Active development. Architecture and UX are being continuously improved for production readiness.
+```bash
+python migrate.py
+python reset_db.py
+uvicorn app.main:app --reload --port 8000
+```
 
+### Frontend
 
+```bash
+npm run dev
+npm run build
+npm run preview
+```
+
+## Notes
+
+- do not commit real `.env` files
+- rotate keys immediately if they were ever exposed
+- keep `DEAN_EMAILS` and SMTP values correct in production
+
+---
+
+Built to make university operations, notices, and academic assistance feel grounded, role-aware, and actually usable in production.
