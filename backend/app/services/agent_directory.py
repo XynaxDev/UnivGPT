@@ -653,14 +653,14 @@ def build_course_faculty_context(
         ]
         for item in scoped_courses[:10]:
             context_lines.append(
-                f"- {item.get('title')} | notices: {int(item.get('notice_count', 0))}"
+                f"- {item.get('title')} | notices: {int(item.get('notice_count', 0))} | check here: [Open course directory](/dashboard/courses)"
                 f"{f' | latest: {_format_short_date(item.get('next_update_at'))}' if item.get('next_update_at') else ''}"
             )
         return {
             "context": "\n".join(context_lines),
             "directive": (
                 "Answer using the structured course directory snapshot only. "
-                "Summarize the relevant courses in the user's scope and do not invent missing course records."
+                "Summarize the relevant courses in the user's scope, keep any provided check-here markdown links next to the matching items, and do not invent missing course records."
             ),
             "links": [("Open Courses", "/dashboard/courses"), *_default_document_links_for_role(role_norm)],
         }
@@ -675,13 +675,13 @@ def build_course_faculty_context(
             row = faculty_by_id.get(fid) or {}
             name = row.get("full_name") or "Faculty"
             context_lines.append(
-                f"- Faculty: {name} | department: {row.get('department') or 'Department not set'} | profile link: [Open {name} Profile](/dashboard/faculty/{fid})"
+                f"- Faculty: {name} | department: {row.get('department') or 'Department not set'} | check here: [Open {name} Profile](/dashboard/faculty/{fid})"
             )
         return {
             "context": "\n".join(context_lines),
             "directive": (
                 "Answer using the structured faculty directory snapshot only. "
-                "List relevant faculty in scope and render any profile references as markdown links, not raw route strings."
+                "List relevant faculty in scope and keep any provided check-here profile links next to each matching faculty, not as raw route strings."
             ),
             "links": [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
         }
@@ -696,13 +696,13 @@ def build_course_faculty_context(
             row = faculty_by_id.get(fid) or {}
             name = row.get("full_name") or "Faculty"
             context_lines.append(
-                f"- Faculty: {name} | department: {row.get('department') or 'Department not set'} | profile link: [Open {name} Profile](/dashboard/faculty/{fid})"
+                f"- Faculty: {name} | department: {row.get('department') or 'Department not set'} | check here: [Open {name} Profile](/dashboard/faculty/{fid})"
             )
         return {
             "context": "\n".join(context_lines),
             "directive": (
                 "Answer using the structured faculty directory snapshot only. "
-                "If there are 0 faculty records, say that clearly. Render any profile references as markdown links, not raw route strings."
+                "If there are 0 faculty records, say that clearly. Keep any provided check-here profile links next to each matching faculty, not as raw route strings."
             ),
             "links": [("Open Faculty Directory", "/dashboard/faculty"), ("Open Courses", "/dashboard/courses")],
         }
@@ -714,13 +714,13 @@ def build_course_faculty_context(
         ]
         for item in scoped_courses[:8]:
             context_lines.append(
-                f"- Course: {item.get('title')} | notices: {int(item.get('notice_count', 0))}"
+                f"- Course: {item.get('title')} | notices: {int(item.get('notice_count', 0))} | check here: [Open course directory](/dashboard/courses)"
             )
         return {
             "context": "\n".join(context_lines),
             "directive": (
                 "Answer using the structured course directory snapshot only. "
-                "If there are 0 courses, say that clearly and avoid inventing course titles."
+                "If there are 0 courses, say that clearly, keep any provided check-here markdown links next to the matching items, and avoid inventing course titles."
             ),
             "links": [("Open Courses", "/dashboard/courses"), *_default_document_links_for_role(role_norm)],
         }
