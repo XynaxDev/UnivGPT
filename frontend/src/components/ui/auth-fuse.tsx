@@ -513,7 +513,7 @@ export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onTog
     const currentContent = isSignIn ? finalSignInContent : finalSignUpContent;
 
     return (
-        <div className="relative z-10 w-full min-h-screen overflow-x-hidden bg-transparent md:grid md:min-h-[100dvh] md:grid-cols-2 md:overflow-hidden">
+        <div className="relative z-10 w-full min-h-screen overflow-x-hidden overflow-y-auto bg-transparent touch-pan-y md:grid md:min-h-[100dvh] md:grid-cols-2 md:overflow-hidden" style={{ WebkitOverflowScrolling: 'touch' }}>
             <style>{`
                 input[type="password"]::-ms-reveal,
                 input[type="password"]::-ms-clear {
@@ -523,7 +523,7 @@ export function AuthUI({ signInContent = {}, signUpContent = {}, isSignIn, onTog
 
 
 
-            <div className="z-20 flex min-h-screen items-start justify-center overflow-y-auto px-4 py-6 sm:px-6 md:min-h-[100dvh] md:items-center md:px-0 md:py-8">
+            <div className="z-20 flex min-h-screen items-start justify-center overflow-y-auto px-4 py-6 sm:px-6 touch-pan-y md:min-h-[100dvh] md:items-center md:px-0 md:py-8" style={{ WebkitOverflowScrolling: 'touch' }}>
                 <div className="mx-auto grid w-full max-w-[420px] gap-6 rounded-[2rem] border border-white/10 bg-black/40 p-6 shadow-[0_0_50px_-12px_rgba(255,255,255,0.1)] backdrop-blur-2xl sm:p-8">
                     {children}
 

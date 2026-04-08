@@ -157,8 +157,9 @@ export default function Signup() {
                         </div>
                         <h1 className="text-2xl font-extrabold tracking-tight text-white">Verify Email</h1>
                         <div className="text-sm text-zinc-500 flex flex-col gap-1 items-center">
-                            We've sent a 6-digit verification code to
+                            We sent a verification email to
                             <span className="text-white font-medium">{email}</span>
+                            <span className="text-xs text-zinc-500">Enter the code if one was provided, or use the secure link from the same email.</span>
                         </div>
                     </div>
 

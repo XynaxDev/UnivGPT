@@ -564,7 +564,7 @@ export default function ChatPage() {
     };
 
     return (
-        <div className="flex h-full min-h-0 flex-1 flex-col">
+        <div className="flex h-[calc(100dvh-5rem)] min-h-[calc(100dvh-5rem)] flex-1 flex-col md:h-full md:min-h-0">
             {/* Messages Area */}
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain" data-lenis-prevent="true" style={{ WebkitOverflowScrolling: 'touch' }}>
                 {messages.length === 0 ? (
@@ -640,7 +640,7 @@ export default function ChatPage() {
             </div>
 
             {/* â”€â”€â”€â”€â”€ Input Bar â€” Premium â”€â”€â”€â”€â”€ */}
-            <div className="shrink-0 bg-[#06070a]/95 px-2 pb-2 pt-0 backdrop-blur-sm sm:px-6 sm:pb-6">
+            <div className="sticky bottom-0 shrink-0 bg-[#06070a]/95 px-2 pb-2 pt-0 backdrop-blur-sm sm:px-6 sm:pb-6">
                 <form onSubmit={handleSend} className="max-w-3xl mx-auto">
                     {isChatBlocked && (
                         <div className="mb-3 rounded-2xl border border-red-500/35 bg-red-950/30 p-3 sm:p-4">

@@ -15,8 +15,15 @@ export default function SmoothScroll({ children }: { children: React.ReactNode }
     const { pathname } = useLocation();
 
     useEffect(() => {
+        const isTouchDevice =
+            typeof window !== 'undefined' &&
+            (
+                window.matchMedia?.('(pointer: coarse)').matches ||
+                navigator.maxTouchPoints > 0
+            );
+
         // Dashboard uses its own scroll containers; keep native scrolling there.
-        if (pathname.startsWith('/dashboard')) {
+        if (pathname.startsWith('/dashboard') || isTouchDevice) {
             return;
         }
 
