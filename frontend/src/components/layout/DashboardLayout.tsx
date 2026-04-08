@@ -14,6 +14,7 @@ import { useAuthStore } from '@/store/authStore';
 import { cn } from '@/lib/utils';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
 import { Sidebar, SidebarBody, SidebarLink, useSidebar } from '@/components/ui/sidebar';
 import { useToastStore } from '@/store/toastStore';
 import { authApi, type UserNotificationItem } from '@/lib/api';
@@ -24,6 +25,8 @@ export default function DashboardLayout() {
     const { user, logout, token } = useAuthStore();
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [showNotifications, setShowNotifications] = useState(false);
+    const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+    const [isLoggingOut, setIsLoggingOut] = useState(false);
     const [notifications, setNotifications] = useState<UserNotificationItem[]>(
         () => (token ? authApi.peekNotifications(token, 6)?.notifications || [] : []),
     );
@@ -122,10 +125,20 @@ export default function DashboardLayout() {
         : (pageDescriptions[location.pathname] || 'Workspace');
 
     const handleLogout = async () => {
-        await logout();
-        setShowNotifications(false);
-        showToast("Signed out successfully", "success");
-        navigate('/auth/login', { replace: true });
+        setShowLogoutConfirm(true);
+    };
+
+    const confirmLogout = async () => {
+        try {
+            setIsLoggingOut(true);
+            await logout();
+            setShowNotifications(false);
+            setShowLogoutConfirm(false);
+            showToast("Signed out successfully", "success");
+            navigate('/auth/login', { replace: true });
+        } finally {
+            setIsLoggingOut(false);
+        }
     };
 
     const unreadCount = useMemo(() => notifications.filter((n) => n.unread).length, [notifications]);
@@ -444,6 +457,35 @@ export default function DashboardLayout() {
                 {/* Backdrop for notifications */}
                 {showNotifications && (
                     <div className="fixed inset-0 z-[20]" onClick={() => setShowNotifications(false)} />
+                )}
+                {showLogoutConfirm && (
+                    <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/70 px-4">
+                        <div className="w-full max-w-md rounded-3xl border border-white/10 bg-[#111216] p-6 shadow-2xl shadow-black/40">
+                            <div className="text-lg font-bold text-white">Log out?</div>
+                            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                                Are you sure you want to log out of UnivGPT on this device?
+                            </p>
+                            <div className="mt-5 flex justify-end gap-3">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    className="border-white/10 bg-white/5 text-zinc-200 hover:bg-white/10"
+                                    onClick={() => setShowLogoutConfirm(false)}
+                                    disabled={isLoggingOut}
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    type="button"
+                                    className="bg-red-600 text-white hover:bg-red-500"
+                                    onClick={confirmLogout}
+                                    disabled={isLoggingOut}
+                                >
+                                    {isLoggingOut ? 'Logging out...' : 'Log Out'}
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
