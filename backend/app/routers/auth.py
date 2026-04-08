@@ -259,6 +259,43 @@ def build_oauth_redirect_url() -> str:
     return f"{base}{path}"
 
 
+def initiate_supabase_managed_signup(
+    email: str,
+    password: str,
+    full_name: str,
+    role: str,
+    department: str | None = None,
+) -> None:
+    supabase = get_supabase_client()
+    supabase.auth.sign_up(
+        {
+            "email": email,
+            "password": password,
+            "options": {
+                "email_redirect_to": build_oauth_redirect_url(),
+                "data": {
+                    "full_name": full_name,
+                    "role": role,
+                    "department": department,
+                },
+            },
+        }
+    )
+
+
+def resend_supabase_managed_signup(email: str) -> None:
+    supabase = get_supabase_client()
+    supabase.auth.resend(
+        {
+            "type": "signup",
+            "email": email,
+            "options": {
+                "email_redirect_to": build_oauth_redirect_url(),
+            },
+        }
+    )
+
+
 def configured_admin_emails() -> set[str]:
     allowed = {email.strip().lower() for email in settings.dean_emails_list if email.strip()}
     smtp_user = (settings.smtp_user or "").strip().lower()
@@ -900,24 +937,41 @@ async def signup(request: Request, body: InitiateSignupRequest):
             EmailService.send_otp_email(
                 receiver_email=body.email, otp=otp_code, user_name=body.full_name
             )
-        except Exception as smtp_error:
+        except Exception:
             logger.exception(
                 "Signup OTP delivery failed for %s after auth user preparation.",
                 body.email,
             )
-            if created_new_auth_user and user_id:
-                try:
+            try:
+                if user_id:
                     admin.auth.admin.delete_user(user_id)
-                except Exception:
-                    # Keep the original delivery error as the primary failure reason.
-                    pass
-            raise HTTPException(
-                status_code=503,
-                detail=(
-                    "We couldn't send your verification code right now. "
-                    "Please try signing up again in a moment."
-                ),
-            )
+            except Exception:
+                logger.warning("Failed to clean up temp signup user %s before Supabase fallback.", user_id)
+
+            try:
+                initiate_supabase_managed_signup(
+                    email=body.email,
+                    password=body.password,
+                    full_name=body.full_name,
+                    role=requested_role,
+                    department=body.department,
+                )
+                return SignupResponse(
+                    message="Verification email dispatched. Check your inbox for the code or secure confirmation link.",
+                    email=body.email,
+                )
+            except Exception:
+                logger.exception(
+                    "Supabase-managed signup fallback also failed for %s.",
+                    body.email,
+                )
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "We couldn't send your verification code right now. "
+                        "Please try signing up again in a moment."
+                    ),
+                )
 
         return SignupResponse(
             message="Verification email dispatched with your secure code.",
@@ -1074,46 +1128,66 @@ async def verify_signup(request: Request, body: VerifySignupRequest):
         user_metadata = _auth_user_metadata(target_user)
         stored_otp = user_metadata.get("otp_code")
         otp_expires_at = user_metadata.get("otp_expires_at")
-
-        # 2. OTP Check (with Dev Bypass)
-        is_verified = False
-        if is_dummy_auth_enabled() and body.otp == "123456":
-            is_verified = True
-        elif stored_otp and body.otp == stored_otp:
-            is_verified = True
-
-        if not is_verified:
-            raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-        if otp_expires_at and not (is_dummy_auth_enabled() and body.otp == "123456"):
-            expires_dt = datetime.fromisoformat(str(otp_expires_at).replace("Z", "+00:00"))
-            if datetime.now(timezone.utc) > expires_dt:
-                raise HTTPException(status_code=400, detail="OTP expired. Please resend OTP.")
-
-        user_id = _auth_user_id(target_user)
-
-        # 3. Update user metadata to verified
-        admin.auth.admin.update_user_by_id(
-            user_id,
-            {
-                "user_metadata": {
-                    **user_metadata,
-                    "is_verified": True,
-                    "otp_code": None,
-                    "otp_expires_at": None,
-                }
-            },
-        )
-
-        # 5. Issue real session token so frontend has a cloud-authenticated login immediately.
         supabase = get_supabase_client()
-        session_res = supabase.auth.sign_in_with_password(
-            {"email": body.email, "password": body.password}
-        )
-        if not session_res.user or not session_res.session:
-            raise HTTPException(
-                status_code=401,
-                detail="Email verified, but sign-in failed. Please log in with your password.",
+        session_res = None
+
+        # 2. Prefer the custom OTP flow when a locally stored OTP exists.
+        is_custom_otp = False
+        if is_dummy_auth_enabled() and body.otp == "123456":
+            is_custom_otp = True
+        elif stored_otp and body.otp == stored_otp:
+            is_custom_otp = True
+
+        if is_custom_otp:
+            if otp_expires_at and not (is_dummy_auth_enabled() and body.otp == "123456"):
+                expires_dt = datetime.fromisoformat(str(otp_expires_at).replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) > expires_dt:
+                    raise HTTPException(status_code=400, detail="OTP expired. Please resend OTP.")
+
+            user_id = _auth_user_id(target_user)
+
+            admin.auth.admin.update_user_by_id(
+                user_id,
+                {
+                    "user_metadata": {
+                        **user_metadata,
+                        "is_verified": True,
+                        "otp_code": None,
+                        "otp_expires_at": None,
+                    }
+                },
             )
+
+            session_res = supabase.auth.sign_in_with_password(
+                {"email": body.email, "password": body.password}
+            )
+            if not session_res.user or not session_res.session:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Email verified, but sign-in failed. Please log in with your password.",
+                )
+        else:
+            try:
+                session_res = supabase.auth.verify_otp(
+                    {
+                        "email": body.email,
+                        "token": body.otp,
+                        "type": "signup",
+                    }
+                )
+            except Exception as verify_exc:
+                message = str(verify_exc).lower()
+                if "token has expired" in message or "otp" in message or "token" in message:
+                    raise HTTPException(status_code=400, detail="Invalid or expired OTP")
+                raise
+
+            if not session_res.user or not session_res.session:
+                raise HTTPException(
+                    status_code=401,
+                    detail="Email verified, but sign-in failed. Please log in with your password.",
+                )
+
+            user_id = session_res.user.id
 
         p = ensure_profile_consistency(admin, user_id, session_res.user)
 
@@ -1168,31 +1242,40 @@ async def resend_signup_otp(body: ResendOtpRequest):
 
         otp_code = "".join([str(random.randint(0, 9)) for _ in range(6)])
         expires_at = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat()
+        uses_custom_otp = bool(user_metadata.get("otp_code") or user_metadata.get("otp_expires_at"))
 
-        admin.auth.admin.update_user_by_id(
-            _auth_user_id(target_user),
-            {
-                "user_metadata": {
-                    **user_metadata,
-                    "otp_code": otp_code,
-                    "otp_expires_at": expires_at,
-                    "is_verified": False,
-                }
-            },
-        )
+        if uses_custom_otp:
+            admin.auth.admin.update_user_by_id(
+                _auth_user_id(target_user),
+                {
+                    "user_metadata": {
+                        **user_metadata,
+                        "otp_code": otp_code,
+                        "otp_expires_at": expires_at,
+                        "is_verified": False,
+                    }
+                },
+            )
 
-        try:
-            EmailService.send_otp_email(
-                receiver_email=body.email,
-                otp=otp_code,
-                user_name=str(user_metadata.get("full_name") or "User"),
-            )
-        except Exception:
-            raise HTTPException(
-                status_code=503,
-                detail="We couldn't resend the verification code right now. Please try again in a moment.",
-            )
-        return {"status": "success", "message": "OTP resent successfully."}
+            try:
+                EmailService.send_otp_email(
+                    receiver_email=body.email,
+                    otp=otp_code,
+                    user_name=str(user_metadata.get("full_name") or "User"),
+                )
+                return {"status": "success", "message": "OTP resent successfully."}
+            except Exception:
+                logger.exception("Custom OTP resend failed for %s.", body.email)
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        "We couldn't resend the verification code right now. "
+                        "Please restart signup so we can send a fresh verification email."
+                    ),
+                )
+
+        resend_supabase_managed_signup(body.email)
+        return {"status": "success", "message": "Verification email resent. Check your inbox for the code or secure confirmation link."}
     except Exception as e:
         if isinstance(e, HTTPException):
             raise

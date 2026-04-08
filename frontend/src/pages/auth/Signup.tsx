@@ -58,7 +58,7 @@ export default function Signup() {
         try {
             await signup(email, password, fullName, selectedRole);
             setView('otp');
-            showToast("Verification code sent to your email.", "success");
+            showToast("Verification email sent. Check your inbox for the code or secure link.", "success");
         } catch (err: any) {
             clearError();
             showToast(err.message || "Signup failed. Please try again.", 'error');
@@ -89,7 +89,7 @@ export default function Signup() {
         }
         try {
             const message = await resendSignupOtp(email);
-            showToast(message || 'OTP resent successfully.', 'success');
+            showToast(message || 'Verification email resent successfully.', 'success');
             setResendCountdown(30);
         } catch (err: any) {
             clearError();
