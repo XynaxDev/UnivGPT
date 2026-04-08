@@ -29,7 +29,7 @@ export default function Signup() {
     const [view, setView] = useState<'signup' | 'otp' | 'welcome'>('signup');
     const [resendCountdown, setResendCountdown] = useState(0);
     const { showToast } = useToastStore();
-    const { signup, verifySignup, resendSignupOtp, googleAuth, isLoading, error, token } = useAuthStore();
+    const { signup, verifySignup, resendSignupOtp, googleAuth, isLoading, clearError, token } = useAuthStore();
     const navigate = useNavigate();
     const location = useLocation();
 
@@ -52,7 +52,7 @@ export default function Signup() {
     const handleSignupSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedRole) {
-            showToast('Please choose your role first.');
+            showToast('Please choose your role first.', 'error');
             return;
         }
         try {
@@ -60,7 +60,8 @@ export default function Signup() {
             setView('otp');
             showToast("Verification code sent to your email.", "success");
         } catch (err: any) {
-            showToast(err.message || "Signup failed. Please try again.");
+            clearError();
+            showToast(err.message || "Signup failed. Please try again.", 'error');
         }
     };
 
@@ -70,7 +71,8 @@ export default function Signup() {
             await verifySignup(email, otp, password);
             setView('welcome');
         } catch (err: any) {
-            showToast(err.message || "Invalid OTP code.");
+            clearError();
+            showToast(err.message || "Invalid OTP code.", 'error');
         }
     };
 
@@ -82,7 +84,7 @@ export default function Signup() {
 
     const handleResendOtp = async () => {
         if (!email) {
-            showToast('Email missing for OTP resend.');
+            showToast('Email missing for OTP resend.', 'error');
             return;
         }
         try {
@@ -90,20 +92,22 @@ export default function Signup() {
             showToast(message || 'OTP resent successfully.', 'success');
             setResendCountdown(30);
         } catch (err: any) {
-            showToast(err.message || 'Failed to resend OTP.');
+            clearError();
+            showToast(err.message || 'Failed to resend OTP.', 'error');
         }
     };
 
     const handleGoogleAuth = async () => {
         if (!selectedRole) {
-            showToast('Please choose your role before continuing with Google.');
+            showToast('Please choose your role before continuing with Google.', 'error');
             return;
         }
         try {
             window.localStorage.setItem('unigpt:pending-role', selectedRole);
             await googleAuth(selectedRole);
         } catch (err: any) {
-            showToast(err.message || "Google authentication failed.");
+            clearError();
+            showToast(err.message || "Google authentication failed.", 'error');
         }
     };
 
@@ -207,16 +211,6 @@ export default function Signup() {
                         {' '}for free
                     </p>
                 </div>
-
-                {error && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 text-center font-medium"
-                    >
-                        {error}
-                    </motion.div>
-                )}
 
                 <div className="grid gap-3">
                     <div className="grid gap-1">

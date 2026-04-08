@@ -7,7 +7,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/store/authStore';
 import { AuthUI, Label, Input, PasswordInput, Button, OTPInput, Select } from '@/components/ui/auth-fuse';
 import { Loader2 } from 'lucide-react';
-import { motion } from 'framer-motion';
 import { BrandLogo } from '@/components/ui/BrandLogo';
 import { useToastStore } from '@/store/toastStore';
 
@@ -38,7 +37,7 @@ export default function Login() {
         const params = new URLSearchParams(location.search);
         const routeError = params.get('error');
         if (!routeError) return;
-        showToast(routeError === 'oauth_failed' ? 'Google authentication could not be completed.' : routeError);
+        showToast(routeError === 'oauth_failed' ? 'Google authentication could not be completed.' : routeError, 'error');
         params.delete('error');
         navigate({ pathname: location.pathname, search: params.toString() ? `?${params.toString()}` : '' }, { replace: true });
     }, [location.pathname, location.search, navigate, showToast]);
@@ -46,7 +45,7 @@ export default function Login() {
     const handleLoginSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!selectedRole) {
-            showToast('Please choose your role first.');
+            showToast('Please choose your role first.', 'error');
             return;
         }
         try {
@@ -64,7 +63,8 @@ export default function Login() {
                     },
                 });
             }
-            showToast(message);
+            clearError();
+            showToast(message, 'error');
         }
     };
 
@@ -75,7 +75,8 @@ export default function Login() {
             setView('otp');
             showToast("Recovery email has been sent.", "success");
         } catch (err: any) {
-            showToast(err.message || "Failed to send recovery email.");
+            clearError();
+            showToast(err.message || "Failed to send recovery email.", 'error');
         }
     };
 
@@ -97,20 +98,22 @@ export default function Login() {
             setOtp('');
             setNewPassword('');
         } catch (err: any) {
-            showToast(err.message || "Error updating password.");
+            clearError();
+            showToast(err.message || "Error updating password.", 'error');
         }
     };
 
     const handleGoogleAuth = async () => {
         if (!selectedRole) {
-            showToast('Please choose your role before continuing with Google.');
+            showToast('Please choose your role before continuing with Google.', 'error');
             return;
         }
         try {
             window.localStorage.setItem('unigpt:pending-role', selectedRole);
             await googleAuth(selectedRole);
         } catch (err: any) {
-            showToast(err.message || "Google authentication failed.");
+            clearError();
+            showToast(err.message || "Google authentication failed.", 'error');
         }
     };
 
@@ -239,16 +242,6 @@ export default function Login() {
                     <h1 className="text-2xl font-extrabold tracking-tight text-white">Welcome Back</h1>
                     <p className="text-sm text-zinc-500 max-w-[280px]">Sign in to your UnivGPT account</p>
                 </div>
-
-                {error && (
-                    <motion.div
-                        initial={{ opacity: 0, scale: 0.95 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-xs text-red-400 text-center font-medium"
-                    >
-                        {error}
-                    </motion.div>
-                )}
 
                 <div className="grid gap-4">
                     <div className="grid gap-1.5">
