@@ -11,6 +11,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { authApi, type UserProfile } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
+import { clearAllChatCaches } from '@/store/chatStore';
 
 const PROFILE_IMAGE_CACHE_KEY = 'unigpt-profile-images';
 
@@ -206,6 +207,7 @@ export const useAuthStore = create<AuthState>()(
                 } catch {
                     // Ignore Supabase sign-out transport errors and still clear local app session.
                 } finally {
+                    clearAllChatCaches();
                     get().clearSession();
                 }
             },

@@ -70,6 +70,39 @@ function writeScopeCache(scope: string, payload: Pick<ChatState, 'currentConvers
     }
 }
 
+export function clearAllChatCaches() {
+    if (!canUseSessionStorage()) return;
+    try {
+        const keysToRemove: string[] = [];
+        for (let i = 0; i < window.localStorage.length; i += 1) {
+            const key = window.localStorage.key(i);
+            if (key?.startsWith(`${CHAT_STORAGE_KEY}:`)) {
+                keysToRemove.push(key);
+            }
+        }
+        for (let i = 0; i < window.sessionStorage.length; i += 1) {
+            const key = window.sessionStorage.key(i);
+            if (key?.startsWith(`${CHAT_STORAGE_KEY}:`)) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach((key) => {
+            window.localStorage.removeItem(key);
+            window.sessionStorage.removeItem(key);
+        });
+    } catch {
+        // Ignore storage clear failures.
+    }
+    useChatStore.setState({
+        activeScope: 'default',
+        conversations: [],
+        currentConversationId: null,
+        messages: [],
+        isQuerying: false,
+        error: null,
+    });
+}
+
 export const useChatStore = create<ChatState>()((set, get) => ({
     activeScope: 'default',
     conversations: [],
