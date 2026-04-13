@@ -57,10 +57,12 @@ logger = logging.getLogger(__name__)
 # Capability flags to avoid repeated failing schema probes on every request.
 _DOCUMENTS_HAS_UPLOADED_AT: Optional[bool] = None
 _LLM_CLIENTS: dict[str, httpx.AsyncClient] = {}
-_PINECONE_EMBEDDING_DISABLED = False
+_PINECONE_EMBEDDING_DISABLED_UNTIL: Optional[datetime.datetime] = None
 _OFFENSE_STATE_CACHE: dict[str, dict[str, Any]] = {}
 _PROVIDER_FAILURE_COOLDOWNS: dict[str, datetime.datetime] = {}
 MAX_MODERATION_WARNINGS = 2
+PINECONE_TIMEOUT_COOLDOWN_SECONDS = 90
+PINECONE_RUNTIME_ERROR_COOLDOWN_SECONDS = 300
 _ADMIN_ALLOWED_INTENT_TYPES = {
     "count_users",
     "count_documents",
@@ -319,6 +321,105 @@ def _is_timetable_query(query_text: str) -> bool:
         "lecture today",
     )
     return any(marker in text for marker in timetable_markers)
+
+
+def _set_pinecone_cooldown(seconds: int) -> None:
+    global _PINECONE_EMBEDDING_DISABLED_UNTIL
+    wait_seconds = max(20, int(seconds))
+    _PINECONE_EMBEDDING_DISABLED_UNTIL = (
+        datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(seconds=wait_seconds)
+    )
+
+
+def _is_pinecone_temporarily_disabled() -> bool:
+    global _PINECONE_EMBEDDING_DISABLED_UNTIL
+    if _PINECONE_EMBEDDING_DISABLED_UNTIL is None:
+        return False
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if _PINECONE_EMBEDDING_DISABLED_UNTIL <= now:
+        _PINECONE_EMBEDDING_DISABLED_UNTIL = None
+        return False
+    return True
+
+
+def _extract_filename_mentions(text: str) -> list[str]:
+    raw = str(text or "")
+    if not raw:
+        return []
+    matches = re.findall(
+        r"([A-Za-z0-9][A-Za-z0-9_\-\s]{1,120}\.(?:pdf|docx|txt|md))",
+        raw,
+        flags=re.IGNORECASE,
+    )
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for match in matches:
+        cleaned = re.sub(r"\s+", " ", str(match or "")).strip()
+        key = cleaned.lower()
+        if cleaned and key not in seen:
+            seen.add(key)
+            ordered.append(cleaned)
+    return ordered
+
+
+def _is_document_content_intent(intent: dict[str, Any]) -> bool:
+    focus = _normalize(intent.get("document_focus"))
+    return focus in {
+        "content",
+        "content_lookup",
+        "content_summary",
+        "summary",
+        "summarize",
+    }
+
+
+def _resolve_referenced_document(
+    query: str,
+    history_text: str,
+    candidate_documents: list[dict[str, Any]],
+    intent_reference: Optional[str] = None,
+) -> Optional[dict[str, Any]]:
+    if not candidate_documents:
+        return None
+    candidates = [
+        doc
+        for doc in candidate_documents
+        if str(doc.get("id") or "").strip() and str(doc.get("filename") or "").strip()
+    ]
+    if not candidates:
+        return None
+
+    query_filenames = _extract_filename_mentions(query)
+    history_filenames = _extract_filename_mentions(history_text)
+    combined_mentions: list[str] = []
+    if str(intent_reference or "").strip():
+        combined_mentions.append(str(intent_reference).strip())
+    combined_mentions.extend(query_filenames)
+    combined_mentions.extend(
+        [name for name in history_filenames if name.lower() not in {q.lower() for q in query_filenames}]
+    )
+
+    def _match_by_filename(filename: str) -> Optional[dict[str, Any]]:
+        lookup = filename.strip().lower()
+        if not lookup:
+            return None
+        for doc in candidates:
+            doc_name = str(doc.get("filename") or "").strip().lower()
+            if doc_name == lookup:
+                return doc
+        for doc in candidates:
+            doc_name = str(doc.get("filename") or "").strip().lower()
+            if lookup in doc_name or doc_name in lookup:
+                return doc
+        return None
+
+    for mention in combined_mentions:
+        matched = _match_by_filename(mention)
+        if matched:
+            return matched
+
+    return None
 
 
 def _provider_cooldown_key(provider: str, model: str) -> str:
@@ -754,6 +855,8 @@ class IntentPayload(BaseModel):
     department: Optional[str] = None
     course: Optional[str] = None
     tags: Optional[list[str]] = None
+    document_focus: Optional[str] = None
+    document_reference: Optional[str] = None
 
 def fetch_user_profile_context(supabase, user_id: str) -> dict[str, Any]:
     if not supabase or not user_id:
@@ -1268,7 +1371,7 @@ async def run_backup_moderation_check(query: str, history_context: str = "") -> 
     """
 
     try:
-        timeout_seconds = max(3, min(8, int(settings.openrouter_timeout_seconds or 20) // 2 or 4))
+        timeout_seconds = max(2, min(5, int(settings.openrouter_timeout_seconds or 20) // 3 or 3))
         model_name = settings.openrouter_intent_model
         content = await asyncio.wait_for(
             call_llm(
@@ -1357,14 +1460,17 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
     - document_date: "YYYY-MM-DD" if asking for uploads on a date (use today/tomorrow/yesterday if referenced)
     - date_reference: one of ["today","tomorrow","yesterday"] if explicitly used
     - doc_type, role, department, course, tags (if relevant)
+    - document_focus: one of ["content","metadata"] when user asks to read/summarize document content vs only list/count metadata
+    - document_reference: filename or document title string when explicitly mentioned
 
     Example 1: {{"conversation_mode":"task","intent_type":"count_users","target_entity":"students","is_flagged": false}}
     Example 2: {{"conversation_mode":"task","intent_type":"document_date_lookup","document_date":"2026-03-14","is_flagged": false}}
     Example 3: {{"is_flagged": true, "reason": "Severe hate speech"}}
     Example 4: {{"conversation_mode":"casual","intent_type":"general","target_entity":"general","is_flagged": false}}
-    Example 5: {{"is_flagged": true, "reason": "Targeted insulting language about a named individual.", "conversation_mode":"task","intent_type":"general","target_entity":"general"}}
-    Example 6: {{"is_flagged": true, "reason": "Direct degrading language about a named person.", "conversation_mode":"task","intent_type":"general","target_entity":"general"}}
-    Example 7: {{"is_flagged": true, "reason": "Direct abusive profanity aimed at a person or the assistant.", "conversation_mode":"task","intent_type":"general","target_entity":"general"}}
+    Example 5: {{"conversation_mode":"task","intent_type":"list_documents","target_entity":"documents","document_focus":"content","document_reference":"document.pdf","is_flagged": false}}
+    Example 6: {{"is_flagged": true, "reason": "Targeted insulting language about a named individual.", "conversation_mode":"task","intent_type":"general","target_entity":"general"}}
+    Example 7: {{"is_flagged": true, "reason": "Direct degrading language about a named person.", "conversation_mode":"task","intent_type":"general","target_entity":"general"}}
+    Example 8: {{"is_flagged": true, "reason": "Direct abusive profanity aimed at a person or the assistant.", "conversation_mode":"task","intent_type":"general","target_entity":"general"}}
     """
 
     if is_fast_smalltalk_query(query):
@@ -1377,7 +1483,7 @@ async def extract_query_intent(query: str, history_context: str = "") -> Dict[st
         }
 
     try:
-        intent_timeout = max(4, min(12, int(settings.openrouter_timeout_seconds or 20)))
+        intent_timeout = max(3, min(7, int(settings.openrouter_timeout_seconds or 20)))
         content = await asyncio.wait_for(
             call_llm(
                 [
@@ -1477,8 +1583,6 @@ async def run_agent_pipeline(
     context: Optional[dict] = None,
     user_profile: Optional[dict[str, Any]] = None,
 ) -> AgentQueryResponse:
-    global _PINECONE_EMBEDDING_DISABLED
-
     conversation_id = conversation_id or str(uuid.uuid4())
     audit_user_id = None if str(user_id).startswith("dummy-id-") else user_id
     now_iso = utc_now_iso()
@@ -1887,11 +1991,16 @@ async def run_agent_pipeline(
     notice_requested = any(marker in target_entity for marker in ("notice", "announcement", "circular")) or any(
         marker in query_text for marker in ("notice", "announcement", "circular")
     )
+    doc_content_requested = _is_document_content_intent(intent)
     doc_lookup_requested = (
         intent_type in {"count_documents", "list_documents", "document_date_lookup", "holiday_check"}
         or doc_keyword_request
         or (count_request and any(marker in target_entity for marker in ("document", "notice", "announcement", "circular", "holiday")))
+        or doc_content_requested
     )
+    filtered_docs: list[dict[str, Any]] = []
+    vector_override_filter: Optional[dict[str, Any]] = None
+    vector_search_query = query
     non_retrieval_intent = (
         intent_type in {"", "general"}
         and target_entity in {"", "general"}
@@ -2032,6 +2141,13 @@ async def run_agent_pipeline(
                 "Do not imply hidden results or future availability."
             )
             citation_limit = 0
+        elif doc_content_requested and doc_count > 0:
+            response_directive = (
+                "The user asked for content inside a document. "
+                "Use the vector-retrieved document chunks as the primary source of truth. "
+                "Summarize clearly from the chunk content, and do not claim only metadata access when chunks are present."
+            )
+            citation_limit = 1
         elif doc_count > 0 and (intent_type == "count_documents" or count_request):
             response_directive = (
                 f"Answer only from the structured document lookup for {scope}. "
@@ -2103,26 +2219,66 @@ async def run_agent_pipeline(
                     }
                 )
 
+        if doc_content_requested:
+            reference_pool = filtered_docs
+            if not reference_pool:
+                try:
+                    reference_pool = fetch_filtered_documents(
+                        supabase=supabase,
+                        allowed_types=allowed_types,
+                        intent={},
+                        context=context,
+                        query="documents",
+                    )
+                except Exception:
+                    reference_pool = []
+
+            referenced_doc = _resolve_referenced_document(
+                query=query,
+                history_text=history_text,
+                candidate_documents=reference_pool,
+                intent_reference=str(intent.get("document_reference") or "").strip() or None,
+            )
+            if referenced_doc:
+                referenced_doc_id = str(referenced_doc.get("id") or "").strip()
+                referenced_filename = str(referenced_doc.get("filename") or "document").strip()
+                if referenced_doc_id:
+                    vector_override_filter = {**base_filter, "document_id": {"$eq": referenced_doc_id}}
+                    vector_search_query = f"{query}\nReferenced document filename: {referenced_filename}"
+                    context_text += (
+                        "\n[Structured Document Focus]\n"
+                        f"- Target document resolved: {referenced_filename}\n"
+                        "- Use vector chunk retrieval for this exact document.\n"
+                    )
+                    if _normalize(user_role) == "student":
+                        response_links.append(("Open Document", "/dashboard/notifications"))
+                    elif _normalize(user_role) == "faculty":
+                        response_links.append(("Open Document", "/dashboard/notices"))
+                    else:
+                        response_links.append(("Open Document", "/dashboard/documents"))
+
     should_run_vector_search = (
         pinecone_client.index is not None
         and forced_answer is None
-        and not _PINECONE_EMBEDDING_DISABLED
+        and not _is_pinecone_temporarily_disabled()
         and not structured_directory_query
         and not non_retrieval_intent
         and not admin_structured_query
-        and not doc_lookup_requested
+        and not (doc_lookup_requested and not doc_content_requested)
     )
 
     if should_run_vector_search:
         try:
-            query_vector = get_single_embedding(query)
+            query_vector = get_single_embedding(vector_search_query)
+            vector_filter = vector_override_filter or base_filter
+            top_k = 7 if doc_content_requested else 5
             pinecone_timeout = max(2.0, float(getattr(settings, "pinecone_query_timeout_seconds", 6) or 6))
             search_res = await asyncio.wait_for(
                 asyncio.to_thread(
                     pinecone_client.index.query,
                     vector=query_vector,
-                    filter=base_filter,
-                    top_k=5,
+                    filter=vector_filter,
+                    top_k=top_k,
                     include_metadata=True,
                 ),
                 timeout=pinecone_timeout,
@@ -2162,9 +2318,10 @@ async def run_agent_pipeline(
 
                 context_text += f"\n---\nSource: {meta.get('filename')}{meta_str}\n{chunk_content}\n"
         except asyncio.TimeoutError:
-            _PINECONE_EMBEDDING_DISABLED = True
+            _set_pinecone_cooldown(PINECONE_TIMEOUT_COOLDOWN_SECONDS)
             logger.warning(
-                "Disabling Pinecone vector search for this runtime due to query timeout > %ss.",
+                "Temporarily disabling Pinecone vector search for %ss due to query timeout > %ss.",
+                PINECONE_TIMEOUT_COOLDOWN_SECONDS,
                 pinecone_timeout,
             )
             context_text += (
@@ -2172,15 +2329,17 @@ async def run_agent_pipeline(
             )
         except Exception as e:
             if _is_embedding_runtime_error(e):
-                _PINECONE_EMBEDDING_DISABLED = True
+                _set_pinecone_cooldown(PINECONE_RUNTIME_ERROR_COOLDOWN_SECONDS)
                 logger.warning(
-                    "Disabling Pinecone embedding search for this runtime due to local embedding dependency error: %s",
+                    "Temporarily disabling Pinecone embedding search for %ss due to local embedding dependency error: %s",
+                    PINECONE_RUNTIME_ERROR_COOLDOWN_SECONDS,
                     e,
                 )
             elif _is_pinecone_timeout_error(e):
-                _PINECONE_EMBEDDING_DISABLED = True
+                _set_pinecone_cooldown(PINECONE_TIMEOUT_COOLDOWN_SECONDS)
                 logger.warning(
-                    "Disabling Pinecone vector search for this runtime due to timeout/connectivity error: %s",
+                    "Temporarily disabling Pinecone vector search for %ss due to timeout/connectivity error: %s",
+                    PINECONE_TIMEOUT_COOLDOWN_SECONDS,
                     e,
                 )
             else:
@@ -2191,8 +2350,14 @@ async def run_agent_pipeline(
     else:
         if forced_answer is not None:
             logger.info("Skipping vector search because structured response is already resolved.")
-        else:
+        elif _is_pinecone_temporarily_disabled():
+            logger.info("Skipping vector search while Pinecone cooldown is active.")
+        elif pinecone_client.index is None:
             logger.info("Pinecone index not initialized. Skipping vector search.")
+        elif doc_lookup_requested and not doc_content_requested:
+            logger.info("Skipping vector search for metadata-only document lookup intent.")
+        else:
+            logger.info("Skipping vector search due to intent/router constraints.")
 
     if not chunks and not structured_sources:
         context_text += "\n[System Note: No documents matched the query in the current database (0 documents for current filters).]\n"
