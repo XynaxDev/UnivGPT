@@ -141,14 +141,25 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 return;
             }
 
+            // Keep short responses instant and speed up long ones to reduce perceived latency.
+            if (total <= 220) {
+                set((state) => ({
+                    messages: state.messages.map((m) =>
+                        m.id === messageId ? { ...m, content: safeText, isStreaming: false } : m,
+                    ),
+                }));
+                return;
+            }
+
             let cursor = 0;
             while (cursor < total) {
                 const remaining = total - cursor;
                 const chunk =
-                    remaining > 1200 ? 18 :
-                    remaining > 800 ? 14 :
-                    remaining > 400 ? 10 :
-                    remaining > 180 ? 7 : 4;
+                    remaining > 1500 ? 36 :
+                    remaining > 1000 ? 28 :
+                    remaining > 700 ? 22 :
+                    remaining > 420 ? 16 :
+                    remaining > 220 ? 11 : 8;
                 cursor = Math.min(total, cursor + chunk);
                 const partial = safeText.slice(0, cursor);
                 set((state) => ({
@@ -156,7 +167,7 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                         m.id === messageId ? { ...m, content: partial, isStreaming: cursor < total } : m,
                     ),
                 }));
-                await sleep(14);
+                await sleep(8);
             }
         };
 
