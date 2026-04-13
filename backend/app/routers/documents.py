@@ -573,7 +573,9 @@ async def preview_document(
     file_url = create_storage_signed_url(supabase, metadata)
     viewer_url = str(request.url_for("serve_document_file", document_id=document_id))
     download_url = f"{viewer_url}?download=1"
-    preview_limit = 8
+    # Keep a deeper fallback preview so long documents are not clipped
+    # when inline PDF rendering is unavailable in the browser.
+    preview_limit = 120
     chunk_count = int(metadata.get("chunk_count") or 0)
 
     snippet_chunks: list[dict[str, Any]] = []
